@@ -11,6 +11,7 @@ from app.core.logging import setup_logging
 from app.core.exceptions import register_exception_handlers, AegisBaseException
 from app.database.session import get_db
 from app.database.redis import check_redis_health
+from app.api.v1.router import api_router
 
 # Initialize structured logging system
 setup_logging()
@@ -39,6 +40,9 @@ app.add_middleware(
 
 # 3. Register custom unified exception handlers
 register_exception_handlers(app)
+
+# 4. Mount versioned API routes
+app.include_router(api_router, prefix=settings.API_V1_STR)
 
 @app.on_event("startup")
 async def startup_event():

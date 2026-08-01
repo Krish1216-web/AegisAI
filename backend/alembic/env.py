@@ -5,7 +5,7 @@ from alembic import context
 
 # Import our settings config and model Base metadata class
 from app.core.config import settings
-from app.database.base_class import Base
+from app.database.base import Base
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
