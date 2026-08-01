@@ -1,12 +1,19 @@
 from pydantic_settings import BaseSettings
-from pydantic import Field, AnyHttpUrl
-from typing import List, Optional
+from pydantic import Field
+from typing import Optional, Literal
+import os
 
-class Settings(BaseSettings):
-    PROJECT_NAME: str = "AegisAI Backend Portal"
+class BaseConfig(BaseSettings):
+    """
+    Base system settings configuration shared across environments.
+    """
+    PROJECT_NAME: str = "AegisAI Enterprise Backend"
     API_V1_STR: str = "/api/v1"
     
-    # Security config
+    # Environment flag: 'dev' | 'prod' | 'test'
+    ENVIRONMENT: Literal["dev", "prod", "test"] = Field(default="dev", env="ENVIRONMENT")
+
+    # Security keys
     SECRET_KEY: str = Field(default="SUPER_SECRET_AEGIS_KEY_2026_CHANGE_ME", env="SECRET_KEY")
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
@@ -29,9 +36,6 @@ class Settings(BaseSettings):
     QDRANT_PORT: int = Field(default=6333, env="QDRANT_PORT")
     QDRANT_API_KEY: Optional[str] = Field(default=None, env="QDRANT_API_KEY")
 
-    # LLM Settings
-    OPENAI_API_KEY: Optional[str] = Field(default=None, env="OPENAI_API_KEY")
-
     class Config:
         case_sensitive = True
         env_file = ".env"
@@ -41,4 +45,30 @@ class Settings(BaseSettings):
             return self.DATABASE_URL
         return f"postgresql://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@{self.POSTGRES_SERVER}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
 
-settings = Settings()
+class DevelopmentConfig(BaseConfig):
+    ENVIRONMENT: str = "dev"
+
+class ProductionConfig(BaseConfig):
+    ENVIRONMENT: str = "prod"
+    # Overwrite settings to strictly enforce TLS in production
+    class Config:
+        env_file = ".env.prod"
+
+class TestConfig(BaseConfig):
+    ENVIRONMENT: str = "test"
+    POSTGRES_DB: str = "aegisai_test"
+    class Config:
+        env_file = ".env.test"
+
+def get_settings() -> BaseConfig:
+    """
+    Resolve the correct settings profile based on the active ENVIRONMENT variable.
+    """
+    env = os.getenv("ENVIRONMENT", "dev").lower()
+    if env == "prod":
+        return ProductionConfig()
+    elif env == "test":
+        return TestConfig()
+    return DevelopmentConfig()
+
+settings = get_settings()

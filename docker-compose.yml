@@ -3,11 +3,12 @@ version: '3.8'
 services:
   app:
     build:
-      context: ./backend
-      dockerfile: ../docker/development/app.dockerfile
+      context: .
+      dockerfile: docker/development/app.dockerfile
     ports:
       - "8000:8000"
     environment:
+      - ENVIRONMENT=dev
       - POSTGRES_SERVER=db
       - REDIS_HOST=redis
     depends_on:

@@ -1,0 +1,45 @@
+[tool.poetry]
+name = "aegisai-backend"
+version = "0.1.0"
+description = "FastAPI Backend for AegisAI Multi-Agent Operating System"
+authors = ["AegisAI Core Team <core@aegisai.enterprise>"]
+readme = "README.md"
+packages = [{include = "app"}]
+
+[tool.poetry.dependencies]
+python = "^3.12"
+fastapi = "^0.110.0"
+uvicorn = {extras = ["standard"], version = "^0.28.0"}
+sqlalchemy = "^2.0.0"
+psycopg2-binary = "^2.9.9"
+pydantic = "^2.6.0"
+pydantic-settings = "^2.2.0"
+pyjwt = {extras = ["crypto"], version = "^2.8.0"}
+passlib = {extras = ["bcrypt"], version = "^1.7.4"}
+python-multipart = "^0.0.9"
+redis = "^5.0.0"
+qdrant-client = "^1.8.0"
+langgraph = "^0.0.10"
+celery = "^5.3.6"
+alembic = "^1.13.0"
+loguru = "^0.7.2"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.0.0"
+pytest-cov = "^4.1.0"
+black = "^24.2.0"
+ruff = "^0.2.2"
+httpx = "^0.27.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.black]
+line-length = 88
+target-version = ['py312']
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+select = ["E", "F", "I"]
