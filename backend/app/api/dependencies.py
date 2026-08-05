@@ -63,3 +63,24 @@ class RoleChecker:
                 detail=f"Action requires roles: {self.allowed_roles}. Current role: {user_role}"
             )
         return current_user
+
+from app.models.workspace import WorkspaceMember
+
+def get_workspace_member(
+    workspace_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+) -> WorkspaceMember:
+    """
+    Dependency checking that the authenticated user is a valid member of the target workspace.
+    """
+    member = db.query(WorkspaceMember).filter(
+        WorkspaceMember.workspace_id == workspace_id,
+        WorkspaceMember.user_id == current_user.id
+    ).first()
+    if not member:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="User does not have access permissions for this workspace."
+        )
+    return member

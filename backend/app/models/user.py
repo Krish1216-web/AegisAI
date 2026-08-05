@@ -1,6 +1,6 @@
 import uuid
 import datetime
-from sqlalchemy import String, Boolean, ForeignKey, Text, DateTime
+from sqlalchemy import String, Boolean, ForeignKey, Text, DateTime, JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from typing import List, Optional
 from app.database.base_class import Base, AuditMixin
@@ -25,6 +25,8 @@ class User(Base, AuditMixin):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     is_verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    avatar_url: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    settings: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     
     role = relationship("Role", back_populates="users")
     sessions = relationship("UserSession", back_populates="user", cascade="all, delete-orphan")
