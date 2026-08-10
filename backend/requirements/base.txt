@@ -14,3 +14,6 @@ langgraph>=0.0.10
 celery>=5.3.6
 alembic>=1.13.0
 loguru>=0.7.2
+openai>=1.12.0
+anthropic>=0.18.0
+google-generativeai>=0.4.0

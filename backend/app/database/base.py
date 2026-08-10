@@ -11,7 +11,7 @@ from app.models.workspace import Organization, Workspace, WorkspaceMember  # noq
 from app.models.conversation import Conversation, Message, ConversationParticipant  # noqa
 
 # AI Agents
-from app.models.ai import Agent, AgentExecution, AgentLog  # noqa
+from app.models.ai import Agent, AgentExecution, AgentLog, AIRequestLog, ProviderHealthStatus  # noqa
 
 # Memory
 from app.models.memory import Memory, MemoryEmbedding, MemoryCategory  # noqa

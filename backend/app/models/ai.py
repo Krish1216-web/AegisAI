@@ -1,6 +1,6 @@
 import uuid
 import datetime
-from sqlalchemy import String, Text, ForeignKey, DateTime
+from sqlalchemy import String, Text, ForeignKey, DateTime, Integer, Float, Boolean
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from typing import List, Optional
 from app.database.base_class import Base, AuditMixin
@@ -30,3 +30,26 @@ class AgentLog(Base, AuditMixin):
     message: Mapped[str] = mapped_column(Text, nullable=False)
     
     execution = relationship("AgentExecution", back_populates="logs")
+
+class AIRequestLog(Base, AuditMixin):
+    __tablename__ = "ai_request_logs"
+    user_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    provider: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    model: Mapped[str] = mapped_column(String(100), nullable=False)
+    prompt_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    completion_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    total_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    cost: Mapped[float] = mapped_column(Float, default=0.0)
+    latency_ms: Mapped[int] = mapped_column(Integer, default=0)
+    success: Mapped[bool] = mapped_column(Boolean, default=True)
+    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+class ProviderHealthStatus(Base, AuditMixin):
+    __tablename__ = "provider_health_statuses"
+    provider: Mapped[str] = mapped_column(String(100), unique=True, nullable=False, index=True)
+    is_healthy: Mapped[bool] = mapped_column(Boolean, default=True)
+    latency_ms: Mapped[int] = mapped_column(Integer, default=0)
+    last_checked: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.datetime.now(datetime.timezone.utc)
+    )

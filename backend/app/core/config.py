@@ -36,6 +36,13 @@ class BaseConfig(BaseSettings):
     QDRANT_PORT: int = Field(default=6333, env="QDRANT_PORT")
     QDRANT_API_KEY: Optional[str] = Field(default=None, env="QDRANT_API_KEY")
 
+    # LLM Keys & Settings
+    OPENAI_API_KEY: Optional[str] = Field(default=None, env="OPENAI_API_KEY")
+    GEMINI_API_KEY: Optional[str] = Field(default=None, env="GEMINI_API_KEY")
+    ANTHROPIC_API_KEY: Optional[str] = Field(default=None, env="ANTHROPIC_API_KEY")
+    DEFAULT_AI_PROVIDER: str = Field(default="openai", env="DEFAULT_AI_PROVIDER")
+    DEFAULT_AI_MODEL: str = Field(default="gpt-4o-mini", env="DEFAULT_AI_MODEL")
+
     class Config:
         case_sensitive = True
         env_file = ".env"
