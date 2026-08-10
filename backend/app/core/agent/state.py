@@ -34,6 +34,8 @@ class AgentState(TypedDict):
     memory_results: Optional[Dict[str, Any]]
     research_results: Optional[str]
     critic_result: Optional[str]
+    critic_decision: Optional[str]
+    quality_score: Optional[Dict[str, Any]]
     final_response: Optional[str]
     errors: List[str]
     metadata: Dict[str, Any]
