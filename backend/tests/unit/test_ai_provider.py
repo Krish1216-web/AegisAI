@@ -99,3 +99,28 @@ async def test_ai_service_fallback_flow(mock_db, mock_redis):
         # OpenAI was called first and failed, then Gemini succeeded
         assert openai_mock.generate_chat_completion.call_count == 3
         gemini_mock.generate_chat_completion.assert_called_once()
+
+@pytest.mark.asyncio
+async def test_ai_service_cache_isolation(mock_db, mock_redis):
+    # Setup cache for User A
+    ai_service = AIService(db=mock_db, redis_client=mock_redis)
+    messages = [ChatMessage(role="user", content="Secret key query")]
+    
+    # Generate unique keys
+    key_user_a = ai_service._get_cache_key(messages, "gpt-4", "user-A-uuid")
+    key_user_b = ai_service._get_cache_key(messages, "gpt-4", "user-B-uuid")
+    
+    # Assert cache keys are isolated between tenants
+    assert key_user_a != key_user_b
+
+@pytest.mark.asyncio
+async def test_mock_provider_streaming():
+    provider = MockProvider()
+    messages = [ChatMessage(role="user", content="Stream me")]
+    chunks = []
+    async for chunk in provider.stream_chat_completion(messages, "mock-model"):
+        chunks.append(chunk)
+        
+    assert len(chunks) > 0
+    assert "".join(chunks).startswith("This is a streamed")
+

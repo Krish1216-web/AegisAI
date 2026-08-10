@@ -21,8 +21,8 @@ class AIService:
         self.db = db
         self.redis = redis_client
 
-    def _get_cache_key(self, messages: List[ChatMessage], model: str) -> str:
-        serialized = json.dumps([{"role": m.role, "content": m.content} for m in messages]) + f":{model}"
+    def _get_cache_key(self, messages: List[ChatMessage], model: str, user_id: Any) -> str:
+        serialized = json.dumps([{"role": m.role, "content": m.content} for m in messages]) + f":{model}:{user_id}"
         hasher = hashlib.sha256()
         hasher.update(serialized.encode("utf-8"))
         return f"aegis:ai_cache:{hasher.hexdigest()}"
@@ -84,7 +84,7 @@ class AIService:
         active_model = model or settings.DEFAULT_AI_MODEL
         
         # 1. Caching check
-        cache_key = self._get_cache_key(messages, active_model)
+        cache_key = self._get_cache_key(messages, active_model, user_id)
         if not bypass_cache:
             cached = self._get_cached_response(cache_key)
             if cached:
