@@ -123,5 +123,34 @@ class ToolRegistryError(AgentEngineException):
     def __init__(self, message: str):
         super().__init__(message, code="TOOL_REGISTRY_ERROR")
 
+class ResponseGenerationError(AgentEngineException):
+    def __init__(self, message: str):
+        super().__init__(message, code="RESPONSE_GENERATION_ERROR")
+
+class ResponseValidationError(AgentEngineException):
+    def __init__(self, message: str):
+        super().__init__(message, code="RESPONSE_VALIDATION_ERROR")
+
+class ResponseTooLong(AgentEngineException):
+    def __init__(self, message: str = "Generated response length exceeds limits."):
+        super().__init__(message, code="RESPONSE_TOO_LONG")
+
+class MissingCriticResult(AgentEngineException):
+    def __init__(self, message: str = "Missing critic validation result in state."):
+        super().__init__(message, code="MISSING_CRITIC_RESULT")
+
+class InvalidCitation(AgentEngineException):
+    def __init__(self, message: str):
+        super().__init__(message, code="INVALID_CITATION")
+
+class UnsupportedResponseFormat(AgentEngineException):
+    def __init__(self, message: str):
+        super().__init__(message, code="UNSUPPORTED_RESPONSE_FORMAT")
+
+class UnsafeResponse(AgentEngineException):
+    def __init__(self, message: str = "Response failed prompt injection check or safety review."):
+        super().__init__(message, code="UNSAFE_RESPONSE")
+
+
 
 
