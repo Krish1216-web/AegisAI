@@ -31,6 +31,7 @@ class AgentState(TypedDict):
     agent_outputs: Dict[str, Any]
     tool_results: List[Dict[str, Any]]
     memory_context: Optional[str]
+    memory_results: Optional[Dict[str, Any]]
     research_results: Optional[str]
     critic_result: Optional[str]
     final_response: Optional[str]

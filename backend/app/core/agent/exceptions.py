@@ -55,3 +55,32 @@ class InvalidResearchResult(AgentEngineException):
     def __init__(self, message: str):
         super().__init__(message, code="INVALID_RESEARCH_RESULT")
 
+class MemoryProviderUnavailable(AgentEngineException):
+    def __init__(self, message: str = "Memory provider is unavailable."):
+        super().__init__(message, code="MEMORY_PROVIDER_UNAVAILABLE")
+
+class MemoryQueryError(AgentEngineException):
+    def __init__(self, message: str):
+        super().__init__(message, code="MEMORY_QUERY_ERROR")
+
+class MemoryNotFound(AgentEngineException):
+    def __init__(self, message: str = "Target memory record was not found."):
+        super().__init__(message, code="MEMORY_NOT_FOUND")
+
+class InvalidMemoryRecord(AgentEngineException):
+    def __init__(self, message: str):
+        super().__init__(message, code="INVALID_MEMORY_RECORD")
+
+class MemoryPermissionError(AgentEngineException):
+    def __init__(self, message: str = "Permission denied for this memory record."):
+        super().__init__(message, code="MEMORY_PERMISSION_ERROR")
+
+class MemoryLimitExceeded(AgentEngineException):
+    def __init__(self, message: str):
+        super().__init__(message, code="MEMORY_LIMIT_EXCEEDED")
+
+class SensitiveMemoryRejected(AgentEngineException):
+    def __init__(self, message: str = "Memory contains restricted credentials/secrets and was rejected."):
+        super().__init__(message, code="SENSITIVE_MEMORY_REJECTED")
+
+
