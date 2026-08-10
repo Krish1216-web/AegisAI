@@ -83,4 +83,45 @@ class SensitiveMemoryRejected(AgentEngineException):
     def __init__(self, message: str = "Memory contains restricted credentials/secrets and was rejected."):
         super().__init__(message, code="SENSITIVE_MEMORY_REJECTED")
 
+class ToolNotFound(AgentEngineException):
+    def __init__(self, message: str = "The requested tool was not found."):
+        super().__init__(message, code="TOOL_NOT_FOUND")
+
+class ToolDisabled(AgentEngineException):
+    def __init__(self, message: str = "The tool is currently disabled."):
+        super().__init__(message, code="TOOL_DISABLED")
+
+class ToolPermissionDenied(AgentEngineException):
+    def __init__(self, message: str = "Access denied for this tool."):
+        super().__init__(message, code="TOOL_PERMISSION_DENIED")
+
+class ToolArgumentValidationError(AgentEngineException):
+    def __init__(self, message: str):
+        super().__init__(message, code="TOOL_ARGUMENT_VALIDATION_ERROR")
+
+class ToolExecutionError(AgentEngineException):
+    def __init__(self, message: str):
+        super().__init__(message, code="TOOL_EXECUTION_ERROR")
+
+class ToolTimeout(AgentEngineException):
+    def __init__(self, message: str = "Tool execution timed out."):
+        super().__init__(message, code="TOOL_TIMEOUT")
+
+class ToolConfirmationRequired(AgentEngineException):
+    def __init__(self, message: str = "Human confirmation is required before execution."):
+        super().__init__(message, code="TOOL_CONFIRMATION_REQUIRED")
+
+class ToolConfirmationInvalid(AgentEngineException):
+    def __init__(self, message: str = "Supplied confirmation token is invalid or expired."):
+        super().__init__(message, code="TOOL_CONFIRMATION_INVALID")
+
+class ToolAlreadyExecuted(AgentEngineException):
+    def __init__(self, message: str = "Tool execution request has already been executed (Idempotency conflict)."):
+        super().__init__(message, code="TOOL_ALREADY_EXECUTED")
+
+class ToolRegistryError(AgentEngineException):
+    def __init__(self, message: str):
+        super().__init__(message, code="TOOL_REGISTRY_ERROR")
+
+
 
