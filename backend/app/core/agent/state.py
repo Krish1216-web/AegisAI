@@ -26,6 +26,7 @@ class AgentState(TypedDict):
     current_task: Optional[str]
     execution_status: ExecutionStatus
     execution_plan: Optional[List[str]]
+    detailed_execution_plan: Optional[Dict[str, Any]]
     messages: List[Dict[str, Any]]
     agent_outputs: Dict[str, Any]
     tool_results: List[Dict[str, Any]]
