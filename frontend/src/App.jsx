@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { HashRouter, Routes, Route, Navigate, Link, useLocation, useNavigate, Outlet } from 'react-router-dom';
 import LandingPage from './pages/LandingPage';
 import LoginPage from './pages/LoginPage';
+import { AuthProvider, useAuth } from './context/AuthContext';
 
 // User Portal Pages
 import UserDashboard from './pages/user/UserDashboard';
@@ -56,11 +57,18 @@ import {
 
 // Authentication & Core State Provider Component
 export default function App() {
-  const [auth, setAuth] = useState(() => {
-    const saved = localStorage.getItem('aegis_auth_role');
-    const isLogged = localStorage.getItem('aegis_auth_logged') === 'true';
-    return isLogged ? { loggedIn: true, role: saved } : { loggedIn: false, role: null };
-  });
+  return (
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
+  );
+}
+
+function AppContent() {
+  const { isAuthenticated, role, logout, isLoading } = useAuth();
+  
+  const auth = { loggedIn: isAuthenticated, role };
+  const handleLogout = logout;
 
   const [logs, setLogs] = useState([
     { timestamp: '16:10:02', agent: 'SYS', text: 'AegisAI OS handshake secure. Security check clear.', status: 'success' },
@@ -81,23 +89,6 @@ export default function App() {
     setLogs(prev => [...prev, { timestamp: time, agent, text, status }]);
   };
 
-  const handleLogin = (role) => {
-    setAuth({ loggedIn: true, role });
-    localStorage.setItem('aegis_auth_logged', 'true');
-    localStorage.setItem('aegis_auth_role', role);
-    addLog('SYS', `Node logged in under authentication role: ${role.toUpperCase()}`, 'success');
-    triggerNotification('Security handshake success', `Session initialized as role: ${role}`);
-  };
-
-  const handleLogout = () => {
-    setAuth({ loggedIn: false, role: null });
-    localStorage.removeItem('aegis_auth_logged');
-    localStorage.removeItem('aegis_auth_role');
-    setLogs([
-      { timestamp: '16:10:02', agent: 'SYS', text: 'AegisAI OS handshake secure. Security check clear.', status: 'success' }
-    ]);
-  };
-
   // Keyboard shortcut listener for Command Palette (Ctrl + K)
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -110,6 +101,15 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-[#06070a] flex flex-col items-center justify-center text-slate-400 gap-4">
+        <div className="w-10 h-10 border-4 border-cyan-500/20 border-t-cyan-500 rounded-full animate-spin"></div>
+        <span className="text-[10px] uppercase tracking-wider font-semibold text-cyan-400">Decrypting secure node...</span>
+      </div>
+    );
+  }
+
   return (
     <HashRouter>
       <Routes>
@@ -118,9 +118,9 @@ export default function App() {
           path="/login" 
           element={
             auth.loggedIn ? (
-              <Navigate to={auth.role === 'admin' ? '/admin/dashboard' : '/user/dashboard'} replace />
+              <Navigate to={auth.role === 'admin' || auth.role === 'super admin' ? '/admin/dashboard' : '/user/dashboard'} replace />
             ) : (
-              <LoginPage onLoginSuccess={handleLogin} />
+              <LoginPage />
             )
           } 
         />
@@ -151,7 +151,7 @@ export default function App() {
         {/* Admin Portal Routes */}
         <Route 
           element={
-            auth.loggedIn && auth.role === 'admin' ? (
+            auth.loggedIn && (auth.role === 'admin' || auth.role === 'super admin') ? (
               <AdminLayout auth={auth} onLogout={handleLogout} logs={logs} addLog={addLog} notification={notification} triggerNotification={triggerNotification} />
             ) : (
               <Navigate to="/login" replace />

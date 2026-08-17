@@ -70,6 +70,27 @@ def detect_prompt_injection(content: str) -> bool:
     lowered = content.lower()
     return any(ind in lowered for ind in indicators)
 
+def sanitize_sensitive_data(content: str) -> str:
+    # 1. Scrub common API Key signatures
+    from app.core.agent.memory import scrub_sensitive_data
+    content = scrub_sensitive_data(content)
+    
+    # 2. Scrub database connection strings
+    db_pattern = r"(?i)(postgresql|postgres|sqlite|mysql|mongodb|redis|amqp|smtp):\/\/([^@\n]+)@([^\n/]+)"
+    content = re.sub(db_pattern, r"\1://[REDACTED_CREDENTIALS]@\3", content)
+    
+    # 3. Scrub internal stack traces
+    stack_pattern = r"(?i)traceback\s+\(most\s+recent\s+call\s+last\):.*"
+    content = re.sub(stack_pattern, "[Internal Stack Trace Redacted]", content, flags=re.DOTALL)
+    
+    # 4. Scrub redis keys
+    content = re.sub(r"(aegis:(?:execution|cancel|ratelimit|lock):[a-zA-Z0-9_\-:]+)", "[REDACTED_REDIS_KEY]", content)
+    
+    # 5. Scrub internal security tokens
+    content = re.sub(r"(?i)(eyJhbGciOi[a-zA-Z0-9_\-\.]+)", "[REDACTED_SECURITY_TOKEN]", content)
+    
+    return content
+
 class ResponseGeneratorAgent(BaseAgent):
     """
     ResponseGeneratorAgent shapes final outputs after passing Critic verification gates.
@@ -107,6 +128,10 @@ class ResponseGeneratorAgent(BaseAgent):
         prompt = state.get("original_prompt", "")
         execution_id = context.request_id or "exec-default"
         
+        # Safely initialize metadata
+        if "metadata" not in state or state["metadata"] is None:
+            state["metadata"] = {}
+        
         # 1. Inspect Critic Gate
         critic_data = state["agent_outputs"]["CriticAgent"]["output"]
         try:
@@ -135,6 +160,10 @@ class ResponseGeneratorAgent(BaseAgent):
                 completed=False,
                 metadata={"response_status": ResponseStatus.FAILED}
             )
+            state["final_response"] = res.content
+            state["metadata"]["response_format"] = res.format.value
+            state["metadata"]["response_confidence"] = res.confidence
+            state["metadata"]["response_status"] = ResponseStatus.FAILED.value
             return AgentResult(
                 agent_name=self.name, status="failed", output=res.model_dump_json(),
                 confidence=0.0, execution_time=elapsed, token_usage={}
@@ -150,6 +179,10 @@ class ResponseGeneratorAgent(BaseAgent):
                 completed=False,
                 metadata={"response_status": ResponseStatus.CLARIFICATION_REQUIRED}
             )
+            state["final_response"] = res.content
+            state["metadata"]["response_format"] = res.format.value
+            state["metadata"]["response_confidence"] = res.confidence
+            state["metadata"]["response_status"] = ResponseStatus.CLARIFICATION_REQUIRED.value
             return AgentResult(
                 agent_name=self.name, status="clarification_required", output=res.model_dump_json(),
                 confidence=0.5, execution_time=elapsed, token_usage={}
@@ -165,6 +198,10 @@ class ResponseGeneratorAgent(BaseAgent):
                 completed=False,
                 metadata={"response_status": ResponseStatus.RESEARCH_REQUIRED}
             )
+            state["final_response"] = res.content
+            state["metadata"]["response_format"] = res.format.value
+            state["metadata"]["response_confidence"] = res.confidence
+            state["metadata"]["response_status"] = ResponseStatus.RESEARCH_REQUIRED.value
             return AgentResult(
                 agent_name=self.name, status="research_required", output=res.model_dump_json(),
                 confidence=0.6, execution_time=elapsed, token_usage={}
@@ -180,6 +217,10 @@ class ResponseGeneratorAgent(BaseAgent):
                 completed=False,
                 metadata={"response_status": ResponseStatus.TOOL_EXECUTION_REQUIRED}
             )
+            state["final_response"] = res.content
+            state["metadata"]["response_format"] = res.format.value
+            state["metadata"]["response_confidence"] = res.confidence
+            state["metadata"]["response_status"] = ResponseStatus.TOOL_EXECUTION_REQUIRED.value
             return AgentResult(
                 agent_name=self.name, status="tool_required", output=res.model_dump_json(),
                 confidence=0.6, execution_time=elapsed, token_usage={}
@@ -221,6 +262,9 @@ class ResponseGeneratorAgent(BaseAgent):
             content = "Mock response output formulated."
             if calc_val:
                 content = calc_val
+                
+            # Apply security sanitization
+            content = sanitize_sensitive_data(content)
 
             res = ResponseGenerationResult(
                 execution_id=execution_id,
@@ -232,6 +276,13 @@ class ResponseGeneratorAgent(BaseAgent):
                 metadata={"response_status": ResponseStatus.SUCCESS}
             )
             elapsed = time.perf_counter() - start_time
+            
+            # Save results in agent state
+            state["final_response"] = res.content
+            state["metadata"]["response_format"] = res.format.value
+            state["metadata"]["response_confidence"] = res.confidence
+            state["metadata"]["response_status"] = ResponseStatus.SUCCESS.value
+
             return AgentResult(
                 agent_name=self.name,
                 status="success",
@@ -274,6 +325,9 @@ class ResponseGeneratorAgent(BaseAgent):
             raw_text = raw_text.strip()
 
             res = ResponseGenerationResult.model_validate_json(raw_text)
+            
+            # Apply security sanitization
+            res.content = sanitize_sensitive_data(res.content)
             
             # Enforce limits checks
             if len(res.content) > MAX_RESPONSE_LENGTH:

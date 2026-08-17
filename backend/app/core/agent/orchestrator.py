@@ -95,12 +95,19 @@ class OrchestratorAgent(BaseAgent):
         # Support Mock mode execution to bypass API key requirement in local tests
         if context.provider == "mock" or "mock" in prompt.lower():
             logger.info("Executing Orchestrator in Mock mode.")
+            requires_tools = "calculate" in prompt.lower() or "weather" in prompt.lower()
+            requires_research = "research" in prompt.lower()
+            requires_memory = "context" in prompt.lower() or "calculate" in prompt.lower()
+            
             mock_plan = ExecutionPlan(
                 task_type=TaskType.GENERAL_QA,
                 complexity=Complexity.SIMPLE,
                 goal="Mock goal definition",
                 steps=["Mock step 1"],
                 required_agents=[AgentType.RESPONSE_GENERATOR],
+                requires_memory=requires_memory,
+                requires_research=requires_research,
+                requires_tools=requires_tools,
                 confidence=0.99
             )
             elapsed = time.perf_counter() - start_time
@@ -175,16 +182,7 @@ def route_orchestrator(state: AgentState) -> str:
             logger.info("Orchestrator requires clarification. Routing to END.")
             return "END"
             
-        required = plan.required_agents
-        if not required:
-            return "END"
-            
-        # Route to the first required agent in the plan list
-        # In a fully populated engine, we would route to 'Planner' or the specific node.
-        # Since those nodes are not built, we will route to 'END' as base behavior.
-        next_node = required[0].value
-        logger.info(f"Orchestrator routes next to: {next_node}")
-        return "END"  # Default to END for this foundation milestone
+        return "PlannerAgent"
     except Exception as e:
         logger.error(f"Failed to route orchestrator output: {e}")
         return "END"

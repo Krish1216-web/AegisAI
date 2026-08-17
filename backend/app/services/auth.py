@@ -40,16 +40,46 @@ class AuthService:
 
         hashed_password = get_password_hash(payload.password)
         
+        # Create default organization & workspace
+        org_id = uuid.uuid4()
+        workspace_id = uuid.uuid4()
+        
+        from app.models.workspace import Organization, Workspace, WorkspaceMember
+        default_org = Organization(
+            id=org_id,
+            name=f"{payload.username}'s Organization"
+        )
+        self.db.add(default_org)
+        
+        default_workspace = Workspace(
+            id=workspace_id,
+            organization_id=org_id,
+            name=f"{payload.username}'s Workspace"
+        )
+        self.db.add(default_workspace)
+
         new_user = User(
             email=payload.email,
             username=payload.username,
             password_hash=hashed_password,
             role_id=role.id,
             is_active=True,
-            is_verified=False
+            is_verified=False,
+            settings={"default_workspace_id": str(workspace_id)}
         )
+        created_user = self.user_repo.create(new_user)
         
-        return self.user_repo.create(new_user)
+        # Add creator as Workspace Owner
+        member = WorkspaceMember(
+            id=uuid.uuid4(),
+            workspace_id=workspace_id,
+            user_id=created_user.id,
+            role="owner"
+        )
+        self.db.add(member)
+        self.db.commit()
+        
+        return created_user
 
     def login_user(self, username_or_email: str, plain_password: str) -> dict:
         """

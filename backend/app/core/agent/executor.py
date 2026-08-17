@@ -1,5 +1,8 @@
 import time
 import json
+import uuid
+import datetime
+import hashlib
 from typing import Dict, Any, Set
 from loguru import logger
 
@@ -53,9 +56,9 @@ class ToolExecutorAgent(BaseAgent):
         user_id = str(context.user_id)
         workspace_id = str(context.workspace_id)
         execution_id = context.request_id or "exec-default"
+        db = context.configuration.get("db")
         
         # 1. Resolve target tool from step action
-        # Look for custom planner steps or fall back to mock command query
         action = "calculator" # Default action
         args = {"operation": "multiply", "a": 250, "b": 12} # Default args
         
@@ -63,11 +66,9 @@ class ToolExecutorAgent(BaseAgent):
         if planner_output:
             try:
                 plan_data = json.loads(planner_output["output"])
-                # Resolve the first step requiring TOOL_EXECUTOR
                 for step in plan_data.get("steps", []):
                     if step.get("agent_type") == "TOOL_EXECUTOR":
                         action = step.get("action")
-                        # Map action if calculator
                         if action == "calculator" or action == "calculator_tool":
                             action = "calculator"
                         break
@@ -80,7 +81,7 @@ class ToolExecutorAgent(BaseAgent):
             action = "weather"
             args = {"location": "Seattle"}
             
-        # Support token passing from state metadata (e.g. for confirming execution)
+        # Support token passing from state metadata
         conf_token = state.get("metadata", {}).get("confirmation_token")
         
         # Idempotency check
@@ -88,6 +89,30 @@ class ToolExecutorAgent(BaseAgent):
         if idempotency_key in self.executed_keys:
             logger.warning(f"Tool idempotency conflict detected for key: {idempotency_key}")
             raise ToolAlreadyExecuted()
+
+        # Database Setup for ToolExecution
+        tool_exec = None
+        args_str = json.dumps(args, sort_keys=True)
+        args_hash = hashlib.sha256(args_str.encode()).hexdigest()
+        
+        if db:
+            from app.models.ai import ToolExecution
+            from app.core.agent.graph import log_event
+            try:
+                tool_exec = ToolExecution(
+                    execution_id=uuid.UUID(str(execution_id)),
+                    tool_id=action,
+                    status="RUNNING",
+                    arguments_hash=args_hash,
+                    started_at=datetime.datetime.now(datetime.timezone.utc),
+                    retry_count=state.get("metadata", {}).get("tool_retries", 0)
+                )
+                db.add(tool_exec)
+                db.commit()
+                
+                log_event(db, execution_id, "ToolStarted", agent_type=self.name, status="success", metadata={"tool_id": action})
+            except Exception as e:
+                logger.error(f"Failed to record tool execution start: {e}")
 
         try:
             # 2. Retrieve tool
@@ -99,7 +124,6 @@ class ToolExecutorAgent(BaseAgent):
                 raise ToolDisabled()
                 
             # 4. Permission guard check
-            # User must possess matching tool permission role in their ExecutionContext
             required_perms = defn.required_permissions
             if required_perms:
                 user_perms = context.permissions or []
@@ -125,6 +149,19 @@ class ToolExecutorAgent(BaseAgent):
                         execution_time=elapsed,
                         metadata={"confirmation_token": expected_token}
                     )
+                    
+                    if db and tool_exec:
+                        try:
+                            tool_exec.status = "REQUIRES_CONFIRMATION"
+                            tool_exec.completed_at = datetime.datetime.now(datetime.timezone.utc)
+                            tool_exec.result = "Requires human confirmation."
+                            db.commit()
+                        except Exception as db_err:
+                            logger.error(f"Failed to update tool state to confirmation: {db_err}")
+                    
+                    tool_results_list = state.get("tool_results", [])
+                    tool_results_list.append(tool_res.model_dump())
+                    
                     return AgentResult(
                         agent_name=self.name,
                         status="requires_confirmation",
@@ -149,6 +186,18 @@ class ToolExecutorAgent(BaseAgent):
                 execution_time=elapsed
             )
             
+            if db and tool_exec:
+                try:
+                    tool_exec.status = "COMPLETED"
+                    tool_exec.completed_at = datetime.datetime.now(datetime.timezone.utc)
+                    tool_exec.result = str(output)
+                    db.commit()
+                    
+                    from app.core.agent.graph import log_event
+                    log_event(db, execution_id, "ToolCompleted", agent_type=self.name, status="success", metadata={"tool_id": action})
+                except Exception as db_err:
+                    logger.error(f"Failed to update tool completion: {db_err}")
+            
             # Save idempotency record
             self.executed_keys[idempotency_key] = tool_res
             
@@ -166,4 +215,15 @@ class ToolExecutorAgent(BaseAgent):
             )
         except Exception as e:
             logger.error(f"ToolExecutorAgent execution failure: {e}")
+            if db and tool_exec:
+                try:
+                    tool_exec.status = "FAILED"
+                    tool_exec.completed_at = datetime.datetime.now(datetime.timezone.utc)
+                    tool_exec.error = str(e)
+                    db.commit()
+                    
+                    from app.core.agent.graph import log_event
+                    log_event(db, execution_id, "ToolCompleted", agent_type=self.name, status="failed", metadata={"tool_id": action, "error": str(e)})
+                except Exception as db_err:
+                    logger.error(f"Failed to log tool failure in database: {db_err}")
             raise e
