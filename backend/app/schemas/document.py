@@ -54,6 +54,32 @@ class DocumentStatusResponse(BaseModel):
     page_count: Optional[int] = None
     extracted_text_length: Optional[int] = None
     updated_at: datetime.datetime
+    total_chunks: Optional[int] = None
+    processed_chunks: Optional[int] = None
+    failed_chunks: Optional[int] = None
+    embedding_model: Optional[str] = None
+    progress: Optional[float] = None
+
+    class Config:
+        from_attributes = True
+        populate_by_name = True
+
+class DocumentChunkResponse(BaseModel):
+    id: uuid.UUID
+    document_id: uuid.UUID
+    chunk_index: int
+    content: str
+    content_hash: str
+    token_count: int
+    character_count: int
+    page_number: Optional[int] = None
+    section_title: Optional[str] = None
+    start_offset: Optional[int] = None
+    end_offset: Optional[int] = None
+    embedding_model: str
+    embedding_dimension: int
+    created_at: datetime.datetime
+    updated_at: datetime.datetime
 
     class Config:
         from_attributes = True

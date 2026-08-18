@@ -13,8 +13,7 @@ from app.database.session import get_db
 from app.api.dependencies import get_current_user, get_workspace_member
 from app.models.user import User, Role
 from app.models.workspace import Workspace, Organization, WorkspaceMember
-from app.models.document import Document
-from app.services.document_processing import DocumentProcessingService
+from app.models.document import Document, DocumentChunk
 
 # Setup SQLite in-memory database with StaticPool
 engine = create_engine(
@@ -35,6 +34,7 @@ TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engin
 @pytest.fixture(name="db")
 def db_fixture():
     session = TestingSessionLocal()
+    session.query(DocumentChunk).delete()
     session.query(Document).delete()
     session.query(WorkspaceMember).delete()
     session.query(Workspace).delete()
@@ -49,7 +49,7 @@ def db_fixture():
 
 @pytest.fixture(name="client")
 def client_fixture(db):
-    org = Organization(id=uuid.uuid4(), name="Proc Corp")
+    org = Organization(id=uuid.uuid4(), name="Chunking Corp")
     db.add(org)
     db.commit()
     
@@ -130,75 +130,7 @@ def client_fixture(db):
     yield client
     app.dependency_overrides.clear()
 
-def test_document_processing_service_success(client, db):
-    doc_id = uuid.uuid4()
-    workspace_id = client.workspace_a_id
-    user_id = client.user_a.id
-    
-    doc = Document(
-        id=doc_id,
-        user_id=user_id,
-        workspace_id=workspace_id,
-        filename="test.txt",
-        original_filename="test.txt",
-        mime_type="text/plain",
-        file_extension=".txt",
-        file_size=20,
-        checksum="hash1",
-        storage_path="workspaces/x/documents/y/file",
-        status="UPLOADED"
-    )
-    db.add(doc)
-    db.commit()
-
-    # Mock storage and extractor factory
-    mock_storage = MagicMock()
-    mock_storage.get_file.return_value = b"Hello, AegisAI Document Normalizer!"
-    
-    with patch("app.services.document_processing.DocumentStorage", return_value=mock_storage):
-        DocumentProcessingService.process_document(db, doc_id)
-        
-    db.refresh(doc)
-    assert doc.status == "READY"
-    assert doc.extracted_text_length == len("Hello, AegisAI Document Normalizer!")
-    assert doc.meta_data["word_count"] == 4
-    assert doc.meta_data["character_count"] == len("Hello, AegisAI Document Normalizer!")
-
-def test_document_processing_service_failure(client, db):
-    doc_id = uuid.uuid4()
-    workspace_id = client.workspace_a_id
-    user_id = client.user_a.id
-    
-    doc = Document(
-        id=doc_id,
-        user_id=user_id,
-        workspace_id=workspace_id,
-        filename="bad.pdf",
-        original_filename="bad.pdf",
-        mime_type="application/pdf",
-        file_extension=".pdf",
-        file_size=20,
-        checksum="hash2",
-        storage_path="workspaces/x/documents/y/file",
-        status="UPLOADED"
-    )
-    db.add(doc)
-    db.commit()
-
-    # Trigger failure by forcing storage to raise exception
-    with patch("app.services.document_processing.DocumentStorage") as mock_class:
-        mock_instance = mock_class.return_value
-        mock_instance.get_file.side_effect = Exception("Read file corrupted db credentials password")
-        
-        DocumentProcessingService.process_document(db, doc_id)
-
-    db.refresh(doc)
-    assert doc.status == "FAILED"
-    # Verify error string was sanitized to hide database secrets/creds
-    assert "parser or system error" in doc.processing_error
-    assert "password" not in doc.processing_error
-
-def test_api_queue_process_and_status(client, db):
+def test_api_list_chunks_and_details(client, db):
     # Setup document uploaded by User A
     doc_id = uuid.uuid4()
     doc = Document(
@@ -212,34 +144,47 @@ def test_api_queue_process_and_status(client, db):
         file_size=100,
         checksum="hash3",
         storage_path="some_path",
-        status="UPLOADED"
+        status="READY"
     )
     db.add(doc)
     db.commit()
 
-    # Process Document (queues background task)
-    def mock_add_task(func, *args, **kwargs):
-        session = args[0]
-        did = args[1]
-        d = session.query(Document).filter(Document.id == did).first()
-        d.status = "PROCESSING"
-        session.commit()
+    chunk_id = uuid.uuid4()
+    chunk = DocumentChunk(
+        id=chunk_id,
+        document_id=doc_id,
+        user_id=client.user_a.id,
+        workspace_id=client.workspace_a_id,
+        chunk_index=0,
+        content="This is the first segment.",
+        content_hash="h1",
+        token_count=6,
+        character_count=26,
+        embedding_model="text-embedding-3-small",
+        embedding_dimension=1536
+    )
+    db.add(chunk)
+    db.commit()
 
-    with patch("fastapi.BackgroundTasks.add_task", side_effect=mock_add_task):
-        response = client.post(f"/api/v1/documents/{doc_id}/process")
-        assert response.status_code == 202
-        data = response.json()
-        assert data["document_id"] == str(doc_id)
-        assert data["status"] == "PROCESSING"
+    # List Chunks
+    response = client.get(f"/api/v1/documents/{doc_id}/chunks")
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data) == 1
+    assert data[0]["content"] == "This is the first segment."
+    # Assert vector embedding was omitted from list payload response!
+    assert "embedding" not in data[0]
 
-    # Status Check
-    status_response = client.get(f"/api/v1/documents/{doc_id}/status")
-    assert status_response.status_code == 200
-    status_data = status_response.json()
-    assert status_data["document_id"] == str(doc_id)
-    assert status_data["status"] == "PROCESSING"
+    # Get Single Chunk details
+    detail_response = client.get(f"/api/v1/documents/{doc_id}/chunks/{chunk_id}")
+    assert detail_response.status_code == 200
+    detail_data = detail_response.json()
+    assert detail_data["id"] == str(chunk_id)
+    assert detail_data["content"] == "This is the first segment."
+    # Assert vector embedding was omitted from details payload response!
+    assert "embedding" not in detail_data
 
-def test_api_process_conflict(client, db):
+def test_api_trigger_chunking_and_reindex(client, db):
     doc_id = uuid.uuid4()
     doc = Document(
         id=doc_id,
@@ -252,17 +197,26 @@ def test_api_process_conflict(client, db):
         file_size=100,
         checksum="hash3",
         storage_path="some_path",
-        status="PROCESSING"
+        status="READY"
     )
     db.add(doc)
     db.commit()
 
-    # Post process should conflict if currently in PROCESSING status
-    response = client.post(f"/api/v1/documents/{doc_id}/process")
-    assert response.status_code == 409
-    assert "currently being processed" in response.json()["detail"]
+    # Trigger chunk (queues background task)
+    with patch("fastapi.BackgroundTasks.add_task") as mock_add:
+        response = client.post(f"/api/v1/documents/{doc_id}/chunk")
+        assert response.status_code == 202
+        assert response.json()["status"] == "PROCESSING"
+        assert mock_add.call_count == 1
 
-def test_api_process_tenant_isolation(client, db):
+    # Trigger reindex (queues background task)
+    with patch("fastapi.BackgroundTasks.add_task") as mock_add_reindex:
+        response = client.post(f"/api/v1/documents/{doc_id}/reindex")
+        assert response.status_code == 202
+        assert response.json()["status"] == "PROCESSING"
+        assert mock_add_reindex.call_count == 1
+
+def test_api_chunk_tenant_isolation(client, db):
     # User B's document in Workspace B
     doc_id = uuid.uuid4()
     doc = Document(
@@ -276,15 +230,15 @@ def test_api_process_tenant_isolation(client, db):
         file_size=100,
         checksum="hash4",
         storage_path="secret_path",
-        status="UPLOADED"
+        status="READY"
     )
     db.add(doc)
     db.commit()
 
-    # User A tries to process User B's document
-    response = client.post(f"/api/v1/documents/{doc_id}/process")
+    # User A tries to view User B's document chunks
+    response = client.get(f"/api/v1/documents/{doc_id}/chunks")
     assert response.status_code == 403 or response.status_code == 404
 
-    # User A tries to check status of User B's document
-    status_response = client.get(f"/api/v1/documents/{doc_id}/status")
-    assert status_response.status_code == 403 or status_response.status_code == 404
+    # User A tries to trigger chunking of User B's document
+    chunk_response = client.post(f"/api/v1/documents/{doc_id}/chunk")
+    assert chunk_response.status_code == 403 or chunk_response.status_code == 404

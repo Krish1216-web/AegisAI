@@ -1,8 +1,30 @@
 import uuid
-from sqlalchemy import String, Integer, ForeignKey, Float, JSON
+from sqlalchemy import String, Integer, ForeignKey, Float, JSON, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from typing import List, Optional
 from app.database.base_class import Base, AuditMixin
+
+# Custom pgvector type fallback for development / missing library
+try:
+    from pgvector.sqlalchemy import Vector
+except ImportError:
+    from sqlalchemy.types import TypeDecorator
+    from sqlalchemy import Text
+    import json
+    class Vector(TypeDecorator):
+        impl = Text
+        cache_ok = True
+        def __init__(self, dimensions=None):
+            super().__init__()
+            self.dimensions = dimensions
+        def process_bind_param(self, value, dialect):
+            if value is None:
+                return None
+            return json.dumps(value)
+        def process_result_value(self, value, dialect):
+            if value is None:
+                return None
+            return json.loads(value)
 
 class Document(Base, AuditMixin):
     __tablename__ = "documents"
@@ -42,11 +64,35 @@ class Document(Base, AuditMixin):
 
 class DocumentChunk(Base, AuditMixin):
     __tablename__ = "document_chunks"
-    document_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("documents.id", ondelete="CASCADE"), nullable=False)
-    chunk_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    
+    document_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("documents.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False, index=True)
+    
+    chunk_index: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
     content: Mapped[str] = mapped_column(String, nullable=False)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    
+    token_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    character_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    
+    page_number: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    section_title: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    
+    start_offset: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    end_offset: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    
+    embedding: Mapped[Optional[list]] = mapped_column(Vector(1536), nullable=True)
+    embedding_model: Mapped[str] = mapped_column(String(100), nullable=False)
+    embedding_dimension: Mapped[int] = mapped_column(Integer, nullable=False)
+    
+    meta_data: Mapped[Optional[dict]] = mapped_column("metadata", JSON, nullable=True)
     
     document = relationship("Document", back_populates="chunks")
+    
+    __table_args__ = (
+        UniqueConstraint("document_id", "chunk_index", name="uq_document_chunks_doc_chunk"),
+    )
 
 class DocumentEmbedding(Base, AuditMixin):
     __tablename__ = "document_embeddings"

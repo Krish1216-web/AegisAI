@@ -51,6 +51,9 @@ class BaseConfig(BaseSettings):
     EMBEDDING_PROVIDER: str = Field(default="openai", env="EMBEDDING_PROVIDER")
     EMBEDDING_MODEL: str = Field(default="text-embedding-3-small", env="EMBEDDING_MODEL")
     EMBEDDING_DIMENSION: int = Field(default=1536, env="EMBEDDING_DIMENSION")
+    EMBEDDING_BATCH_SIZE: int = Field(default=32, env="EMBEDDING_BATCH_SIZE")
+    CHUNK_SIZE: int = Field(default=1000, env="CHUNK_SIZE")
+    CHUNK_OVERLAP: int = Field(default=150, env="CHUNK_OVERLAP")
     DOCUMENT_STORAGE_PATH: str = Field(default="storage", env="DOCUMENT_STORAGE_PATH")
     MAX_DOCUMENT_SIZE_MB: int = Field(default=50, env="MAX_DOCUMENT_SIZE_MB")
     

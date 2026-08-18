@@ -121,18 +121,25 @@ The client dashboard opens on `http://localhost:5173`.
 
 ---
 
-## 6. Document Processing Pipeline
+## 6. Document Processing & Indexing Pipeline
 
-AegisAI supports uploading and parsing various files into clean, normalized text in a secure background process:
+AegisAI supports uploading, extracting, chunking, and embedding files into high-dimensional vector representations in background jobs:
 
 - **Secure Storage**: Resolves files into localized `workspaces/<workspace_id>/documents/<doc_id>/original_file` paths.
 - **Multiprocess Extractors**: Parsers for PDF, DOCX, PPTX, XLSX, TXT, CSV, Image, and Audio/Video containers.
 - **Format Normalizer**: Standardizes whitespace, unicode control characters, and line endings.
 - **Heuristic Scanner**: Scans for prompt injection triggers without editing valid payload text.
+- **Intelligent Chunker**: Splitting text recursively while preserving page and section titles.
+- **Embedding Batch Service**: Parallel OpenAI/Gemini/Mock vector generation, handling transient API retries and batch-level deduplication.
+- **Idempotent Storage**: Deduplicates and reuses embedding vectors via `content_hash` matching.
 - **API Endpoints**:
   - `POST /api/v1/documents/upload` - Tenant-isolated file uploader.
-  - `POST /api/v1/documents/{id}/process` - Queue background text extraction.
+  - `POST /api/v1/documents/{id}/process` - Trigger full extract-chunk-embed background job.
   - `GET /api/v1/documents/{id}/status` - Check current extraction state.
+  - `POST /api/v1/documents/{id}/chunk` - Manually trigger chunking process.
+  - `GET /api/v1/documents/{id}/chunks` - List paginated text chunks (omits vector lists).
+  - `GET /api/v1/documents/{id}/chunks/{chunk_id}` - View specific chunk details.
+  - `POST /api/v1/documents/{id}/reindex` - Wipe and regenerate vector embeddings.
 
 ---
 

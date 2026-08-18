@@ -11,16 +11,18 @@ from app.database.session import get_db
 from app.api.dependencies import get_current_user, get_workspace_member
 from app.models.user import User
 from app.models.workspace import WorkspaceMember
-from app.models.document import Document
+from app.models.document import Document, DocumentChunk
 from app.schemas.document import (
     DocumentUploadResponse, 
     DocumentListItemResponse, 
     DocumentDetailsResponse,
-    DocumentStatusResponse
+    DocumentStatusResponse,
+    DocumentChunkResponse
 )
 from app.services.document_storage import DocumentStorage
 from app.services.file_validator import FileValidator
 from app.services.document_processing import DocumentProcessingService
+from app.core.config import settings
 from app.core.document_exceptions import (
     DocumentNotFound, 
     DocumentPermissionDenied, 
@@ -299,7 +301,7 @@ def get_document_processing_status(
     db: Session = Depends(get_db)
 ):
     """
-    Retrieves the current extraction status and metrics for the specified document.
+    Retrieves the current extraction status, chunk count, and embedding progress metrics.
     """
     doc = db.query(Document).filter(
         Document.id == document_id, 
@@ -314,5 +316,166 @@ def get_document_processing_status(
 
     get_workspace_member(doc.workspace_id, current_user, db)
 
-    return doc
+    # Dynamically compute chunking metrics
+    total = db.query(DocumentChunk).filter(DocumentChunk.document_id == doc.id).count()
+    processed = db.query(DocumentChunk).filter(
+        DocumentChunk.document_id == doc.id, 
+        DocumentChunk.embedding != None
+    ).count()
+    progress = (processed / total * 100.0) if total > 0 else 0.0
+
+    return {
+        "id": doc.id,
+        "status": doc.status,
+        "processing_error": doc.processing_error,
+        "page_count": doc.page_count,
+        "extracted_text_length": doc.extracted_text_length,
+        "updated_at": doc.updated_at,
+        "total_chunks": total,
+        "processed_chunks": processed,
+        "failed_chunks": 0,
+        "embedding_model": settings.EMBEDDING_MODEL,
+        "progress": round(progress, 2)
+    }
+
+@router.post("/{document_id}/chunk", status_code=status.HTTP_202_ACCEPTED)
+def trigger_document_chunking(
+    document_id: uuid.UUID,
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Triggers the chunking and embedding generation pipeline for a document in the background.
+    """
+    doc = db.query(Document).filter(
+        Document.id == document_id, 
+        Document.status != "DELETED"
+    ).first()
+
+    if not doc:
+        raise DocumentNotFound("Document not found.")
+
+    if doc.user_id != current_user.id:
+        raise DocumentPermissionDenied("Access to this document is denied.")
+
+    get_workspace_member(doc.workspace_id, current_user, db)
+
+    if doc.status in ["PROCESSING", "CHUNKING", "EMBEDDING"]:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Document processing is already active (status: {doc.status})."
+        )
+
+    # Trigger core process pipeline containing chunking & embeddings steps
+    background_tasks.add_task(DocumentProcessingService.process_document, db, doc.id)
+
+    return {
+        "document_id": str(doc.id),
+        "status": "PROCESSING"
+    }
+
+@router.get("/{document_id}/chunks", response_model=List[DocumentChunkResponse])
+def list_document_chunks(
+    document_id: uuid.UUID,
+    limit: int = Query(default=10, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Lists the chunks of a document with pagination. Embedding vectors are omitted in the response.
+    """
+    doc = db.query(Document).filter(
+        Document.id == document_id, 
+        Document.status != "DELETED"
+    ).first()
+
+    if not doc:
+        raise DocumentNotFound("Document not found.")
+
+    if doc.user_id != current_user.id:
+        raise DocumentPermissionDenied("Access to this document is denied.")
+
+    get_workspace_member(doc.workspace_id, current_user, db)
+
+    chunks = db.query(DocumentChunk).filter(
+        DocumentChunk.document_id == doc.id
+    ).order_by(DocumentChunk.chunk_index.asc()).limit(limit).offset(offset).all()
+
+    return chunks
+
+@router.get("/{document_id}/chunks/{chunk_id}", response_model=DocumentChunkResponse)
+def get_document_chunk(
+    document_id: uuid.UUID,
+    chunk_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Retrieves detailed metadata for a single specific chunk.
+    """
+    doc = db.query(Document).filter(
+        Document.id == document_id, 
+        Document.status != "DELETED"
+    ).first()
+
+    if not doc:
+        raise DocumentNotFound("Document not found.")
+
+    if doc.user_id != current_user.id:
+        raise DocumentPermissionDenied("Access to this document is denied.")
+
+    get_workspace_member(doc.workspace_id, current_user, db)
+
+    chunk = db.query(DocumentChunk).filter(
+        DocumentChunk.id == chunk_id,
+        DocumentChunk.document_id == doc.id
+    ).first()
+
+    if not chunk:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document chunk not found."
+        )
+
+    return chunk
+
+@router.post("/{document_id}/reindex", status_code=status.HTTP_202_ACCEPTED)
+def reindex_document(
+    document_id: uuid.UUID,
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Clears all existing chunks and embeddings, then queues a full re-indexing of the document.
+    """
+    doc = db.query(Document).filter(
+        Document.id == document_id, 
+        Document.status != "DELETED"
+    ).first()
+
+    if not doc:
+        raise DocumentNotFound("Document not found.")
+
+    if doc.user_id != current_user.id:
+        raise DocumentPermissionDenied("Access to this document is denied.")
+
+    get_workspace_member(doc.workspace_id, current_user, db)
+
+    if doc.status in ["PROCESSING", "CHUNKING", "EMBEDDING"]:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Cannot reindex: processing is already active (status: {doc.status})."
+        )
+
+    # Queue full document processing background task
+    background_tasks.add_task(DocumentProcessingService.process_document, db, doc.id)
+
+    return {
+        "document_id": str(doc.id),
+        "status": "PROCESSING"
+    }
+
 
