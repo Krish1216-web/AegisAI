@@ -2,7 +2,7 @@ import uuid
 import datetime
 import io
 from typing import List, Optional
-from fastapi import APIRouter, Depends, status, File, UploadFile, Query
+from fastapi import APIRouter, Depends, status, File, UploadFile, Query, BackgroundTasks, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from loguru import logger
@@ -15,10 +15,12 @@ from app.models.document import Document
 from app.schemas.document import (
     DocumentUploadResponse, 
     DocumentListItemResponse, 
-    DocumentDetailsResponse
+    DocumentDetailsResponse,
+    DocumentStatusResponse
 )
 from app.services.document_storage import DocumentStorage
 from app.services.file_validator import FileValidator
+from app.services.document_processing import DocumentProcessingService
 from app.core.document_exceptions import (
     DocumentNotFound, 
     DocumentPermissionDenied, 
@@ -251,3 +253,66 @@ def download_document(
             "Content-Disposition": f'attachment; filename="{doc.original_filename}"'
         }
     )
+
+@router.post("/{document_id}/process", status_code=status.HTTP_202_ACCEPTED)
+def queue_process_document(
+    document_id: uuid.UUID,
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Triggers background extraction and text normalization for the specified document.
+    """
+    doc = db.query(Document).filter(
+        Document.id == document_id, 
+        Document.status != "DELETED"
+    ).first()
+
+    if not doc:
+        raise DocumentNotFound("Document not found.")
+
+    if doc.user_id != current_user.id:
+        raise DocumentPermissionDenied("Access to this document is denied.")
+
+    get_workspace_member(doc.workspace_id, current_user, db)
+
+    # Prevent concurrent or duplicate processing conflicts
+    if doc.status == "PROCESSING":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Document is currently being processed."
+        )
+
+    # Queue processing tasks in the background safely
+    background_tasks.add_task(DocumentProcessingService.process_document, db, doc.id)
+
+    return {
+        "document_id": str(doc.id),
+        "status": "PROCESSING"
+    }
+
+@router.get("/{document_id}/status", response_model=DocumentStatusResponse)
+def get_document_processing_status(
+    document_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Retrieves the current extraction status and metrics for the specified document.
+    """
+    doc = db.query(Document).filter(
+        Document.id == document_id, 
+        Document.status != "DELETED"
+    ).first()
+
+    if not doc:
+        raise DocumentNotFound("Document not found.")
+
+    if doc.user_id != current_user.id:
+        raise DocumentPermissionDenied("Access to this document is denied.")
+
+    get_workspace_member(doc.workspace_id, current_user, db)
+
+    return doc
+

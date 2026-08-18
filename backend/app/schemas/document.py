@@ -46,3 +46,15 @@ class DocumentDetailsResponse(BaseModel):
     class Config:
         from_attributes = True
         populate_by_name = True
+
+class DocumentStatusResponse(BaseModel):
+    document_id: uuid.UUID = Field(..., validation_alias="id")
+    status: str
+    processing_error: Optional[str] = None
+    page_count: Optional[int] = None
+    extracted_text_length: Optional[int] = None
+    updated_at: datetime.datetime
+
+    class Config:
+        from_attributes = True
+        populate_by_name = True

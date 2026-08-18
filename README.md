@@ -121,10 +121,25 @@ The client dashboard opens on `http://localhost:5173`.
 
 ---
 
-## 6. Testing
+## 6. Document Processing Pipeline
+
+AegisAI supports uploading and parsing various files into clean, normalized text in a secure background process:
+
+- **Secure Storage**: Resolves files into localized `workspaces/<workspace_id>/documents/<doc_id>/original_file` paths.
+- **Multiprocess Extractors**: Parsers for PDF, DOCX, PPTX, XLSX, TXT, CSV, Image, and Audio/Video containers.
+- **Format Normalizer**: Standardizes whitespace, unicode control characters, and line endings.
+- **Heuristic Scanner**: Scans for prompt injection triggers without editing valid payload text.
+- **API Endpoints**:
+  - `POST /api/v1/documents/upload` - Tenant-isolated file uploader.
+  - `POST /api/v1/documents/{id}/process` - Queue background text extraction.
+  - `GET /api/v1/documents/{id}/status` - Check current extraction state.
+
+---
+
+## 7. Testing
 
 ### Run Backend Tests
-From the `backend` folder:
+From the project root:
 ```bash
 python -m pytest backend/tests
 ```
