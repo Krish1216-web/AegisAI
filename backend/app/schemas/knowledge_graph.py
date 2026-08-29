@@ -145,3 +145,73 @@ class GraphContextResponse(BaseModel):
     entities: List[Dict[str, Any]]
     relationships: List[Dict[str, Any]]
     formatted_context: str
+
+# ---------------------------------------------------------
+# Phase 5.1: Graph Intelligence Schemas
+# ---------------------------------------------------------
+
+class RelatedEntityItem(BaseModel):
+    node_id: uuid.UUID
+    node_type: str
+    name: str
+    description: Optional[str] = None
+    distance: int
+    relevance_score: float
+    relationship_path: List[str] = Field(default_factory=list)
+    metadata: Optional[Dict[str, Any]] = None
+
+class RelatedEntitiesResponse(BaseModel):
+    node_id: uuid.UUID
+    depth: int
+    total_related: int
+    related_entities: List[RelatedEntityItem]
+
+class GraphPathStep(BaseModel):
+    from_node_id: uuid.UUID
+    from_node_name: str
+    to_node_id: uuid.UUID
+    to_node_name: str
+    relationship_type: str
+    direction: Literal["outgoing", "incoming"]
+    confidence: float
+
+class GraphPathResponse(BaseModel):
+    source_node_id: uuid.UUID
+    target_node_id: uuid.UUID
+    path_found: bool
+    distance: int
+    steps: List[GraphPathStep]
+    nodes: List[NodeResponse]
+
+class PathSearchRequest(BaseModel):
+    source_node_id: uuid.UUID
+    target_node_id: uuid.UUID
+    max_depth: int = Field(5, ge=1, le=10)
+    allowed_relationship_types: Optional[List[str]] = None
+
+class RelationshipDetail(BaseModel):
+    relationship_type: str
+    direction: Literal["outgoing", "incoming", "bidirectional"]
+    confidence: float
+    distance: int
+    via_nodes: List[str] = Field(default_factory=list)
+
+class RelationshipAnalysisRequest(BaseModel):
+    source_node_id: uuid.UUID
+    target_node_id: uuid.UUID
+    max_depth: int = Field(3, ge=1, le=5)
+
+class RelationshipAnalysisResponse(BaseModel):
+    source_node: NodeResponse
+    target_node: NodeResponse
+    are_connected: bool
+    min_distance: Optional[int] = None
+    direct_relationships: List[RelationshipDetail] = Field(default_factory=list)
+    indirect_relationships: List[RelationshipDetail] = Field(default_factory=list)
+    summary: str
+
+class GraphIntelligenceContextRequest(BaseModel):
+    entity_names: Optional[List[str]] = None
+    node_ids: Optional[List[uuid.UUID]] = None
+    depth: int = Field(2, ge=1, le=4)
+    max_entities: int = Field(20, ge=1, le=100)

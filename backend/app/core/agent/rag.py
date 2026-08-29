@@ -12,6 +12,7 @@ from app.core.rag.service import RAGService
 from app.schemas.rag import RAGResponse
 from app.services.ai_service import AIService
 from app.services.knowledge_graph import KnowledgeGraphService
+from app.services.knowledge_graph_intelligence import KnowledgeGraphIntelligenceService
 
 class RAGAgentRequest(BaseModel):
     query: str
@@ -47,7 +48,7 @@ class RAGAgentResult(BaseModel):
 class RAGAgent(BaseAgent):
     """
     Autonomous RAG Agent acting as the bridge between the multi-agent engine,
-    the pgvector/PostgreSQL vector retrieval service, and the Knowledge Graph.
+    the pgvector/PostgreSQL vector retrieval service, and the Knowledge Graph Intelligence layer.
     """
     def __init__(self, ai_service: AIService, rag_service: Optional[RAGService] = None, db: Optional[Any] = None):
         self.ai_service = ai_service
@@ -60,7 +61,7 @@ class RAGAgent(BaseAgent):
 
     @property
     def description(self) -> str:
-        return "Performs semantic vector retrieval, reranking, and grounded answer synthesis from enterprise workspace documents."
+        return "Performs semantic vector retrieval, reranking, and grounded answer synthesis from enterprise workspace documents and knowledge graphs."
 
     def validate_input(self, state: AgentState) -> bool:
         if not state.get("original_prompt") and len(state.get("messages", [])) == 0:
@@ -98,83 +99,93 @@ class RAGAgent(BaseAgent):
 
         # Check for mock / fallback mode
         if rag_service is None or context.provider == "mock" or "mock" in prompt.lower():
-            logger.info("Executing RAGAgent in local mock / fallback mode.")
+            logger.info("Executing RAG Agent in mock/unit test mode.")
             rag_result = self._execute_mock(prompt, user_id_str, workspace_id_str)
         else:
             try:
-                user_uuid = uuid.UUID(user_id_str)
-                workspace_uuid = uuid.UUID(workspace_id_str)
+                u_uuid = uuid.UUID(user_id_str) if isinstance(user_id_str, str) else user_id_str
+                w_uuid = uuid.UUID(workspace_id_str) if isinstance(workspace_id_str, str) else workspace_id_str
 
-                # Execute RAG pipeline
-                rag_response: RAGResponse = rag_service.query(
-                    workspace_id=workspace_uuid,
-                    user_id=user_uuid,
-                    query_text=prompt,
-                    limit=5,
+                import inspect
+                # Execute vector retrieval + reranking + grounded generation
+                raw_response = rag_service.query(
+                    query=prompt,
+                    workspace_id=w_uuid,
+                    user_id=u_uuid,
+                    top_k=5,
                     similarity_threshold=0.0,
                     rerank=True,
-                    provider=context.provider if context.provider != "mock" else None
+                    include_graph_context=True,
+                    provider=context.provider or "openai",
+                    model=context.model or "gpt-4o-mini"
                 )
+                if inspect.isawaitable(raw_response):
+                    rag_response: RAGResponse = await raw_response
+                else:
+                    rag_response: RAGResponse = raw_response
 
                 # Format citations
                 citations: List[RAGAgentCitation] = []
                 for c in rag_response.citations:
-                    matched_chunk = next((rc for rc in rag_response.retrieved_chunks if rc.document_id == c.document_id), None)
-                    chunk_id_str = str(getattr(matched_chunk, "chunk_id", uuid.uuid4())) if matched_chunk else str(uuid.uuid4())
-                    score = getattr(matched_chunk, "score", 1.0) if matched_chunk else 1.0
+                    cit_id = getattr(c, "citation_id", f"cit_{getattr(c, 'citation_number', 1)}")
+                    doc_id_val = str(getattr(c, "document_id", ""))
+                    chunk_id_val = str(getattr(c, "chunk_id", doc_id_val))
+                    sim_score = getattr(c, "similarity_score", getattr(c, "score", 0.9))
                     citations.append(
                         RAGAgentCitation(
-                            citation_id=f"chunk_{chunk_id_str}",
+                            citation_id=cit_id,
                             source_type="document",
-                            document_id=str(c.document_id),
-                            chunk_id=chunk_id_str,
-                            document_name=c.document_name,
-                            page_number=c.page_number,
-                            section_title=c.section_title,
-                            similarity_score=score,
-                            snippet=c.snippet
+                            document_id=doc_id_val,
+                            chunk_id=chunk_id_val,
+                            document_name=getattr(c, "document_name", "document"),
+                            page_number=getattr(c, "page_number", None),
+                            section_title=getattr(c, "section_title", None),
+                            similarity_score=sim_score,
+                            snippet=getattr(c, "snippet", "")
                         )
                     )
 
-                # Handle no-evidence cases cleanly
-                limitations: List[str] = []
-                confidence = getattr(rag_response, "confidence", 0.95)
-                answer = rag_response.answer
-
-                if len(rag_response.retrieved_chunks) == 0:
-                    answer = "I couldn't find enough relevant information in your uploaded documents to answer this reliably."
+                # Determine confidence
+                if getattr(rag_response, "confidence", None) is not None:
+                    confidence = rag_response.confidence
+                elif rag_response.citations:
+                    confidence = 0.95
+                elif "couldn't find" in rag_response.answer.lower():
                     confidence = 0.2
-                    limitations.append("No relevant document chunks found matching the query in this workspace.")
-                    citations = []
+                else:
+                    confidence = 0.85
 
-                # Optional Knowledge Graph context enrichment
-                graph_context_str: Optional[str] = None
-                if self.db is not None and len(citations) > 0:
-                    try:
-                        doc_node_ids = [uuid.UUID(c.document_id) for c in citations if c.document_id]
-                        if doc_node_ids:
-                            graph_context_str = KnowledgeGraphService.get_graph_context(
-                                db=self.db,
-                                user_id=user_uuid,
-                                workspace_id=workspace_uuid,
-                                node_ids=doc_node_ids[:3],
-                                max_depth=2
-                            )
-                    except Exception as kg_err:
-                        logger.debug(f"Knowledge Graph enrichment skipped: {kg_err}")
+                limitations = ["No relevant document chunks found matching the query in this workspace."] if confidence <= 0.2 else []
 
                 elapsed = time.perf_counter() - start_time
                 rag_result = RAGAgentResult(
                     query=prompt,
-                    answer=answer,
+                    answer=rag_response.answer,
                     citations=citations,
                     retrieved_chunks_count=len(rag_response.retrieved_chunks),
                     confidence=confidence,
                     limitations=limitations,
-                    graph_context=graph_context_str,
+                    graph_context=getattr(rag_response, "graph_context", None),
                     cached=getattr(rag_response, "cached", False),
                     execution_time=elapsed
                 )
+
+                # Enrich with Graph Intelligence if available and applicable
+                if self.db is not None and not rag_result.graph_context:
+                    try:
+                        kg_intel = KnowledgeGraphIntelligenceService(self.db)
+                        doc_names = [c.document_name for c in citations if c.document_name]
+                        graph_ctx = kg_intel.build_graph_context(
+                            user_id=u_uuid,
+                            workspace_id=w_uuid,
+                            entity_names=doc_names or [prompt],
+                            depth=2,
+                            max_entities=15
+                        )
+                        if graph_ctx:
+                            rag_result.graph_context = graph_ctx
+                    except Exception as ge:
+                        logger.debug(f"Graph intelligence enrichment skipped: {ge}")
 
             except Exception as e:
                 logger.error(f"RAG query execution failed: {e}")
@@ -261,42 +272,43 @@ class RAGAgent(BaseAgent):
                     source_type="document",
                     document_id=mock_doc_id,
                     chunk_id=mock_chunk_id,
-                    document_name="Master_Services_Agreement.docx",
-                    page_number=7,
-                    section_title="Clause 14: Termination for Convenience",
+                    document_name="Master_Service_Agreement.pdf",
+                    page_number=12,
+                    section_title="Termination Clauses",
                     similarity_score=0.88,
-                    snippet="Either party may terminate this agreement with 30 days written notice."
+                    snippet="Either party may terminate this agreement with 30 days prior written notice."
                 )
             ]
-            answer = "Clause 14 of the Master Services Agreement specifies that either party may terminate the agreement with 30 days written notice."
+            answer = "The Master Service Agreement states that either party may terminate with 30 days written notice (Page 12)."
             return RAGAgentResult(
                 query=prompt,
                 answer=answer,
                 citations=citations,
                 retrieved_chunks_count=1,
-                confidence=0.92,
+                confidence=0.93,
                 execution_time=0.05
             )
 
-        # Default document context mock
+        # General mock document answer
         citations = [
             RAGAgentCitation(
                 citation_id=f"chunk_{mock_chunk_id}",
                 source_type="document",
                 document_id=mock_doc_id,
                 chunk_id=mock_chunk_id,
-                document_name="Architecture_Overview.pdf",
+                document_name="Enterprise_Architecture_Overview.pdf",
                 page_number=1,
-                section_title="Overview",
-                similarity_score=0.85,
-                snippet="The AegisAI platform operates a multi-agent cognitive mesh with pgvector indexing."
+                section_title="System Overview",
+                similarity_score=0.90,
+                snippet="AegisAI utilizes an autonomous LangGraph agent pipeline integrated with pgvector."
             )
         ]
         return RAGAgentResult(
             query=prompt,
-            answer="Based on your uploaded Architecture Overview document, AegisAI operates a multi-agent cognitive mesh with pgvector indexing.",
+            answer="Based on your uploaded documentation, AegisAI utilizes an autonomous LangGraph agent pipeline integrated with pgvector.",
             citations=citations,
             retrieved_chunks_count=1,
-            confidence=0.9,
+            confidence=0.90,
+            graph_context="Entity: AegisAI Architecture [DOCUMENT]\n  ├── (CONTAINS) -> Autonomous LangGraph Agent Pipeline [CHUNK]",
             execution_time=0.05
         )
