@@ -113,14 +113,17 @@ class AuthService:
 
         # Register refresh token JTI in Redis session cache
         payload = decode_token(refresh_token)
-        if payload:
-            jti = payload.get("jti")
-            session_key = f"aegis:session:{user.id}:{jti}"
-            self.redis.hset(session_key, mapping={
-                "status": "active",
-                "jti": jti
-            })
-            self.redis.expire(session_key, timedelta(days=7))
+        if payload and self.redis:
+            try:
+                jti = payload.get("jti")
+                session_key = f"aegis:session:{user.id}:{jti}"
+                self.redis.hset(session_key, mapping={
+                    "status": "active",
+                    "jti": jti
+                })
+                self.redis.expire(session_key, timedelta(days=7))
+            except Exception as re:
+                logger.warning(f"Redis session cache unavailable: {re}")
 
         logger.info(f"User login successful: {user.username} (Role: {user.role.name})")
 

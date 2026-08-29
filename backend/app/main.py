@@ -47,13 +47,16 @@ app.include_router(api_router, prefix=settings.API_V1_STR)
 @app.on_event("startup")
 async def startup_event():
     logger.info("AegisAI backend startup sequence initiated.")
-    from app.database.session import SessionLocal
-    from app.database.seed import seed_database
-    db = SessionLocal()
     try:
-        seed_database(db)
-    finally:
-        db.close()
+        from app.database.session import SessionLocal
+        from app.database.seed import seed_database
+        db = SessionLocal()
+        try:
+            seed_database(db)
+        finally:
+            db.close()
+    except Exception as e:
+        logger.warning(f"Database seed skipped during startup: {e}")
 
 @app.on_event("shutdown")
 async def shutdown_event():

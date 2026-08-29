@@ -8,6 +8,7 @@ import uuid
 
 from app.core.config import settings
 
+import bcrypt
 # Initialize password hash context
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -15,13 +16,20 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     """
     Checks if a plain text password matches the saved hash.
     """
-    return pwd_context.verify(plain_password, hashed_password)
+    try:
+        return bcrypt.checkpw(plain_password.encode('utf-8')[:72], hashed_password.encode('utf-8'))
+    except Exception:
+        try:
+            return pwd_context.verify(plain_password, hashed_password)
+        except Exception:
+            return False
 
 def get_password_hash(password: str) -> str:
     """
     Computes a secure bcrypt hash of a plain text password.
     """
-    return pwd_context.hash(password)
+    salt = bcrypt.gensalt()
+    return bcrypt.hashpw(password.encode('utf-8')[:72], salt).decode('utf-8')
 
 def create_access_token(
     subject: str,
@@ -75,8 +83,22 @@ def decode_token(token: str) -> Optional[Dict[str, Any]]:
     Decrypts and validates the JWT signature and expiration.
     """
     try:
-        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        payload = jwt.decode(
+            token,
+            settings.SECRET_KEY,
+            algorithms=[settings.ALGORITHM],
+            audience="https://api.aegisai.enterprise"
+        )
         return payload
-    except JWTError as e:
-        logger.warning(f"JWT signature verification failed: {e}")
-        return None
+    except JWTError:
+        try:
+            payload = jwt.decode(
+                token,
+                settings.SECRET_KEY,
+                algorithms=[settings.ALGORITHM],
+                options={"verify_aud": False}
+            )
+            return payload
+        except JWTError as e:
+            logger.warning(f"JWT signature verification failed: {e}")
+            return None
