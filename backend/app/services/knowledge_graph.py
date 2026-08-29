@@ -67,6 +67,18 @@ class KnowledgeGraphService:
             KnowledgeGraphNode.user_id == user_id
         ).first()
 
+    def get_node_by_external_id(
+        self,
+        user_id: uuid.UUID,
+        workspace_id: uuid.UUID,
+        external_id: str
+    ) -> Optional[KnowledgeGraphNode]:
+        return self.db.query(KnowledgeGraphNode).filter(
+            KnowledgeGraphNode.external_id == external_id,
+            KnowledgeGraphNode.workspace_id == workspace_id,
+            KnowledgeGraphNode.user_id == user_id
+        ).first()
+
     def update_node(
         self,
         user_id: uuid.UUID,

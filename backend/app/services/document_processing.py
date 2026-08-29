@@ -141,10 +141,22 @@ class DocumentProcessingService:
             # Generate and store embeddings using batching service
             EmbeddingService.generate_and_store_embeddings(db, db_chunks)
 
-            # 10. Finalize processing pipeline: Document READY
+            # 10. STEP: ENTITY EXTRACTION & GRAPH CONSTRUCTION
+            try:
+                from app.services.graph_construction import GraphConstructionService
+                graph_service = GraphConstructionService(db)
+                graph_service.construct_graph_from_document(
+                    document_id=doc.id,
+                    user_id=doc.user_id,
+                    workspace_id=doc.workspace_id
+                )
+            except Exception as ge:
+                logger.warning(f"Graph construction for document {document_id} had a non-fatal warning: {ge}")
+
+            # 11. Finalize processing pipeline: Document READY
             doc.status = "READY"
             meta = dict(doc.meta_data)
-            meta["processing_completed_at"] = datetime.datetime.utcnow().isoformat()
+            meta["processing_completed_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
             doc.meta_data = meta
             doc.processing_error = None
             db.commit()
@@ -165,7 +177,7 @@ class DocumentProcessingService:
                 doc.processing_error = safe_err_msg
                 
                 meta = dict(doc.meta_data or {})
-                meta["processing_failed_at"] = datetime.datetime.utcnow().isoformat()
+                meta["processing_failed_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
                 doc.meta_data = meta
                 db.commit()
 

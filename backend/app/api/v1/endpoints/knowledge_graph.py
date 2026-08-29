@@ -335,3 +335,80 @@ def enhanced_graph_search_endpoint(
         depth=depth,
         limit=limit
     )
+
+# ---------------------------------------------------------
+# Phase 5.2: Document Entity Extraction & Graph Construction Endpoints
+# ---------------------------------------------------------
+
+@router.post("/documents/{document_id}/extract", response_model=dict, dependencies=[Depends(check_rate_limit)])
+def extract_document_graph_endpoint(
+    document_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Extracts entities and constructs knowledge graph representation for the document.
+    """
+    from app.services.graph_construction import GraphConstructionService
+    workspace_id = resolve_workspace_id(current_user, db)
+    construction_service = GraphConstructionService(db)
+    return construction_service.construct_graph_from_document(
+        document_id=document_id,
+        user_id=current_user.id,
+        workspace_id=workspace_id
+    )
+
+@router.get("/documents/{document_id}/entities", response_model=List[NodeResponse], dependencies=[Depends(check_rate_limit)])
+def get_document_entities_endpoint(
+    document_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Returns all knowledge graph entities associated with the document.
+    """
+    from app.services.graph_construction import GraphConstructionService
+    workspace_id = resolve_workspace_id(current_user, db)
+    construction_service = GraphConstructionService(db)
+    return construction_service.get_document_entities(
+        document_id=document_id,
+        user_id=current_user.id,
+        workspace_id=workspace_id
+    )
+
+@router.get("/documents/{document_id}/relationships", response_model=List[EdgeResponse], dependencies=[Depends(check_rate_limit)])
+def get_document_relationships_endpoint(
+    document_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Returns all knowledge graph edge relationships for the document.
+    """
+    from app.services.graph_construction import GraphConstructionService
+    workspace_id = resolve_workspace_id(current_user, db)
+    construction_service = GraphConstructionService(db)
+    return construction_service.get_document_relationships(
+        document_id=document_id,
+        user_id=current_user.id,
+        workspace_id=workspace_id
+    )
+
+@router.post("/documents/{document_id}/rebuild", response_model=dict, dependencies=[Depends(check_rate_limit)])
+def rebuild_document_graph_endpoint(
+    document_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Safely rebuilds the knowledge graph nodes and edges for the specified document.
+    """
+    from app.services.graph_construction import GraphConstructionService
+    workspace_id = resolve_workspace_id(current_user, db)
+    construction_service = GraphConstructionService(db)
+    return construction_service.rebuild_document_graph(
+        document_id=document_id,
+        user_id=current_user.id,
+        workspace_id=workspace_id
+    )
+
