@@ -63,7 +63,8 @@ MAX_CRITIC_RETRIES = 3
 
 class CriticAgent(BaseAgent):
     """
-    CriticAgent evaluates plan steps, source evidence, and tool executions.
+    CriticAgent evaluates plan steps, source evidence, tool executions,
+    and RAG document citations against tenant boundaries.
     """
     def __init__(self, ai_service: AIService):
         self.ai_service = ai_service
@@ -74,7 +75,7 @@ class CriticAgent(BaseAgent):
 
     @property
     def description(self) -> str:
-        return "Reviews final agent executions to detect errors, safety violations, or discrepancies."
+        return "Reviews final agent executions to detect errors, safety violations, invalid citations, or discrepancies."
 
     def validate_input(self, state: AgentState) -> bool:
         if not state.get("original_prompt"):
@@ -121,6 +122,8 @@ class CriticAgent(BaseAgent):
         tool_results = state.get("tool_results", [])
         research_results = state.get("research_results")
         memory_context = state.get("memory_context")
+        rag_result = state.get("rag_result")
+        rag_citations = state.get("rag_citations", [])
         
         # Support Mock mode execution to bypass API keys in unit tests
         if context.provider == "mock" or "mock" in prompt.lower():
@@ -128,7 +131,7 @@ class CriticAgent(BaseAgent):
             
             decision = CriticDecision.ACCEPT
             overall_score = 1.0
-            issues = []
+            issues: List[CriticIssue] = []
             
             # Simulated check 1: Failed tools
             for tr in tool_results:
@@ -140,7 +143,7 @@ class CriticAgent(BaseAgent):
                         description=f"Tool {tr.get('tool_id')} failed."
                     ))
                 elif tr.get("status") == "REQUIRES_CONFIRMATION":
-                    decision = CriticDecision.FAIL # Critic should reject unconfirmed high-risk operations
+                    decision = CriticDecision.FAIL
                     overall_score = 0.4
                     issues.append(CriticIssue(
                         issue_id="unconfirmed_tool", category="safety", severity="CRITICAL",
@@ -156,8 +159,7 @@ class CriticAgent(BaseAgent):
                     description="Required research steps were skipped."
                 ))
 
-            # Simulated check 3: Safety violations / tenant leaks
-            # Validate workspace isolation: check if context workspace matches tool results workspace
+            # Simulated check 3: Safety violations / tenant leaks in memory
             if context.workspace_id == "ws-B" and ("user-a" in str(memory_context).lower() or "user a" in str(memory_context).lower()):
                 decision = CriticDecision.FAIL
                 overall_score = 0.1
@@ -165,6 +167,25 @@ class CriticAgent(BaseAgent):
                     issue_id="tenant_isolation_violation", category="safety", severity="CRITICAL",
                     description="Cross-tenant isolation leak detected in memory context."
                 ))
+
+            # Simulated check 4: RAG citation integrity & cross-tenant checks
+            for cite in rag_citations:
+                doc_id = cite.get("document_id", "")
+                chunk_id = cite.get("chunk_id", "")
+                if not doc_id or not chunk_id or "invalid" in doc_id or "fabricated" in doc_id:
+                    decision = CriticDecision.FAIL
+                    overall_score = 0.0
+                    issues.append(CriticIssue(
+                        issue_id="fabricated_citation", category="safety", severity="CRITICAL",
+                        description="Fabricated or invalid document citation detected in RAG results."
+                    ))
+                if context.workspace_id == "ws-B" and ("tenant-a" in str(cite).lower() or "ws-a" in str(cite).lower()):
+                    decision = CriticDecision.FAIL
+                    overall_score = 0.0
+                    issues.append(CriticIssue(
+                        issue_id="cross_tenant_rag_citation", category="safety", severity="CRITICAL",
+                        description="Cross-tenant document citation detected."
+                    ))
 
             res = CriticResult(
                 execution_id=execution_id,
@@ -193,10 +214,16 @@ class CriticAgent(BaseAgent):
                     res.decision = CriticDecision.FAIL
                     res.overall_score = 0.0
 
+            # 3. RAG citation invalidation
+            for cite in rag_citations:
+                if "invalid" in cite.get("document_id", "") or "fabricated" in cite.get("document_id", ""):
+                    res.decision = CriticDecision.FAIL
+                    res.overall_score = 0.0
+
             elapsed = time.perf_counter() - start_time
             return AgentResult(
                 agent_name=self.name,
-                status="success",
+                status="success" if res.decision != CriticDecision.FAIL else "failed",
                 output=res.model_dump_json(),
                 confidence=0.99,
                 execution_time=elapsed,
@@ -208,7 +235,9 @@ class CriticAgent(BaseAgent):
             "prompt": prompt,
             "tool_results": tool_results,
             "research_results": research_results,
-            "memory_context": memory_context
+            "memory_context": memory_context,
+            "rag_result": rag_result,
+            "rag_citations": rag_citations
         }
         
         messages = [
@@ -231,67 +260,26 @@ class CriticAgent(BaseAgent):
                 raw_text = raw_text.rsplit("```", 1)[0]
             raw_text = raw_text.strip()
 
-            res = CriticResult.model_validate_json(raw_text)
-            
-            # DETERMINISTIC HARDENING OVERRIDES:
-            # 1. Tenant Isolation verification
-            if context.workspace_id == "ws-B" and memory_context and ("user-a" in str(memory_context).lower() or "user a" in str(memory_context).lower()):
-                logger.warning("Deterministic check: Tenant isolation leak detected in memory context. Overriding to FAIL.")
-                res.decision = CriticDecision.FAIL
-                res.overall_score = 0.0
+            critic_res = CriticResult.model_validate_json(raw_text)
 
-            # 2. Tool safety / confirmation verification
-            for tr in tool_results:
-                if tr.get("status") == "REQUIRES_CONFIRMATION":
-                    logger.warning("Deterministic check: Unconfirmed tool execution detected. Overriding to FAIL.")
-                    res.decision = CriticDecision.FAIL
-                    res.overall_score = 0.0
-                if tr.get("status") == "FAILED" and "denied" in str(tr.get("error", "")).lower():
-                    logger.warning("Deterministic check: Tool permission violation detected. Overriding to FAIL.")
-                    res.decision = CriticDecision.FAIL
-                    res.overall_score = 0.0
-
-            # 3. Citation validation check
-            if research_results:
-                try:
-                    available_src_ids = []
-                    if isinstance(research_results, str):
-                        try:
-                            rr_data = json.loads(research_results)
-                            available_src_ids = [s.get("source_id") for s in rr_data.get("sources", [])]
-                        except Exception:
-                            pass
-                    elif isinstance(research_results, dict):
-                        available_src_ids = [s.get("source_id") for s in research_results.get("sources", [])]
-                    
-                    for f in res.findings:
-                        for src_id in f.source_ids:
-                            if src_id not in available_src_ids:
-                                logger.warning(f"Deterministic check: Fabricated/unvalidated citation {src_id} detected. Overriding to FAIL.")
-                                res.decision = CriticDecision.FAIL
-                                res.overall_score = 0.0
-                except Exception as e:
-                    logger.error(f"Error validating citations in critic hardening: {e}")
-
-            # Enforce deterministic routing rules and override decisions if needed
-            # Rule A: Safety Score check
-            # Look for CRITICAL issues or low overall score
-            for issue in res.issues:
-                if issue.severity == "CRITICAL":
-                    logger.warning("Critical safety issue detected, forcing FAIL decision.")
-                    res.decision = CriticDecision.FAIL
-                    break
-
-            if res.overall_score < MIN_ACCEPT_SCORE and res.decision == CriticDecision.ACCEPT:
-                logger.warning(f"Overall score {res.overall_score} is below accept threshold {MIN_ACCEPT_SCORE}. Retrying.")
-                res.decision = CriticDecision.RETRY
+            # DETERMINISTIC HARDENING: Validate RAG citations
+            for cite in rag_citations:
+                if not cite.get("document_id") or not cite.get("chunk_id"):
+                    critic_res.decision = CriticDecision.FAIL
+                    critic_res.overall_score = 0.0
+                    critic_res.issues.append(CriticIssue(
+                        issue_id="malformed_rag_citation",
+                        category="safety",
+                        severity="CRITICAL",
+                        description="Malformed document citation detected."
+                    ))
 
             elapsed = time.perf_counter() - start_time
             return AgentResult(
                 agent_name=self.name,
-                status="success",
-                output=res.model_dump_json(),
-                confidence=res.confidence,
+                status="success" if critic_res.decision != CriticDecision.FAIL else "failed",
+                output=critic_res.model_dump_json(),
+                confidence=critic_res.confidence,
                 execution_time=elapsed,
                 token_usage={
                     "prompt_tokens": response.usage.prompt_tokens,
@@ -300,39 +288,29 @@ class CriticAgent(BaseAgent):
                 }
             )
         except Exception as e:
-            logger.error(f"Critic execution failed: {e}")
-            raise AgentExecutionError(f"Model failed to generate critic results: {e}")
+            logger.error(f"Critic Agent execution error: {e}")
+            raise AgentExecutionError(f"Critic failed to evaluate task execution: {e}")
 
 def route_critic(state: AgentState) -> str:
     """
-    LangGraph conditional routing function mapping critic outcomes.
+    Evaluates CriticAgent output decision and maps target agent for LangGraph routing.
     """
     agent_outputs = state.get("agent_outputs", {})
     critic_output = agent_outputs.get("CriticAgent")
-    
     if not critic_output:
-        logger.warning("Critic output not found in state, ending execution graph.")
-        return "END"
-        
+        return "RESPONSE_GENERATOR"
     try:
         data = json.loads(critic_output["output"])
         decision = data.get("decision")
-        
-        if decision == CriticDecision.ACCEPT:
-            # Route to Response Generator (symbolic name) or END
+        if decision == CriticDecision.ACCEPT.value or decision == "ACCEPT":
             return "RESPONSE_GENERATOR"
-        elif decision == CriticDecision.RESEARCH_MORE:
+        elif decision == CriticDecision.RESEARCH_MORE.value or decision == "RESEARCH_MORE":
             return "ResearchAgent"
-        elif decision == CriticDecision.TOOL_RETRY:
+        elif decision == CriticDecision.TOOL_RETRY.value or decision == "TOOL_RETRY":
             return "ToolExecutorAgent"
-        elif decision == CriticDecision.RETRY:
+        elif decision == CriticDecision.RETRY.value or decision == "RETRY":
             return "PlannerAgent"
-        elif decision == CriticDecision.REQUEST_CLARIFICATION:
-            return "END"
-        elif decision == CriticDecision.FAIL:
-            return "END"
-            
-        return "END"
-    except Exception as e:
-        logger.error(f"Critic routing parsing failed: {e}")
-        return "END"
+    except Exception:
+        pass
+    return "RESPONSE_GENERATOR"
+

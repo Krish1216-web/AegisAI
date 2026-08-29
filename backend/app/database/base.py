@@ -21,6 +21,10 @@ from app.models.workflow import Workflow, WorkflowNode, WorkflowExecution, Workf
 
 # Documents
 from app.models.document import Document, DocumentChunk, DocumentEmbedding  # noqa
+from app.models.rag import RAGQuery  # noqa
+
+# Knowledge Graph
+from app.models.knowledge_graph import KnowledgeGraphNode, KnowledgeGraphEdge  # noqa
 
 # Tasks
 from app.models.task import Task, TaskExecution  # noqa

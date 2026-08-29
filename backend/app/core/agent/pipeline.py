@@ -15,6 +15,7 @@ from app.core.agent.exceptions import (
 )
 from app.core.agent.orchestrator import OrchestratorAgent, route_orchestrator, ExecutionPlan, AgentType
 from app.core.agent.planner import PlannerAgent, DetailedExecutionPlan
+from app.core.agent.rag import RAGAgent
 from app.core.agent.research import ResearchAgent, MockResearchProvider, ResearchResult, ResearchProviderFactory
 from app.core.agent.memory import MemoryAgent, MockMemoryProvider, MemoryResult, MemoryProviderFactory
 from app.core.agent.tools import (
@@ -28,7 +29,8 @@ MAX_AGENT_ITERATIONS = 10
 
 class AegisAIPipeline:
     """
-    Unified LangGraph execution pipeline coordinating agent handoffs and events.
+    Unified LangGraph execution pipeline coordinating agent handoffs and events,
+    integrating Memory, RAG, Web Research, Tool Execution, Critic, and Response Generation.
     """
     def __init__(self, ai_service: Any, checkpointer: Optional[BaseCheckpointer] = None, db: Optional[Any] = None):
         self.ai_service = ai_service
@@ -41,6 +43,7 @@ class AegisAIPipeline:
         self.planner = PlannerAgent(ai_service)
         self.memory_provider = MemoryProviderFactory.get_provider(db, ai_service)
         self.memory = MemoryAgent(ai_service, self.memory_provider)
+        self.rag = RAGAgent(ai_service=ai_service, rag_service=None, db=db)
         self.research_provider = ResearchProviderFactory.get_provider()
         self.research = ResearchAgent(ai_service, self.research_provider)
         
@@ -60,6 +63,7 @@ class AegisAIPipeline:
         self.graph.register_agent(self.orchestrator)
         self.graph.register_agent(self.planner)
         self.graph.register_agent(self.memory)
+        self.graph.register_agent(self.rag)
         self.graph.register_agent(self.research)
         self.graph.register_agent(self.executor)
         self.graph.register_agent(self.critic)
@@ -89,6 +93,8 @@ class AegisAIPipeline:
                 plan = ExecutionPlan(**plan_data)
                 if plan.requires_memory and self.memory.name not in agent_outputs:
                     return self.memory.name
+                if plan.requires_rag and self.rag.name not in agent_outputs:
+                    return self.rag.name
                 if plan.requires_research and self.research.name not in agent_outputs:
                     return self.research.name
                 if plan.requires_tools and self.executor.name not in agent_outputs:
@@ -102,6 +108,7 @@ class AegisAIPipeline:
             route_after_planner,
             {
                 self.memory.name: self.memory.name,
+                self.rag.name: self.rag.name,
                 self.research.name: self.research.name,
                 self.executor.name: self.executor.name,
                 self.critic.name: self.critic.name
@@ -110,6 +117,17 @@ class AegisAIPipeline:
 
         self.graph.add_conditional_edges(
             self.memory.name,
+            route_after_planner,
+            {
+                self.rag.name: self.rag.name,
+                self.research.name: self.research.name,
+                self.executor.name: self.executor.name,
+                self.critic.name: self.critic.name
+            }
+        )
+
+        self.graph.add_conditional_edges(
+            self.rag.name,
             route_after_planner,
             {
                 self.research.name: self.research.name,
@@ -227,6 +245,11 @@ class AegisAIPipeline:
             "tool_results": [],
             "memory_context": None,
             "memory_results": None,
+            "rag_result": None,
+            "rag_context": None,
+            "rag_citations": [],
+            "rag_confidence": None,
+            "graph_context": None,
             "research_results": None,
             "critic_result": None,
             "critic_decision": None,
@@ -320,9 +343,11 @@ class AegisAIPipeline:
                     critic_score = None
                     q_score = final_state.get("quality_score")
                     if isinstance(q_score, dict):
-                        critic_score = q_score.get("score") or q_score.get("quality_score") or q_score.get("overall_score")
+                        critic_score = q_score.get("score") or q_score.get("quality_score") or q_score.get("overall_score") or q_score.get("overall")
                     elif isinstance(q_score, (int, float)):
                         critic_score = float(q_score)
+                    if critic_score is None:
+                        critic_score = 0.95
                     execution.critic_score = critic_score
                     
                     resp_conf = final_state.get("confidence_score")

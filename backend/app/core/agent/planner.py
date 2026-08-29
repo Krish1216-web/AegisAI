@@ -8,7 +8,7 @@ from app.core.agent.base import BaseAgent, AgentResult, ExecutionContext
 from app.core.agent.state import AgentState, ExecutionStatus
 from app.core.agent.prompts import PLANNER_SYSTEM_PROMPT
 from app.core.agent.exceptions import AgentValidationError, AgentExecutionError
-from app.core.agent.orchestrator import AgentType, TaskType, Complexity
+from app.core.agent.orchestrator import AgentType, TaskType, Complexity, ExecutionPlan
 from app.core.ai.base import ChatMessage
 from app.services.ai_service import AIService
 
@@ -115,7 +115,7 @@ class PlannerAgent(BaseAgent):
         start_time = time.perf_counter()
         
         # Resolve Orchestrator output
-        orch_data = state["agent_outputs"]["OrchestratorAgent"]["output"]
+        orch_raw = state["agent_outputs"]["OrchestratorAgent"]["output"]
         
         # Extract user permissions and context
         permissions = context.permissions
@@ -123,18 +123,78 @@ class PlannerAgent(BaseAgent):
         # Mock mode check
         if context.provider == "mock" or "mock" in state.get("original_prompt", "").lower():
             logger.info("Executing Planner in Mock mode.")
-            mock_plan = DetailedExecutionPlan(
-                steps=[
+            steps = []
+            step_idx = 1
+            
+            try:
+                orch_plan = ExecutionPlan.model_validate_json(orch_raw)
+                if orch_plan.requires_memory:
+                    steps.append(
+                        PlanStep(
+                            step_id=f"step_{step_idx}",
+                            title="Memory Retrieval",
+                            description="Retrieve relevant user preferences and past context",
+                            agent_type=AgentType.MEMORY,
+                            action="query_memory",
+                            expected_output="User context string",
+                            can_run_parallel=True
+                        )
+                    )
+                    step_idx += 1
+                if orch_plan.requires_rag:
+                    steps.append(
+                        PlanStep(
+                            step_id=f"step_{step_idx}",
+                            title="Document RAG Retrieval",
+                            description="Retrieve relevant workspace document chunks and grounded context",
+                            agent_type=AgentType.RAG,
+                            action="retrieve_and_answer",
+                            expected_output="Grounded answer with verified citations",
+                            can_run_parallel=True
+                        )
+                    )
+                    step_idx += 1
+                if orch_plan.requires_research:
+                    steps.append(
+                        PlanStep(
+                            step_id=f"step_{step_idx}",
+                            title="Web Research",
+                            description="Search live sources for current factual information",
+                            agent_type=AgentType.RESEARCH,
+                            action="search_web",
+                            expected_output="Structured research findings with citations",
+                            can_run_parallel=True
+                        )
+                    )
+                    step_idx += 1
+                if orch_plan.requires_tools:
+                    steps.append(
+                        PlanStep(
+                            step_id=f"step_{step_idx}",
+                            title="Tool Execution",
+                            description="Run required computation or helper tools",
+                            agent_type=AgentType.TOOL_EXECUTOR,
+                            action="calculator",
+                            expected_output="Calculation result"
+                        )
+                    )
+                    step_idx += 1
+            except Exception:
+                pass
+
+            if not steps:
+                steps.append(
                     PlanStep(
                         step_id="step_1",
-                        title="Mock Action Step",
-                        description="Local mock run execution",
+                        title="Generate Response",
+                        description="Formulate final grounded response",
                         agent_type=AgentType.RESPONSE_GENERATOR,
                         action="generate_reply",
-                        expected_output="Mock string output"
+                        expected_output="Final synthesized response"
                     )
-                ]
-            )
+                )
+
+            mock_plan = DetailedExecutionPlan(steps=steps)
             elapsed = time.perf_counter() - start_time
             return AgentResult(
                 agent_name=self.name,
@@ -147,7 +207,7 @@ class PlannerAgent(BaseAgent):
 
         messages = [
             ChatMessage(role="system", content=PLANNER_SYSTEM_PROMPT),
-            ChatMessage(role="user", content=f"Goal details: {orch_data}. Available permissions: {permissions}")
+            ChatMessage(role="user", content=f"Goal details: {orch_raw}. Available permissions: {permissions}")
         ]
 
         try:
@@ -171,8 +231,6 @@ class PlannerAgent(BaseAgent):
             self.validate_plan_schema(plan)
 
             # Enforce permission checks: check if any step uses restricted tools/agents
-            # e.g., if User lacks git permission, reject planner if it schedules git actions
-            # (Simulated check)
             for step in plan.steps:
                 if step.action.startswith("github_") and "github" not in permissions:
                     raise AgentValidationError(f"Permission denied for scheduled action: {step.action}")
