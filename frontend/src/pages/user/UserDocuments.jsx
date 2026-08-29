@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { 
   FileText, 
   Upload, 
@@ -20,7 +21,10 @@ import {
   File, 
   Database, 
   Sparkles,
-  Info
+  Info,
+  GitBranch,
+  ExternalLink,
+  Plus
 } from 'lucide-react';
 import { 
   uploadDocument, 
@@ -33,14 +37,29 @@ import {
   listDocumentChunks, 
   reindexDocument 
 } from '../../api/documents';
+import {
+  extractDocumentGraph,
+  rebuildDocumentGraph,
+  getDocumentEntities,
+  getDocumentRelationships
+} from '../../api/knowledgeGraph';
 
 export default function UserDocuments({ triggerNotification = () => {} }) {
+  const navigate = useNavigate();
+
   // Document state
   const [docs, setDocs] = useState([]);
   const [activeDoc, setActiveDoc] = useState(null);
   const [docStatus, setDocStatus] = useState(null);
   const [chunks, setChunks] = useState([]);
   const [selectedChunk, setSelectedChunk] = useState(null);
+
+  // Graph tab state
+  const [docEntities, setDocEntities] = useState([]);
+  const [docRelationships, setDocRelationships] = useState([]);
+  const [isLoadingGraph, setIsLoadingGraph] = useState(false);
+  const [isExtractingGraph, setIsExtractingGraph] = useState(false);
+  const [isRebuildingGraph, setIsRebuildingGraph] = useState(false);
 
   // Loading & Action states
   const [isLoadingDocs, setIsLoadingDocs] = useState(true);
@@ -112,6 +131,9 @@ export default function UserDocuments({ triggerNotification = () => {} }) {
 
       // Fetch chunks
       fetchChunks(docId);
+
+      // Fetch Knowledge Graph elements
+      fetchDocGraph(docId);
     } catch (err) {
       console.error('Failed to fetch document details:', err);
     } finally {
@@ -130,6 +152,53 @@ export default function UserDocuments({ triggerNotification = () => {} }) {
       setChunks([]);
     } finally {
       setIsLoadingChunks(false);
+    }
+  };
+
+  const fetchDocGraph = async (docId) => {
+    if (!docId) return;
+    try {
+      setIsLoadingGraph(true);
+      const [entities, relationships] = await Promise.all([
+        getDocumentEntities(docId),
+        getDocumentRelationships(docId)
+      ]);
+      setDocEntities(entities || []);
+      setDocRelationships(relationships || []);
+    } catch (err) {
+      console.warn('Failed to fetch document graph elements:', err);
+      setDocEntities([]);
+      setDocRelationships([]);
+    } finally {
+      setIsLoadingGraph(false);
+    }
+  };
+
+  const handleExtractGraph = async (docId) => {
+    if (!docId) return;
+    setIsExtractingGraph(true);
+    try {
+      await extractDocumentGraph(docId);
+      triggerNotification('Graph Extracted', 'Entities and relationships extracted successfully.');
+      fetchDocGraph(docId);
+    } catch (err) {
+      triggerNotification('Extraction Error', err.message || 'Failed to extract graph.');
+    } finally {
+      setIsExtractingGraph(false);
+    }
+  };
+
+  const handleRebuildGraph = async (docId) => {
+    if (!docId) return;
+    setIsRebuildingGraph(true);
+    try {
+      await rebuildDocumentGraph(docId);
+      triggerNotification('Graph Rebuilt', 'Document knowledge graph reconstructed.');
+      fetchDocGraph(docId);
+    } catch (err) {
+      triggerNotification('Rebuild Error', err.message || 'Failed to rebuild graph.');
+    } finally {
+      setIsRebuildingGraph(false);
     }
   };
 
@@ -587,6 +656,15 @@ export default function UserDocuments({ triggerNotification = () => {} }) {
                         <RotateCw size={15} />
                       </button>
                     )}
+                    
+                    {/* Explore in Knowledge Graph */}
+                    <button
+                      onClick={() => navigate(`/user/knowledge-graph?docId=${activeDoc.id}`)}
+                      title="Explore in Knowledge Graph"
+                      className="p-1.5 text-purple-400 hover:text-purple-300 hover:bg-purple-500/10 rounded transition-all cursor-pointer"
+                    >
+                      <GitBranch size={15} />
+                    </button>
 
                     <button
                       onClick={() => setConfirmAction({ type: 'delete', docId: activeDoc.id, docName: activeDoc.original_filename || activeDoc.filename })}
@@ -621,6 +699,16 @@ export default function UserDocuments({ triggerNotification = () => {} }) {
                   }`}
                 >
                   <Layers size={14} /> Document Chunks ({chunks.length})
+                </button>
+                <button
+                  onClick={() => setActiveTab('graph')}
+                  className={`py-3 px-4 text-xs font-semibold border-b-2 transition-all flex items-center gap-2 cursor-pointer ${
+                    activeTab === 'graph'
+                      ? 'border-cyan-400 text-cyan-400'
+                      : 'border-transparent text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  <GitBranch size={14} /> Knowledge Graph ({docEntities.length})
                 </button>
               </div>
 
@@ -699,15 +787,23 @@ export default function UserDocuments({ triggerNotification = () => {} }) {
                       <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">
                         Storage & Indexing Specifications
                       </h4>
-                      <div className="glass-panel rounded-lg border-white/5 overflow-hidden">
-                        <table className="w-full text-left text-xs border-collapse">
+                      <div className="glass-panel border-white/5 bg-white/2 rounded-lg overflow-hidden">
+                        <table className="w-full text-xs text-left border-collapse">
                           <tbody>
                             <tr className="border-b border-white/5 hover:bg-white/1">
-                              <td className="py-2.5 px-4 font-semibold text-slate-400 w-1/3">MIME Type</td>
-                              <td className="py-2.5 px-4 font-mono text-slate-300">{activeDoc.mime_type}</td>
+                              <td className="py-2.5 px-4 font-semibold text-slate-400 w-1/3">Storage Path</td>
+                              <td className="py-2.5 px-4 font-mono text-slate-300 truncate max-w-xs">{activeDoc.storage_path}</td>
                             </tr>
                             <tr className="border-b border-white/5 hover:bg-white/1">
-                              <td className="py-2.5 px-4 font-semibold text-slate-400">File Extension</td>
+                              <td className="py-2.5 px-4 font-semibold text-slate-400">SHA-256 Checksum</td>
+                              <td className="py-2.5 px-4 font-mono text-slate-300 truncate max-w-xs">{activeDoc.checksum}</td>
+                            </tr>
+                            <tr className="border-b border-white/5 hover:bg-white/1">
+                              <td className="py-2.5 px-4 font-semibold text-slate-400">MIME Type</td>
+                              <td className="py-2.5 px-4 text-slate-300">{activeDoc.mime_type}</td>
+                            </tr>
+                            <tr className="border-b border-white/5 hover:bg-white/1">
+                              <td className="py-2.5 px-4 font-semibold text-slate-400">Extension</td>
                               <td className="py-2.5 px-4 font-mono text-slate-300">{activeDoc.file_extension || 'N/A'}</td>
                             </tr>
                             <tr className="border-b border-white/5 hover:bg-white/1">
@@ -728,7 +824,7 @@ export default function UserDocuments({ triggerNotification = () => {} }) {
                     </div>
 
                   </div>
-                ) : (
+                ) : activeTab === 'chunks' ? (
                   /* Chunks Tab */
                   <div className="flex flex-col gap-4 max-w-5xl">
                     <div className="flex items-center justify-between">
@@ -789,6 +885,125 @@ export default function UserDocuments({ triggerNotification = () => {} }) {
                         ))}
                       </div>
                     )}
+                  </div>
+                ) : (
+                  /* Knowledge Graph Tab */
+                  <div className="flex flex-col gap-6 max-w-5xl">
+                    
+                    {/* Graph Control Banner */}
+                    <div className="flex flex-wrap items-center justify-between gap-3 p-4 rounded-xl bg-purple-500/10 border border-purple-500/20">
+                      <div>
+                        <h4 className="text-xs font-bold text-purple-300 uppercase tracking-wider flex items-center gap-2">
+                          <GitBranch size={15} /> Document Entity & Relationship Graph
+                        </h4>
+                        <p className="text-[11px] text-slate-400 mt-0.5">
+                          {docEntities.length} entities and {docRelationships.length} relationships mapped for this document.
+                        </p>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => handleExtractGraph(activeDoc.id)}
+                          disabled={isExtractingGraph}
+                          className="px-3 py-1.5 bg-purple-500/20 hover:bg-purple-500/30 border border-purple-500/30 rounded-lg text-xs font-semibold text-purple-300 transition-all flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
+                        >
+                          {isExtractingGraph ? <RotateCw size={13} className="animate-spin" /> : <Sparkles size={13} />}
+                          <span>Extract Graph</span>
+                        </button>
+
+                        <button
+                          onClick={() => handleRebuildGraph(activeDoc.id)}
+                          disabled={isRebuildingGraph}
+                          className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-xs font-semibold text-slate-300 transition-all flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
+                        >
+                          {isRebuildingGraph ? <RotateCw size={13} className="animate-spin" /> : <RefreshCw size={13} />}
+                          <span>Rebuild Graph</span>
+                        </button>
+
+                        <button
+                          onClick={() => navigate(`/user/knowledge-graph?docId=${activeDoc.id}`)}
+                          className="px-3 py-1.5 bg-cyan-500 hover:bg-cyan-400 rounded-lg text-xs font-bold text-slate-950 transition-all flex items-center gap-1.5 cursor-pointer shadow-lg"
+                        >
+                          <span>Open Explorer</span>
+                          <ExternalLink size={13} />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Entities Section */}
+                    <div>
+                      <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">
+                        Extracted Entities ({docEntities.length})
+                      </h4>
+
+                      {isLoadingGraph ? (
+                        <div className="flex flex-col items-center justify-center h-36 text-slate-500 gap-2">
+                          <RotateCw size={18} className="animate-spin text-purple-400" />
+                          <span className="text-xs">Loading entities...</span>
+                        </div>
+                      ) : docEntities.length === 0 ? (
+                        <div className="glass-panel p-6 text-center text-slate-500 rounded-xl">
+                          <p className="text-xs">No graph entities mapped for this document yet.</p>
+                          <button
+                            onClick={() => handleExtractGraph(activeDoc.id)}
+                            className="mt-3 px-3 py-1.5 bg-purple-500/20 text-purple-300 border border-purple-500/30 rounded-lg text-xs font-semibold cursor-pointer"
+                          >
+                            Extract Entities Now
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                          {docEntities.map((ent) => (
+                            <div
+                              key={ent.id}
+                              className="p-3 rounded-lg bg-white/2 border border-white/5 hover:border-purple-500/30 transition-colors"
+                            >
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs font-bold text-white">{ent.name}</span>
+                                <span className="px-1.5 py-0.5 text-[9px] font-mono rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                                  {ent.node_type}
+                                </span>
+                              </div>
+                              {ent.description && (
+                                <p className="text-[11px] text-slate-400 mt-1 line-clamp-2">{ent.description}</p>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Relationships Section */}
+                    <div>
+                      <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">
+                        Semantic Relationships ({docRelationships.length})
+                      </h4>
+
+                      {docRelationships.length === 0 ? (
+                        <p className="text-xs text-slate-500 italic">No direct relationships formed yet.</p>
+                      ) : (
+                        <div className="space-y-2 max-h-60 overflow-y-auto">
+                          {docRelationships.map((rel, idx) => (
+                            <div
+                              key={rel.id || idx}
+                              className="p-2.5 rounded-lg bg-black/40 border border-white/5 text-xs text-slate-300 flex items-center justify-between"
+                            >
+                              <div className="flex items-center gap-2">
+                                <span className="font-mono text-cyan-300">{rel.source_node_id.slice(0, 8)}...</span>
+                                <span className="px-1.5 py-0.5 text-[10px] font-bold rounded bg-purple-500/20 text-purple-300">
+                                  {rel.relationship_type}
+                                </span>
+                                <span className="font-mono text-cyan-300">{rel.target_node_id.slice(0, 8)}...</span>
+                              </div>
+                              <span className="text-[10px] text-slate-500 font-mono">
+                                Conf: {(rel.confidence * 100).toFixed(0)}%
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
                   </div>
                 )}
               </div>

@@ -140,6 +140,7 @@ function AppContent() {
           <Route path="/user/chat" element={<UserChat logs={logs} addLog={addLog} triggerNotification={triggerNotification} />} />
           <Route path="/user/memory" element={<UserMemory />} />
           <Route path="/user/graph" element={<UserGraph />} />
+          <Route path="/user/knowledge-graph" element={<UserGraph />} />
           <Route path="/user/tasks" element={<UserTasks triggerNotification={triggerNotification} />} />
           <Route path="/user/workflows" element={<UserWorkflows triggerNotification={triggerNotification} />} />
           <Route path="/user/mcp-marketplace" element={<UserMcpMarket triggerNotification={triggerNotification} />} />
