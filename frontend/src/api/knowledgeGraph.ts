@@ -436,4 +436,34 @@ export async function searchAdvanced(payload: {
   });
 }
 
+export async function reasonGraph(payload: {
+  query: string;
+  depth?: number;
+  include_rag?: boolean;
+  include_memory?: boolean;
+}): Promise<{
+  query: string;
+  entities: string[];
+  matched_nodes_count: number;
+  matched_edges_count: number;
+  paths_found: number;
+  graph_context: string;
+  citations: Array<{
+    source_type: string;
+    node_id?: string;
+    node_name?: string;
+    node_type?: string;
+    edge_id?: string;
+    relationship_type?: string;
+    confidence: number;
+  }>;
+  confidence: number;
+  latency_ms: number;
+}> {
+  return request('/knowledge-graph/reason', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
 

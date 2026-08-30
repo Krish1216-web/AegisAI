@@ -6,6 +6,7 @@ class ExecutionStatus(str, Enum):
     PLANNING = "PLANNING"
     RESEARCHING = "RESEARCHING"
     MEMORY_RETRIEVAL = "MEMORY_RETRIEVAL"
+    GRAPH_REASONING = "GRAPH_REASONING"
     RAG_RETRIEVAL = "RAG_RETRIEVAL"
     TOOL_EXECUTION = "TOOL_EXECUTION"
     CRITIC_REVIEW = "CRITIC_REVIEW"
@@ -37,11 +38,21 @@ class AgentState(TypedDict, total=False):
     tool_results: List[Dict[str, Any]]
     memory_context: Optional[str]
     memory_results: Optional[Dict[str, Any]]
+    graph_query: Optional[str]
+    graph_reasoning_required: Optional[bool]
+    graph_reasoning_mode: Optional[str]
+    graph_entities: Optional[List[str]]
+    graph_nodes: Optional[List[Dict[str, Any]]]
+    graph_edges: Optional[List[Dict[str, Any]]]
+    graph_paths: Optional[List[Dict[str, Any]]]
+    graph_context: Optional[str]
+    graph_confidence: Optional[float]
+    graph_citations: Optional[List[Dict[str, Any]]]
+    graph_reasoning_result: Optional[Dict[str, Any]]
     rag_result: Optional[Dict[str, Any]]
     rag_context: Optional[str]
     rag_citations: Optional[List[Dict[str, Any]]]
     rag_confidence: Optional[float]
-    graph_context: Optional[str]
     research_results: Optional[str]
     critic_result: Optional[str]
     critic_decision: Optional[str]

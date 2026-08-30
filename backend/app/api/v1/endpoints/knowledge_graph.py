@@ -572,4 +572,55 @@ def advanced_search_endpoint(
     analytics = GraphAnalyticsService(db)
     return analytics.advanced_search(user_id=current_user.id, workspace_id=workspace_id, req=req).model_dump()
 
+# ---------------------------------------------------------
+# Phase 5.9: Multi-Agent Graph Reasoning Endpoint
+# ---------------------------------------------------------
+
+@router.post("/reason", response_model=dict, dependencies=[Depends(check_rate_limit)])
+async def graph_reason_endpoint(
+    payload: dict,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Executes multi-agent graph reasoning over entities, paths, topology, and citations.
+    """
+    import redis
+    from app.database.redis import redis_pool
+    from app.core.agent.graph_reasoning import GraphReasoningAgent
+    from app.core.agent.base import ExecutionContext
+    from app.services.ai_service import AIService
+    
+    workspace_id = resolve_workspace_id(current_user, db)
+    query = payload.get("query", "")
+    if not query:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail="Query string is required for graph reasoning.")
+
+    try:
+        redis_client = redis.Redis(connection_pool=redis_pool, socket_connect_timeout=0.05, socket_timeout=0.05)
+    except Exception:
+        redis_client = None
+
+    ai_service = AIService(db=db, redis_client=redis_client)
+    agent = GraphReasoningAgent(ai_service=ai_service, db=db)
+    
+    context = ExecutionContext(
+        request_id=f"reason-{uuid.uuid4()}",
+        user_id=str(current_user.id),
+        workspace_id=str(workspace_id),
+        prompt=query,
+        provider="mock",
+        configuration={"db": db}
+    )
+
+    result = await agent.execute(context)
+    if result.status == "failed":
+        from fastapi import HTTPException
+        raise HTTPException(status_code=500, detail=result.error or "Graph reasoning failed.")
+
+    import json
+    return json.loads(result.output)
+
+
 

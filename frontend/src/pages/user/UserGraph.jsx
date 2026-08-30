@@ -38,7 +38,8 @@ import {
   ShieldCheck,
   AlertTriangle,
   Flame,
-  Users
+  Users,
+  Bot
 } from 'lucide-react';
 import { 
   listNodes, 
@@ -56,7 +57,8 @@ import {
   getGraphHealth,
   getTopConnectedEntities,
   getOrphanNodes,
-  getDuplicateCandidates
+  getDuplicateCandidates,
+  reasonGraph
 } from '../../api/knowledgeGraph';
 
 const NODE_TYPES = [
@@ -144,6 +146,13 @@ export default function UserGraph() {
   const [orphanList, setOrphanList] = useState([]);
   const [duplicateList, setDuplicateList] = useState([]);
   const [isLoadingAnalytics, setIsLoadingAnalytics] = useState(false);
+
+  // Multi-Agent Graph Reasoning Modal
+  const [showReasonModal, setShowReasonModal] = useState(false);
+  const [reasonQuery, setReasonQuery] = useState('');
+  const [reasonDepth, setReasonDepth] = useState(2);
+  const [reasonResult, setReasonResult] = useState(null);
+  const [isReasoning, setIsReasoning] = useState(false);
 
   // Canvas Viewport & Physics
   const svgRef = useRef(null);
@@ -565,6 +574,27 @@ export default function UserGraph() {
     }
   };
 
+  // Execute Multi-Agent Graph Reasoning
+  const handleExecuteReasoning = async () => {
+    if (!reasonQuery.trim()) return;
+    setIsReasoning(true);
+    setReasonResult(null);
+    try {
+      const res = await reasonGraph({
+        query: reasonQuery.trim(),
+        depth: reasonDepth,
+        include_rag: true,
+        include_memory: true
+      });
+      setReasonResult(res);
+    } catch (err) {
+      console.error('Graph reasoning failed:', err);
+      showToast('Graph reasoning failed: ' + (err.message || 'Error'));
+    } finally {
+      setIsReasoning(false);
+    }
+  };
+
   const getNodeColor = (type) => {
     const found = NODE_TYPES.find(t => t.id === type);
     return found ? found.color : '#94a3b8';
@@ -577,7 +607,7 @@ export default function UserGraph() {
 
   const getNodeBorder = (type) => {
     const found = NODE_TYPES.find(t => t.id === type);
-    return found ? found.border : '#64748b';
+    return found ? found.border : 'rgba(148, 163, 184, 0.4)';
   };
 
   // Connected node IDs for highlighting
@@ -592,44 +622,38 @@ export default function UserGraph() {
   }, [selectedNode, links]);
 
   return (
-    <div className="flex h-screen w-full bg-slate-950 text-slate-100 overflow-hidden font-sans select-none">
+    <div className="flex flex-col h-[calc(100vh-4rem)] bg-slate-950 text-slate-100 overflow-hidden select-none font-sans relative">
       
       {/* Toast Notification */}
       {toastMessage && (
-        <div className="fixed top-6 right-6 z-50 bg-indigo-600 text-white px-4 py-2.5 rounded-lg shadow-lg border border-indigo-400/30 text-sm flex items-center gap-2 animate-fade-in">
-          <Sparkles className="w-4 h-4 text-indigo-200" />
+        <div className="absolute top-4 right-4 z-50 bg-indigo-600 text-white text-xs px-3.5 py-2 rounded-lg shadow-xl flex items-center gap-2 animate-fade-in border border-indigo-400/30">
+          <Sparkles className="w-3.5 h-3.5" />
           <span>{toastMessage}</span>
         </div>
       )}
 
-      {/* Main Graph Viewport */}
-      <div className="flex-1 flex flex-col relative h-full">
-        
-        {/* Top Control Bar */}
-        <header className="h-16 px-5 border-b border-slate-800/80 bg-slate-900/60 backdrop-blur-md flex items-center justify-between z-10 gap-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-indigo-500/10 border border-indigo-500/20 text-indigo-400">
-              <GitBranch className="w-5 h-5" />
-            </div>
-            <div>
-              <h1 className="text-base font-semibold tracking-tight text-white flex items-center gap-2">
-                Knowledge Graph Explorer
-                {docIdParam && (
-                  <span className="text-xs px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30">
-                    Document Subgraph
-                  </span>
-                )}
-              </h1>
-              <p className="text-xs text-slate-400">
-                {nodes.length} nodes · {links.length} relationships
-              </p>
-            </div>
+      {/* Main Graph Top Bar */}
+      <header className="px-5 py-3 border-b border-slate-800 bg-slate-900/60 backdrop-blur flex items-center justify-between z-20">
+        <div className="flex items-center gap-3">
+          <div className="p-2 rounded-lg bg-indigo-500/10 border border-indigo-500/20 text-indigo-400">
+            <GitBranch className="w-5 h-5" />
           </div>
+          <div>
+            <h1 className="text-sm font-semibold text-white tracking-wide">Knowledge Graph Explorer</h1>
+            <p className="text-[11px] text-slate-400">
+              {nodes.length} entities • {links.length} relationships
+              {docIdParam && <span className="ml-2 px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30 text-[10px]">Document Filter Active</span>}
+            </p>
+          </div>
+        </div>
 
-          {/* Search Bar */}
-          <div className="relative flex-1 max-w-md">
+        {/* Search & Actions Toolbar */}
+        <div className="flex items-center gap-3">
+          
+          {/* Debounced Search Bar */}
+          <div className="relative w-64 md:w-80">
             <div className="relative flex items-center">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3 pointer-events-none" />
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 pointer-events-none" />
               <input
                 type="text"
                 placeholder="Search entities, technologies, documents..."
@@ -683,6 +707,13 @@ export default function UserGraph() {
           {/* Action Toolbar */}
           <div className="flex items-center gap-2">
             <button
+              onClick={() => setShowReasonModal(true)}
+              className="px-3 py-1.5 rounded-lg bg-emerald-950/60 hover:bg-emerald-900/60 border border-emerald-500/40 text-xs font-medium text-emerald-300 flex items-center gap-1.5 transition shadow-sm"
+            >
+              <Bot className="w-3.5 h-3.5 text-emerald-400" />
+              Ask Graph
+            </button>
+            <button
               onClick={handleOpenAnalytics}
               className="px-3 py-1.5 rounded-lg bg-indigo-950/60 hover:bg-indigo-900/60 border border-indigo-500/40 text-xs font-medium text-indigo-300 flex items-center gap-1.5 transition"
             >
@@ -711,7 +742,8 @@ export default function UserGraph() {
               <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
             </button>
           </div>
-        </header>
+        </div>
+      </header>
 
         {/* Filter Toolbar */}
         <div className="px-5 py-2.5 border-b border-slate-800/60 bg-slate-900/30 flex items-center justify-between text-xs gap-4 flex-wrap">
@@ -799,9 +831,11 @@ export default function UserGraph() {
           </div>
         </div>
 
-        {/* SVG Canvas */}
-        <div className="flex-1 w-full h-full relative bg-slate-950 overflow-hidden cursor-crosshair">
-          <svg
+        {/* Main Content Area: Canvas + Inspector */}
+        <div className="flex-1 flex relative overflow-hidden">
+          {/* SVG Canvas */}
+          <div className="flex-1 w-full h-full relative bg-slate-950 overflow-hidden cursor-crosshair">
+            <svg
             ref={svgRef}
             id="graph-bg"
             className="w-full h-full"
@@ -966,10 +1000,9 @@ export default function UserGraph() {
             </div>
           )}
         </div>
-      </div>
 
-      {/* Node & Edge Inspector Side Panel */}
-      <aside className="w-96 border-l border-slate-800 bg-slate-900/90 backdrop-blur-md flex flex-col h-full z-20 overflow-y-auto">
+        {/* Node & Edge Inspector Side Panel */}
+        <aside className="w-96 border-l border-slate-800 bg-slate-900/90 backdrop-blur-md flex flex-col h-full z-20 overflow-y-auto">
         
         {selectedNode ? (
           <div className="p-5 flex-1 flex flex-col space-y-5">
@@ -1131,6 +1164,7 @@ export default function UserGraph() {
         )}
 
       </aside>
+    </div>
 
       {/* Pathfinder Modal */}
       {showPathModal && (
@@ -1452,6 +1486,121 @@ export default function UserGraph() {
 
               </div>
             ) : null}
+          </div>
+        </div>
+      )}
+
+      {/* Multi-Agent "Ask Graph" Reasoning Modal */}
+      {showReasonModal && (
+        <div className="fixed inset-0 bg-black/75 backdrop-blur-md z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-3xl w-full p-6 space-y-5 shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
+                  <Bot className="w-5 h-5" />
+                </div>
+                <div>
+                  <h2 className="text-base font-bold text-white flex items-center gap-2">
+                    Multi-Agent Knowledge Graph Reasoning
+                  </h2>
+                  <p className="text-xs text-slate-400">Ask topological, dependency, and multi-hop questions directly against the knowledge graph.</p>
+                </div>
+              </div>
+              <button onClick={() => setShowReasonModal(false)} className="text-slate-400 hover:text-white p-1">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Input Form */}
+            <div className="space-y-3">
+              <label className="text-xs font-medium text-slate-300">Natural Language Reasoning Query</label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="e.g. How does AegisAI Core connect to PostgreSQL Engine?"
+                  value={reasonQuery}
+                  onChange={(e) => setReasonQuery(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleExecuteReasoning(); }}
+                  className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 placeholder-slate-600"
+                />
+                <button
+                  onClick={handleExecuteReasoning}
+                  disabled={isReasoning || !reasonQuery.trim()}
+                  className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-medium rounded-xl flex items-center gap-2 transition shadow-md"
+                >
+                  {isReasoning ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                  <span>{isReasoning ? 'Reasoning...' : 'Ask Graph'}</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Results Display */}
+            {reasonResult && (
+              <div className="space-y-4 pt-2 border-t border-slate-800/80">
+                {/* Result Metrics */}
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="p-2.5 bg-slate-950 rounded-lg border border-slate-800 text-center">
+                    <span className="text-[10px] text-slate-400">Matched Entities</span>
+                    <p className="text-sm font-bold text-emerald-400 font-mono">{reasonResult.matched_nodes_count}</p>
+                  </div>
+                  <div className="p-2.5 bg-slate-950 rounded-lg border border-slate-800 text-center">
+                    <span className="text-[10px] text-slate-400">Connected Edges</span>
+                    <p className="text-sm font-bold text-indigo-400 font-mono">{reasonResult.matched_edges_count}</p>
+                  </div>
+                  <div className="p-2.5 bg-slate-950 rounded-lg border border-slate-800 text-center">
+                    <span className="text-[10px] text-slate-400">Confidence</span>
+                    <p className="text-sm font-bold text-white font-mono">{Math.round(reasonResult.confidence * 100)}%</p>
+                  </div>
+                </div>
+
+                {/* Graph Context */}
+                <div className="space-y-1.5">
+                  <span className="text-xs font-semibold text-slate-300">Grounded Graph Topology</span>
+                  <pre className="p-3.5 bg-slate-950 rounded-xl border border-slate-800 text-xs text-slate-200 whitespace-pre-wrap font-mono max-h-56 overflow-y-auto">
+                    {reasonResult.graph_context || 'No explicit topological path detected for query.'}
+                  </pre>
+                </div>
+
+                {/* Graph Citations */}
+                {reasonResult.citations?.length > 0 && (
+                  <div className="space-y-2">
+                    <span className="text-xs font-semibold text-slate-300">Attributed Graph Citations ({reasonResult.citations.length})</span>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {reasonResult.citations.map((cite, i) => (
+                        <div
+                          key={i}
+                          onClick={() => {
+                            if (cite.node_id) {
+                              const target = nodes.find(n => n.id === cite.node_id);
+                              if (target) {
+                                handleSelectNode(target);
+                                setPanOffset({
+                                  x: dimensions.width / 2 - target.x * zoomLevel,
+                                  y: dimensions.height / 2 - target.y * zoomLevel
+                                });
+                                setShowReasonModal(false);
+                              }
+                            }
+                          }}
+                          className="p-2 bg-slate-950 rounded-lg border border-slate-800 hover:border-emerald-500/50 cursor-pointer flex items-center justify-between text-xs transition"
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                            <span className="text-slate-200 font-medium">{cite.node_name || cite.relationship_type}</span>
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">
+                              {cite.source_type}
+                            </span>
+                          </div>
+                          <span className="text-[10px] font-mono text-emerald-400">{Math.round(cite.confidence * 100)}%</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+              </div>
+            )}
+
           </div>
         </div>
       )}

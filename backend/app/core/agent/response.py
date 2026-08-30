@@ -280,11 +280,28 @@ class ResponseGeneratorAgent(BaseAgent):
                 except Exception:
                     pass
 
+            # 3. Knowledge Graph Citations
+            graph_citations = state.get("graph_citations") or []
+            for gc in graph_citations:
+                citations.append(
+                    ResponseCitation(
+                        citation_id=f"graph_{gc.get('node_id', gc.get('edge_id', ''))}",
+                        title=gc.get("node_name", "Knowledge Graph Entity"),
+                        source_id=gc.get("node_id", gc.get("edge_id", "")),
+                        source_type="knowledge_graph",
+                        reference_text=f"{gc.get('node_type', '')}: {gc.get('node_name', '')}" if gc.get("node_name") else f"Relationship: {gc.get('relationship_type', '')}"
+                    )
+                )
+
             # Synthesize mock response
             content_parts = []
             if memory_context:
                 content_parts.append(f"Based on your profile preference:\n> {memory_context.strip()}\n")
             
+            graph_context = state.get("graph_context") or ""
+            if graph_context:
+                content_parts.append(f"**Knowledge Graph Topology**:\n{graph_context.strip()}\n")
+
             if rag_context:
                 content_parts.append(f"**Document Knowledge**:\n{rag_context.strip()}\n")
             

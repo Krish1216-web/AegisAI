@@ -10,26 +10,60 @@ from app.core.agent.state import AgentState, ExecutionStatus
 from app.core.agent.base import BaseAgent, ExecutionContext, AgentResult
 from app.core.agent.checkpoint import BaseCheckpointer
 from app.core.agent.exceptions import GraphExecutionError
+import redis
+from app.database.redis import redis_pool
 
-def log_event(db: Any, execution_id: str, event_type: str, agent_type: Optional[str] = None, status: str = "success", metadata: Optional[dict] = None) -> None:
-    from app.models.ai import ExecutionEvent
-    import redis
-    from app.database.redis import redis_pool
-    if not db:
-        return
+_redis_available_status: Optional[bool] = None
+
+def is_redis_available() -> bool:
+    global _redis_available_status
+    if _redis_available_status is False:
+        return False
+    if _redis_available_status is True:
+        return True
     try:
-        event = ExecutionEvent(
-            execution_id=uuid.UUID(str(execution_id)) if isinstance(execution_id, (str, uuid.UUID)) else execution_id,
-            event_type=event_type,
-            agent_type=agent_type,
-            status=status,
-            timestamp=datetime.datetime.now(datetime.timezone.utc),
-            meta_data=metadata
-        )
-        db.add(event)
-        db.commit()
-    except Exception as e:
-        logger.error(f"Failed to log event {event_type} in database: {e}")
+        c = redis.Redis(connection_pool=redis_pool, socket_connect_timeout=0.05, socket_timeout=0.05)
+        c.ping()
+        _redis_available_status = True
+        return True
+    except Exception:
+        _redis_available_status = False
+        return False
+
+def log_event(
+    db: Optional[Any],
+    execution_id: str,
+    event_type: str,
+    agent_type: Optional[str] = None,
+    tool_id: Optional[str] = None,
+    status: str = "success",
+    metadata: Optional[Dict[str, Any]] = None
+):
+    """
+    Publishes execution events to Redis Streams and saves persistent audit trails to DB.
+    """
+    event_meta = dict(metadata or {})
+    if tool_id:
+        event_meta["tool_id"] = tool_id
+
+    if db:
+        try:
+            from app.models.ai import ExecutionEvent
+            event = ExecutionEvent(
+                execution_id=uuid.UUID(str(execution_id)),
+                event_type=event_type,
+                agent_type=agent_type,
+                status=status,
+                meta_data=event_meta
+            )
+            db.add(event)
+            db.commit()
+        except Exception as e:
+            logger.error(f"Failed to log execution event to DB: {e}")
+            
+    # Publish structured real-time event to Redis Streams
+    if not is_redis_available():
+        return
 
     try:
         mapped_event_type = event_type
@@ -38,6 +72,8 @@ def log_event(db: Any, execution_id: str, event_type: str, agent_type: Optional[
                 mapped_event_type = "ORCHESTRATOR_STARTED"
             elif agent_type == "PlannerAgent":
                 mapped_event_type = "PLANNER_STARTED"
+            elif agent_type == "GraphReasoningAgent":
+                mapped_event_type = "GRAPH_REASONING_STARTED"
             elif agent_type == "RAGAgent":
                 mapped_event_type = "RAG_STARTED"
             elif agent_type == "ResearchAgent":
@@ -51,21 +87,29 @@ def log_event(db: Any, execution_id: str, event_type: str, agent_type: Optional[
             elif agent_type == "ResponseGeneratorAgent":
                 mapped_event_type = "RESPONSE_GENERATING"
         elif event_type == "AgentCompleted":
-            if agent_type == "RAGAgent":
+            if agent_type == "GraphReasoningAgent":
+                mapped_event_type = "GRAPH_REASONING_COMPLETED"
+            elif agent_type == "RAGAgent":
                 mapped_event_type = "RAG_COMPLETED"
+            else:
+                mapped_event_type = f"AGENT_COMPLETED_{agent_type.upper() if agent_type else 'UNKNOWN'}"
         elif event_type == "AgentFailed":
-            if agent_type == "RAGAgent":
+            if agent_type == "GraphReasoningAgent":
+                mapped_event_type = "GRAPH_REASONING_FAILED"
+            elif agent_type == "RAGAgent":
                 mapped_event_type = "RAG_FAILED"
-        elif event_type == "ToolStarted":
-            mapped_event_type = "TOOL_STARTED"
-        elif event_type == "ToolCompleted":
-            mapped_event_type = "TOOL_COMPLETED"
+            else:
+                mapped_event_type = "AGENT_FAILED"
         elif event_type == "ExecutionStarted":
             mapped_event_type = "EXECUTION_STARTED"
         elif event_type == "ExecutionCompleted":
             mapped_event_type = "EXECUTION_COMPLETED"
+        elif event_type == "ToolStarted":
+            mapped_event_type = "TOOL_STARTED"
+        elif event_type == "ToolCompleted":
+            mapped_event_type = "TOOL_COMPLETED"
             
-        client = redis.Redis(connection_pool=redis_pool, socket_connect_timeout=0.05, socket_timeout=0.05)
+        client = redis.Redis(connection_pool=redis_pool, socket_connect_timeout=0.02, socket_timeout=0.02)
         stream_key = f"aegis:stream:{execution_id}"
         
         safe_meta = {}

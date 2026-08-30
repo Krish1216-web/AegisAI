@@ -187,6 +187,26 @@ class CriticAgent(BaseAgent):
                         description="Cross-tenant document citation detected."
                     ))
 
+            # Simulated check 5: Knowledge Graph citation integrity & cross-tenant checks
+            graph_citations = state.get("graph_citations") or []
+            for cite in graph_citations:
+                node_id = cite.get("node_id", "")
+                edge_id = cite.get("edge_id", "")
+                if "fabricated" in str(node_id).lower() or "invalid" in str(node_id).lower() or "fabricated" in str(edge_id).lower() or "invalid" in str(edge_id).lower():
+                    decision = CriticDecision.FAIL
+                    overall_score = 0.0
+                    issues.append(CriticIssue(
+                        issue_id="fabricated_graph_citation", category="safety", severity="CRITICAL",
+                        description="Fabricated or invalid node/edge citation detected in Knowledge Graph results."
+                    ))
+                if context.workspace_id == "ws-B" and ("tenant-a" in str(cite).lower() or "ws-a" in str(cite).lower()):
+                    decision = CriticDecision.FAIL
+                    overall_score = 0.0
+                    issues.append(CriticIssue(
+                        issue_id="cross_tenant_graph_citation", category="safety", severity="CRITICAL",
+                        description="Cross-tenant graph citation detected."
+                    ))
+
             res = CriticResult(
                 execution_id=execution_id,
                 decision=decision,
@@ -218,6 +238,13 @@ class CriticAgent(BaseAgent):
             for cite in rag_citations:
                 if "invalid" in cite.get("document_id", "") or "fabricated" in cite.get("document_id", ""):
                     res.decision = CriticDecision.FAIL
+                    res.overall_score = 0.0
+
+            # 4. Graph citation invalidation
+            for cite in graph_citations:
+                if "invalid" in str(cite.get("node_id", "")) or "fabricated" in str(cite.get("node_id", "")):
+                    res.decision = CriticDecision.FAIL
+                    res.overall_score = 0.0
                     res.overall_score = 0.0
 
             elapsed = time.perf_counter() - start_time

@@ -18,6 +18,8 @@ class TaskType(str, Enum):
     CODING = "CODING"
     DOCUMENT_ANALYSIS = "DOCUMENT_ANALYSIS"
     RAG_QUERY = "RAG_QUERY"
+    GRAPH_QUERY = "GRAPH_QUERY"
+    HYBRID_GRAPH_RAG = "HYBRID_GRAPH_RAG"
     DATA_ANALYSIS = "DATA_ANALYSIS"
     WORKFLOW_AUTOMATION = "WORKFLOW_AUTOMATION"
     MEMORY_QUERY = "MEMORY_QUERY"
@@ -35,6 +37,7 @@ class Complexity(str, Enum):
 class AgentType(str, Enum):
     PLANNER = "PLANNER"
     RAG = "RAG"
+    GRAPH = "GRAPH"
     RESEARCH = "RESEARCH"
     MEMORY = "MEMORY"
     TOOL_EXECUTOR = "TOOL_EXECUTOR"
@@ -49,6 +52,7 @@ class ExecutionPlan(BaseModel):
     required_agents: List[AgentType]
     parallelizable_steps: List[int] = Field(default_factory=list)
     requires_memory: bool = False
+    requires_graph: bool = False
     requires_rag: bool = False
     requires_research: bool = False
     requires_tools: bool = False
@@ -102,11 +106,14 @@ class OrchestratorAgent(BaseAgent):
             requires_tools = "calculate" in lowered or "weather" in lowered
             requires_research = "research" in lowered or "industry" in lowered or "latest" in lowered
             requires_memory = "context" in lowered or "calculate" in lowered or "preference" in lowered or "previous" in lowered
+            requires_graph = any(kw in lowered for kw in ["graph", "related", "depend", "connected", "relationship", "path", "topology", "link", "hub", "chain"])
             requires_rag = any(kw in lowered for kw in ["report", "document", "contract", "rag", "uploaded", "paper", "pdf", "docx", "file"])
             
             required_agents = [AgentType.RESPONSE_GENERATOR]
             if requires_memory:
                 required_agents.append(AgentType.MEMORY)
+            if requires_graph:
+                required_agents.append(AgentType.GRAPH)
             if requires_rag:
                 required_agents.append(AgentType.RAG)
             if requires_research:
@@ -115,7 +122,11 @@ class OrchestratorAgent(BaseAgent):
                 required_agents.append(AgentType.TOOL_EXECUTOR)
 
             task_type = TaskType.GENERAL_QA
-            if requires_rag and requires_research:
+            if requires_graph and requires_rag:
+                task_type = TaskType.HYBRID_GRAPH_RAG
+            elif requires_graph:
+                task_type = TaskType.GRAPH_QUERY
+            elif requires_rag and requires_research:
                 task_type = TaskType.MIXED_TASK
             elif requires_rag:
                 task_type = TaskType.DOCUMENT_ANALYSIS
@@ -131,6 +142,7 @@ class OrchestratorAgent(BaseAgent):
                 steps=["Execute mapped plan nodes"],
                 required_agents=required_agents,
                 requires_memory=requires_memory,
+                requires_graph=requires_graph,
                 requires_rag=requires_rag,
                 requires_research=requires_research,
                 requires_tools=requires_tools,
