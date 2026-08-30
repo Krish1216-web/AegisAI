@@ -11,16 +11,20 @@ from app.models.workspace import Organization, Workspace, WorkspaceMember  # noq
 from app.models.conversation import Conversation, Message, ConversationParticipant  # noqa
 
 # AI Agents
-from app.models.ai import Agent, AgentExecution, AgentLog, AIRequestLog, ProviderHealthStatus  # noqa
+from app.models.ai import Agent, AgentExecution, AgentLog, AIRequestLog, ProviderHealthStatus, Execution, ExecutionEvent, ExecutionCheckpoint, ToolExecution  # noqa
 
 # Memory
-from app.models.memory import Memory, MemoryEmbedding, MemoryCategory  # noqa
+from app.models.memory import Memory, MemoryEmbedding, MemoryCategory, AgentMemory  # noqa
 
 # Workflows
 from app.models.workflow import Workflow, WorkflowNode, WorkflowExecution, WorkflowLog  # noqa
 
 # Documents
 from app.models.document import Document, DocumentChunk, DocumentEmbedding  # noqa
+from app.models.rag import RAGQuery  # noqa
+
+# Knowledge Graph
+from app.models.knowledge_graph import KnowledgeGraphNode, KnowledgeGraphEdge  # noqa
 
 # Tasks
 from app.models.task import Task, TaskExecution  # noqa

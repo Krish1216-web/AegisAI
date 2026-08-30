@@ -32,10 +32,18 @@ def register_exception_handlers(app):
         logger.error(f"Domain Exception [{exc.code}]: {exc.message} - Details: {exc.details}")
         
         status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
-        if exc.code == "ENTITY_NOT_FOUND":
+        if exc.code == "ENTITY_NOT_FOUND" or exc.code == "DOCUMENT_NOT_FOUND":
             status_code = status.HTTP_404_NOT_FOUND
-        elif exc.code == "DATABASE_TRANSACTION_FAILED" or exc.code == "MCP_SERVER_UNAVAILABLE":
+        elif exc.code in ["UNSUPPORTED_FILE_TYPE", "DOCUMENT_TOO_LARGE", "INVALID_FILE"]:
+            status_code = status.HTTP_400_BAD_REQUEST
+        elif exc.code == "PERMISSION_DENIED":
+            status_code = status.HTTP_403_FORBIDDEN
+        elif exc.code == "DUPLICATE_DOCUMENT":
+            status_code = status.HTTP_409_CONFLICT
+        elif exc.code in ["DATABASE_TRANSACTION_FAILED", "MCP_SERVER_UNAVAILABLE"]:
             status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+        elif exc.code == "STORAGE_ERROR":
+            status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
 
         return JSONResponse(
             status_code=status_code,

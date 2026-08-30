@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Shield, Lock, User, Eye, EyeOff, AlertCircle, Sparkles, UserCheck, ShieldAlert, Mail, ArrowLeft, CheckCircle2, RotateCw } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 
-export default function LoginPage({ onLoginSuccess }) {
+export default function LoginPage() {
+  const { login, register } = useAuth();
   const [formType, setFormType] = useState('login'); // 'login', 'register', 'forgot', 'reset'
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -15,36 +17,21 @@ export default function LoginPage({ onLoginSuccess }) {
   const [loadingStep, setLoadingStep] = useState('');
   const navigate = useNavigate();
 
-  const handleVerify = (name, pass) => {
-    const cleanName = name.trim().toLowerCase();
-    const cleanPass = pass.trim();
-
-    if (cleanName === 'superadmin' && cleanPass === 'super2026') {
-      setIsLoading(true);
-      setLoadingStep('Securing root super admin key rings...');
-      setTimeout(() => {
-        onLoginSuccess('admin'); // Super admin shares admin portal but gets full access keys
+  const handleVerify = async (name, pass) => {
+    setIsLoading(true);
+    setLoadingStep('Securing root token key rings...');
+    try {
+      const profile = await login(name, pass);
+      const userRole = profile.role.name.toLowerCase();
+      if (userRole === 'admin' || userRole === 'super admin') {
         navigate('/admin/dashboard');
-        setIsLoading(false);
-      }, 1500);
-    } else if (cleanName === 'admin' && cleanPass === 'admin2026') {
-      setIsLoading(true);
-      setLoadingStep('Securing root admin keys...');
-      setTimeout(() => {
-        onLoginSuccess('admin');
-        navigate('/admin/dashboard');
-        setIsLoading(false);
-      }, 1500);
-    } else if (cleanName === 'user' && cleanPass === 'user2026') {
-      setIsLoading(true);
-      setLoadingStep('Accessing workspace parameters...');
-      setTimeout(() => {
-        onLoginSuccess('user');
+      } else {
         navigate('/user/dashboard');
-        setIsLoading(false);
-      }, 1500);
-    } else {
-      setError('Decryption failure: Invalid identity credentials.');
+      }
+    } catch (err) {
+      setError(err.message || 'Decryption failure: Invalid identity credentials.');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -59,7 +46,7 @@ export default function LoginPage({ onLoginSuccess }) {
     handleVerify(username, password);
   };
 
-  const handleRegisterSubmit = (e) => {
+  const handleRegisterSubmit = async (e) => {
     e.preventDefault();
     setError('');
     setSuccess('');
@@ -69,11 +56,15 @@ export default function LoginPage({ onLoginSuccess }) {
     }
     setIsLoading(true);
     setLoadingStep('Generating security handshake certificates...');
-    setTimeout(() => {
+    try {
+      await register(username, email, password);
       setSuccess('Handshake registered! Decrypt using your credentials.');
       setFormType('login');
+    } catch (err) {
+      setError(err.message || 'Registration failed.');
+    } finally {
       setIsLoading(false);
-    }, 2000);
+    }
   };
 
   const handleForgotSubmit = (e) => {

@@ -6,6 +6,8 @@ class ExecutionStatus(str, Enum):
     PLANNING = "PLANNING"
     RESEARCHING = "RESEARCHING"
     MEMORY_RETRIEVAL = "MEMORY_RETRIEVAL"
+    GRAPH_REASONING = "GRAPH_REASONING"
+    RAG_RETRIEVAL = "RAG_RETRIEVAL"
     TOOL_EXECUTION = "TOOL_EXECUTION"
     CRITIC_REVIEW = "CRITIC_REVIEW"
     GENERATING_RESPONSE = "GENERATING_RESPONSE"
@@ -13,8 +15,12 @@ class ExecutionStatus(str, Enum):
     FAILED = "FAILED"
     PAUSED = "PAUSED"
     CANCELLED = "CANCELLED"
+    RUNNING = "RUNNING"
+    WAITING_FOR_CONFIRMATION = "WAITING_FOR_CONFIRMATION"
+    WAITING_FOR_CLARIFICATION = "WAITING_FOR_CLARIFICATION"
+    TIMED_OUT = "TIMED_OUT"
 
-class AgentState(TypedDict):
+class AgentState(TypedDict, total=False):
     """
     Strongly typed shared state for the multi-agent graph execution.
     """
@@ -32,6 +38,21 @@ class AgentState(TypedDict):
     tool_results: List[Dict[str, Any]]
     memory_context: Optional[str]
     memory_results: Optional[Dict[str, Any]]
+    graph_query: Optional[str]
+    graph_reasoning_required: Optional[bool]
+    graph_reasoning_mode: Optional[str]
+    graph_entities: Optional[List[str]]
+    graph_nodes: Optional[List[Dict[str, Any]]]
+    graph_edges: Optional[List[Dict[str, Any]]]
+    graph_paths: Optional[List[Dict[str, Any]]]
+    graph_context: Optional[str]
+    graph_confidence: Optional[float]
+    graph_citations: Optional[List[Dict[str, Any]]]
+    graph_reasoning_result: Optional[Dict[str, Any]]
+    rag_result: Optional[Dict[str, Any]]
+    rag_context: Optional[str]
+    rag_citations: Optional[List[Dict[str, Any]]]
+    rag_confidence: Optional[float]
     research_results: Optional[str]
     critic_result: Optional[str]
     critic_decision: Optional[str]
