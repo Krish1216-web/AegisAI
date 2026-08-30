@@ -337,3 +337,103 @@ export async function syncGraphNodeToMemory(nodeId: string): Promise<Record<stri
   });
 }
 
+// ----------------------------------------------------------------------
+// Phase 5.8: Graph Search & Analytics API Calls
+// ----------------------------------------------------------------------
+
+export interface GraphAnalyticsOverview {
+  total_nodes: number;
+  total_edges: number;
+  nodes_by_type: Record<string, number>;
+  edges_by_type: Record<string, number>;
+  average_degree: number;
+  max_degree: number;
+  isolated_nodes_count: number;
+  connected_nodes_count: number;
+  graph_density: number;
+  average_confidence: number;
+  provenance_distribution: Record<string, number>;
+}
+
+export interface GraphHealthReport {
+  status: 'HEALTHY' | 'WARNING' | 'CRITICAL';
+  orphan_rate: number;
+  low_confidence_edges_count: number;
+  conflicts_count: number;
+  unresolved_provenance_count: number;
+  diagnostic_messages: string[];
+}
+
+export interface TopConnectedEntity {
+  node_id: string;
+  name: string;
+  node_type: string;
+  degree: number;
+  in_degree: number;
+  out_degree: number;
+}
+
+export interface DuplicateCandidate {
+  source_node_id: string;
+  source_name: string;
+  target_node_id: string;
+  target_name: string;
+  entity_type: string;
+  similarity_score: number;
+  reason: string;
+}
+
+export async function getGraphAnalyticsOverview(): Promise<GraphAnalyticsOverview> {
+  return request<GraphAnalyticsOverview>('/knowledge-graph/analytics/overview', {
+    method: 'GET',
+  });
+}
+
+export async function getGraphHealth(): Promise<GraphHealthReport> {
+  return request<GraphHealthReport>('/knowledge-graph/analytics/health', {
+    method: 'GET',
+  });
+}
+
+export async function getTopConnectedEntities(limit: number = 10): Promise<TopConnectedEntity[]> {
+  return request<TopConnectedEntity[]>(`/knowledge-graph/analytics/top-connected?limit=${limit}`, {
+    method: 'GET',
+  });
+}
+
+export async function getOrphanNodes(limit: number = 50): Promise<KnowledgeGraphNode[]> {
+  return request<KnowledgeGraphNode[]>(`/knowledge-graph/analytics/orphans?limit=${limit}`, {
+    method: 'GET',
+  });
+}
+
+export async function getDuplicateCandidates(similarityThreshold: number = 0.85): Promise<DuplicateCandidate[]> {
+  return request<DuplicateCandidate[]>(`/knowledge-graph/analytics/duplicates?similarity_threshold=${similarityThreshold}`, {
+    method: 'GET',
+  });
+}
+
+export async function searchAdvanced(payload: {
+  query?: string;
+  node_type?: string;
+  relationship_type?: string;
+  min_confidence?: number;
+  limit?: number;
+  offset?: number;
+}): Promise<{
+  results: Array<{
+    node: KnowledgeGraphNode;
+    relevance_score: number;
+    match_type: string;
+    degree: number;
+  }>;
+  total_matched: number;
+  search_latency_ms: number;
+}> {
+  return request('/knowledge-graph/search/advanced', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+

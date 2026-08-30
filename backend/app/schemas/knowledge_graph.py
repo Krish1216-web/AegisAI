@@ -215,3 +215,65 @@ class GraphIntelligenceContextRequest(BaseModel):
     node_ids: Optional[List[uuid.UUID]] = None
     depth: int = Field(2, ge=1, le=4)
     max_entities: int = Field(20, ge=1, le=100)
+
+# ---------------------------------------------------------
+# Phase 5.8: Graph Search & Analytics Schemas
+# ---------------------------------------------------------
+
+class GraphAnalyticsOverview(BaseModel):
+    total_nodes: int
+    total_edges: int
+    nodes_by_type: Dict[str, int] = Field(default_factory=dict)
+    edges_by_type: Dict[str, int] = Field(default_factory=dict)
+    average_degree: float = 0.0
+    max_degree: int = 0
+    isolated_nodes_count: int = 0
+    connected_nodes_count: int = 0
+    graph_density: float = 0.0
+    average_confidence: float = 0.0
+    provenance_distribution: Dict[str, int] = Field(default_factory=dict)
+
+class GraphHealthReport(BaseModel):
+    status: Literal["HEALTHY", "WARNING", "CRITICAL"]
+    orphan_rate: float
+    low_confidence_edges_count: int
+    conflicts_count: int
+    unresolved_provenance_count: int
+    diagnostic_messages: List[str] = Field(default_factory=list)
+
+class TopConnectedEntity(BaseModel):
+    node_id: uuid.UUID
+    name: str
+    node_type: str
+    degree: int
+    in_degree: int
+    out_degree: int
+
+class DuplicateCandidate(BaseModel):
+    source_node_id: uuid.UUID
+    source_name: str
+    target_node_id: uuid.UUID
+    target_name: str
+    entity_type: str
+    similarity_score: float
+    reason: str
+
+class SearchResultItem(BaseModel):
+    node: NodeResponse
+    relevance_score: float
+    match_type: Literal["exact", "prefix", "partial", "description", "fuzzy"]
+    degree: int = 0
+
+class AdvancedSearchRequest(BaseModel):
+    query: Optional[str] = None
+    node_type: Optional[str] = None
+    relationship_type: Optional[str] = None
+    min_confidence: float = Field(0.0, ge=0.0, le=1.0)
+    limit: int = Field(20, ge=1, le=100)
+    offset: int = Field(0, ge=0)
+
+class AdvancedSearchResponse(BaseModel):
+    results: List[SearchResultItem]
+    total_matched: int
+    search_latency_ms: float
+

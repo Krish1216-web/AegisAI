@@ -475,3 +475,101 @@ def sync_graph_node_to_memory_endpoint(
         "source": mem.source
     }
 
+# ---------------------------------------------------------
+# Phase 5.8: Graph Search & Analytics Endpoints
+# ---------------------------------------------------------
+
+@router.get("/analytics/overview", response_model=dict, dependencies=[Depends(check_rate_limit)])
+def get_graph_analytics_overview_endpoint(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Returns high-level graph topology, degree distribution, and provenance analytics.
+    """
+    from app.services.graph_analytics import GraphAnalyticsService
+    workspace_id = resolve_workspace_id(current_user, db)
+    analytics = GraphAnalyticsService(db)
+    return analytics.get_analytics_overview(user_id=current_user.id, workspace_id=workspace_id).model_dump()
+
+@router.get("/analytics/health", response_model=dict, dependencies=[Depends(check_rate_limit)])
+def get_graph_health_endpoint(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Returns graph health diagnostics, orphan rates, and contradiction indicators.
+    """
+    from app.services.graph_analytics import GraphAnalyticsService
+    workspace_id = resolve_workspace_id(current_user, db)
+    analytics = GraphAnalyticsService(db)
+    return analytics.get_graph_health(user_id=current_user.id, workspace_id=workspace_id).model_dump()
+
+@router.get("/analytics/top-connected", response_model=List[dict], dependencies=[Depends(check_rate_limit)])
+def get_top_connected_entities_endpoint(
+    limit: int = Query(10, ge=1, le=50),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Returns the most connected hub nodes in the workspace graph.
+    """
+    from app.services.graph_analytics import GraphAnalyticsService
+    workspace_id = resolve_workspace_id(current_user, db)
+    analytics = GraphAnalyticsService(db)
+    items = analytics.get_top_connected_entities(user_id=current_user.id, workspace_id=workspace_id, limit=limit)
+    return [i.model_dump() for i in items]
+
+@router.get("/analytics/orphans", response_model=List[dict], dependencies=[Depends(check_rate_limit)])
+def get_orphan_nodes_endpoint(
+    limit: int = Query(50, ge=1, le=100),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Returns isolated entities with no connected relationships.
+    """
+    from app.services.graph_analytics import GraphAnalyticsService
+    workspace_id = resolve_workspace_id(current_user, db)
+    analytics = GraphAnalyticsService(db)
+    orphans = analytics.get_orphan_nodes(user_id=current_user.id, workspace_id=workspace_id, limit=limit)
+    return [o.model_dump() for o in orphans]
+
+@router.get("/analytics/duplicates", response_model=List[dict], dependencies=[Depends(check_rate_limit)])
+def get_duplicate_candidates_endpoint(
+    similarity_threshold: float = Query(0.85, ge=0.5, le=1.0),
+    limit: int = Query(20, ge=1, le=50),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Returns potential duplicate entity pairs for safe review and merging.
+    """
+    from app.services.graph_analytics import GraphAnalyticsService
+    workspace_id = resolve_workspace_id(current_user, db)
+    analytics = GraphAnalyticsService(db)
+    candidates = analytics.detect_duplicate_candidates(
+        user_id=current_user.id,
+        workspace_id=workspace_id,
+        similarity_threshold=similarity_threshold,
+        limit=limit
+    )
+    return [c.model_dump() for c in candidates]
+
+@router.post("/search/advanced", response_model=dict, dependencies=[Depends(check_rate_limit)])
+def advanced_search_endpoint(
+    payload: dict,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Executes advanced multi-criterion search with deterministic relevance ranking.
+    """
+    from app.schemas.knowledge_graph import AdvancedSearchRequest
+    from app.services.graph_analytics import GraphAnalyticsService
+    workspace_id = resolve_workspace_id(current_user, db)
+    req = AdvancedSearchRequest.model_validate(payload)
+    analytics = GraphAnalyticsService(db)
+    return analytics.advanced_search(user_id=current_user.id, workspace_id=workspace_id, req=req).model_dump()
+
+

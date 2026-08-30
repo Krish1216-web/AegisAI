@@ -33,7 +33,12 @@ import {
   Target,
   Eye,
   EyeOff,
-  Link as LinkIcon
+  Link as LinkIcon,
+  BarChart3,
+  ShieldCheck,
+  AlertTriangle,
+  Flame,
+  Users
 } from 'lucide-react';
 import { 
   listNodes, 
@@ -46,7 +51,12 @@ import {
   getGraphContext,
   getDocumentEntities,
   getDocumentRelationships,
-  syncGraphNodeToMemory
+  syncGraphNodeToMemory,
+  getGraphAnalyticsOverview,
+  getGraphHealth,
+  getTopConnectedEntities,
+  getOrphanNodes,
+  getDuplicateCandidates
 } from '../../api/knowledgeGraph';
 
 const NODE_TYPES = [
@@ -125,6 +135,15 @@ export default function UserGraph() {
   const [graphContextText, setGraphContextText] = useState('');
   const [isLoadingContext, setIsLoadingContext] = useState(false);
   const [copiedContext, setCopiedContext] = useState(false);
+
+  // Analytics Drawer / Modal
+  const [showAnalyticsModal, setShowAnalyticsModal] = useState(false);
+  const [analyticsOverview, setAnalyticsOverview] = useState(null);
+  const [healthReport, setHealthReport] = useState(null);
+  const [topEntities, setTopEntities] = useState([]);
+  const [orphanList, setOrphanList] = useState([]);
+  const [duplicateList, setDuplicateList] = useState([]);
+  const [isLoadingAnalytics, setIsLoadingAnalytics] = useState(false);
 
   // Canvas Viewport & Physics
   const svgRef = useRef(null);
@@ -521,6 +540,31 @@ export default function UserGraph() {
     }
   };
 
+  // Fetch full graph analytics
+  const handleOpenAnalytics = async () => {
+    setShowAnalyticsModal(true);
+    setIsLoadingAnalytics(true);
+    try {
+      const [overview, health, top, orphans, duplicates] = await Promise.all([
+        getGraphAnalyticsOverview(),
+        getGraphHealth(),
+        getTopConnectedEntities(8),
+        getOrphanNodes(15),
+        getDuplicateCandidates(0.85)
+      ]);
+      setAnalyticsOverview(overview);
+      setHealthReport(health);
+      setTopEntities(top || []);
+      setOrphanList(orphans || []);
+      setDuplicateList(duplicates || []);
+    } catch (err) {
+      console.error('Failed to load graph analytics:', err);
+      showToast('Failed to load graph analytics');
+    } finally {
+      setIsLoadingAnalytics(false);
+    }
+  };
+
   const getNodeColor = (type) => {
     const found = NODE_TYPES.find(t => t.id === type);
     return found ? found.color : '#94a3b8';
@@ -638,6 +682,13 @@ export default function UserGraph() {
 
           {/* Action Toolbar */}
           <div className="flex items-center gap-2">
+            <button
+              onClick={handleOpenAnalytics}
+              className="px-3 py-1.5 rounded-lg bg-indigo-950/60 hover:bg-indigo-900/60 border border-indigo-500/40 text-xs font-medium text-indigo-300 flex items-center gap-1.5 transition"
+            >
+              <BarChart3 className="w-3.5 h-3.5 text-indigo-400" />
+              Analytics & Health
+            </button>
             <button
               onClick={() => setShowPathModal(true)}
               className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700/60 text-xs font-medium text-slate-200 flex items-center gap-1.5 transition"
@@ -1206,6 +1257,206 @@ export default function UserGraph() {
         </div>
       )}
 
+      {/* Analytics & Health Modal */}
+      {showAnalyticsModal && (
+        <div className="fixed inset-0 bg-black/75 backdrop-blur-md z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-4xl w-full p-6 space-y-5 shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-indigo-500/10 border border-indigo-500/20 text-indigo-400">
+                  <BarChart3 className="w-5 h-5" />
+                </div>
+                <div>
+                  <h2 className="text-base font-bold text-white flex items-center gap-2">
+                    Knowledge Graph Analytics & Diagnostics
+                  </h2>
+                  <p className="text-xs text-slate-400">Structural metrics, degree connectivity, health diagnostics, and provenance breakdown.</p>
+                </div>
+              </div>
+              <button onClick={() => setShowAnalyticsModal(false)} className="text-slate-400 hover:text-white p-1">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {isLoadingAnalytics ? (
+              <div className="py-16 flex flex-col items-center justify-center text-slate-400 space-y-3">
+                <RefreshCw className="w-8 h-8 animate-spin text-indigo-400" />
+                <span className="text-xs">Computing topological metrics and health diagnostics...</span>
+              </div>
+            ) : analyticsOverview ? (
+              <div className="space-y-6">
+                
+                {/* Metric Summary Cards */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <div className="p-3.5 bg-slate-950/60 rounded-xl border border-slate-800 space-y-1">
+                    <span className="text-[11px] text-slate-400 font-medium">Total Entities</span>
+                    <p className="text-xl font-bold text-white font-mono">{analyticsOverview.total_nodes}</p>
+                    <span className="text-[10px] text-indigo-400">{analyticsOverview.connected_nodes_count} connected</span>
+                  </div>
+
+                  <div className="p-3.5 bg-slate-950/60 rounded-xl border border-slate-800 space-y-1">
+                    <span className="text-[11px] text-slate-400 font-medium">Relationships</span>
+                    <p className="text-xl font-bold text-white font-mono">{analyticsOverview.total_edges}</p>
+                    <span className="text-[10px] text-emerald-400">{Math.round(analyticsOverview.average_confidence * 100)}% avg conf</span>
+                  </div>
+
+                  <div className="p-3.5 bg-slate-950/60 rounded-xl border border-slate-800 space-y-1">
+                    <span className="text-[11px] text-slate-400 font-medium">Average Degree</span>
+                    <p className="text-xl font-bold text-white font-mono">{analyticsOverview.average_degree}</p>
+                    <span className="text-[10px] text-slate-400">max {analyticsOverview.max_degree} links</span>
+                  </div>
+
+                  <div className="p-3.5 bg-slate-950/60 rounded-xl border border-slate-800 space-y-1">
+                    <span className="text-[11px] text-slate-400 font-medium">Graph Health</span>
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      {healthReport?.status === 'HEALTHY' ? (
+                        <ShieldCheck className="w-5 h-5 text-emerald-400" />
+                      ) : (
+                        <AlertTriangle className="w-5 h-5 text-amber-400" />
+                      )}
+                      <span className={`text-base font-bold font-mono ${
+                        healthReport?.status === 'HEALTHY' ? 'text-emerald-400' : 'text-amber-400'
+                      }`}>
+                        {healthReport?.status || 'HEALTHY'}
+                      </span>
+                    </div>
+                    <span className="text-[10px] text-slate-400">{analyticsOverview.isolated_nodes_count} isolated nodes</span>
+                  </div>
+                </div>
+
+                {/* Health Diagnostics Banner */}
+                {healthReport?.diagnostic_messages?.length > 0 && (
+                  <div className="p-3 bg-slate-950 rounded-xl border border-slate-800/80 space-y-1.5">
+                    <span className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+                      <AlertCircle className="w-3.5 h-3.5 text-indigo-400" />
+                      Diagnostic Summary
+                    </span>
+                    <ul className="text-xs text-slate-400 space-y-1 list-disc list-inside">
+                      {healthReport.diagnostic_messages.map((msg, i) => (
+                        <li key={i}>{msg}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {/* Entity & Relationship Breakdown */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* Entity Types */}
+                  <div className="p-4 bg-slate-950/60 rounded-xl border border-slate-800 space-y-2.5">
+                    <h3 className="text-xs font-semibold text-slate-300 uppercase tracking-wider">Entities by Type</h3>
+                    <div className="space-y-2">
+                      {Object.entries(analyticsOverview.nodes_by_type || {}).map(([type, count]) => (
+                        <div key={type} className="space-y-1">
+                          <div className="flex justify-between text-xs">
+                            <span className="text-slate-300 font-medium">{type}</span>
+                            <span className="text-slate-400 font-mono">{count}</span>
+                          </div>
+                          <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
+                            <div
+                              className="h-full rounded-full"
+                              style={{
+                                width: `${Math.min(100, (count / (analyticsOverview.total_nodes || 1)) * 100)}%`,
+                                backgroundColor: getNodeColor(type)
+                              }}
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Relationship Types */}
+                  <div className="p-4 bg-slate-950/60 rounded-xl border border-slate-800 space-y-2.5">
+                    <h3 className="text-xs font-semibold text-slate-300 uppercase tracking-wider">Relationships by Type</h3>
+                    <div className="space-y-2">
+                      {Object.entries(analyticsOverview.edges_by_type || {}).map(([type, count]) => (
+                        <div key={type} className="space-y-1">
+                          <div className="flex justify-between text-xs">
+                            <span className="text-slate-300 font-medium">{type}</span>
+                            <span className="text-slate-400 font-mono">{count}</span>
+                          </div>
+                          <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
+                            <div
+                              className="bg-indigo-500 h-full rounded-full"
+                              style={{
+                                width: `${Math.min(100, (count / (analyticsOverview.total_edges || 1)) * 100)}%`
+                              }}
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Top Connected Entities */}
+                <div className="space-y-2">
+                  <h3 className="text-xs font-semibold text-slate-300 uppercase tracking-wider">Top Connected Hub Entities</h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {topEntities.map((ent) => (
+                      <div
+                        key={ent.node_id}
+                        onClick={() => {
+                          const target = nodes.find(n => n.id === ent.node_id);
+                          if (target) {
+                            handleSelectNode(target);
+                            setPanOffset({
+                              x: dimensions.width / 2 - target.x * zoomLevel,
+                              y: dimensions.height / 2 - target.y * zoomLevel
+                            });
+                            setShowAnalyticsModal(false);
+                          }
+                        }}
+                        className="p-2.5 bg-slate-950 rounded-lg border border-slate-800 hover:border-indigo-500/50 cursor-pointer flex items-center justify-between text-xs transition"
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full" style={{ backgroundColor: getNodeColor(ent.node_type) }} />
+                          <span className="font-medium text-slate-200">{ent.name}</span>
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">
+                            {ent.node_type}
+                          </span>
+                        </div>
+                        <span className="font-mono text-indigo-400 font-semibold">{ent.degree} links</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Duplicate Review Candidates */}
+                {duplicateList.length > 0 && (
+                  <div className="space-y-2">
+                    <h3 className="text-xs font-semibold text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
+                      <AlertTriangle className="w-3.5 h-3.5" />
+                      Potential Duplicate Entity Review ({duplicateList.length})
+                    </h3>
+                    <div className="space-y-1.5 max-h-40 overflow-y-auto">
+                      {duplicateList.map((dup, i) => (
+                        <div key={i} className="p-2.5 bg-slate-950 rounded-lg border border-slate-800 text-xs flex items-center justify-between">
+                          <div className="space-y-0.5">
+                            <div className="flex items-center gap-2">
+                              <span className="text-slate-200 font-medium">{dup.source_name}</span>
+                              <span className="text-slate-500">↔</span>
+                              <span className="text-slate-200 font-medium">{dup.target_name}</span>
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">{dup.entity_type}</span>
+                            </div>
+                            <p className="text-[10px] text-slate-400">{dup.reason}</p>
+                          </div>
+                          <span className="font-mono text-amber-400 font-semibold text-xs">
+                            {Math.round(dup.similarity_score * 100)}%
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+              </div>
+            ) : null}
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
+
