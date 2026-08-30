@@ -13,7 +13,7 @@ from app.database.session import get_db
 from app.database.redis import get_redis
 from app.api.dependencies import get_current_user, check_rate_limit
 from app.models.user import User
-from app.schemas.rag import RAGRequest, RAGResponse, Citation, RetrievedChunk
+from app.schemas.rag import RAGRequest, RAGResponse, Citation, RetrievedChunk, HybridRAGRequest
 from app.core.rag.factory import RAGFactory
 from app.core.config import settings
 from app.models.rag import RAGQuery
@@ -52,6 +52,37 @@ async def query_rag_endpoint(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to process RAG query: {str(e)}"
+        )
+
+@router.post("/hybrid/query", dependencies=[Depends(check_rate_limit)])
+async def query_hybrid_rag_endpoint(
+    payload: HybridRAGRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    redis_client: redis.Redis = Depends(get_redis)
+):
+    """
+    Executes Hybrid Vector + Graph RAG retrieval, context fusion, and grounded answer synthesis.
+    """
+    from app.core.rag.hybrid.factory import HybridRAGFactory
+    workspace_id = resolve_workspace_id(current_user, db)
+    hybrid_service = HybridRAGFactory.get_hybrid_rag_service(db, redis_client)
+
+    try:
+        result = await hybrid_service.query_hybrid(
+            query=payload.query,
+            user_id=current_user.id,
+            workspace_id=workspace_id,
+            top_k=payload.top_k,
+            graph_depth=payload.graph_depth,
+            similarity_threshold=payload.similarity_threshold
+        )
+        return result
+    except Exception as e:
+        logger.error(f"Hybrid RAG query failed: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to process Hybrid RAG query: {str(e)}"
         )
 
 @router.get("/stream", dependencies=[Depends(check_rate_limit)])

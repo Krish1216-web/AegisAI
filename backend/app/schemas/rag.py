@@ -40,3 +40,10 @@ class RAGResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+class HybridRAGRequest(BaseModel):
+    query: str
+    top_k: int = Field(5, ge=1, le=50)
+    graph_depth: int = Field(2, ge=1, le=5)
+    similarity_threshold: float = Field(0.0, ge=0.0, le=1.0)
+
