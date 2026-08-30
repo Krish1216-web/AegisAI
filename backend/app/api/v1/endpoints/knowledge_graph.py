@@ -412,3 +412,66 @@ def rebuild_document_graph_endpoint(
         workspace_id=workspace_id
     )
 
+# ---------------------------------------------------------
+# Memory-Graph Synchronization Endpoints
+# ---------------------------------------------------------
+
+@router.post("/sync/memory/{memory_id}", response_model=dict, dependencies=[Depends(check_rate_limit)])
+def sync_memory_to_graph_endpoint(
+    memory_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Synchronizes an AgentMemory record into the tenant Knowledge Graph.
+    """
+    from app.models.memory import AgentMemory
+    from app.services.memory_graph_sync import MemoryGraphSyncService
+    workspace_id = resolve_workspace_id(current_user, db)
+
+    memory = db.query(AgentMemory).filter(
+        AgentMemory.id == memory_id,
+        AgentMemory.workspace_id == workspace_id,
+        AgentMemory.user_id == current_user.id
+    ).first()
+
+    if not memory:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Memory record not found in workspace.")
+
+    sync_service = MemoryGraphSyncService(db)
+    return sync_service.sync_memory_to_graph(
+        user_id=current_user.id,
+        workspace_id=workspace_id,
+        memory=memory
+    )
+
+@router.post("/nodes/{node_id}/sync-memory", response_model=dict, dependencies=[Depends(check_rate_limit)])
+def sync_graph_node_to_memory_endpoint(
+    node_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Synchronizes a KnowledgeGraphNode entity into an AgentMemory record.
+    """
+    from app.services.memory_graph_sync import MemoryGraphSyncService
+    workspace_id = resolve_workspace_id(current_user, db)
+
+    sync_service = MemoryGraphSyncService(db)
+    mem = sync_service.sync_graph_to_memory(
+        user_id=current_user.id,
+        workspace_id=workspace_id,
+        node_id=node_id
+    )
+    if not mem:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Node not found or sync skipped to prevent loop.")
+
+    return {
+        "status": "synced",
+        "memory_id": str(mem.id),
+        "content": mem.content,
+        "source": mem.source
+    }
+
