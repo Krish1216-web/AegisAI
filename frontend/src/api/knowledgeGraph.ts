@@ -320,3 +320,20 @@ export async function rebuildDocumentGraph(documentId: string): Promise<Record<s
     method: 'POST',
   });
 }
+
+// ----------------------------------------------------------------------
+// Memory-Graph Synchronization API Calls
+// ----------------------------------------------------------------------
+
+export async function syncMemoryToGraph(memoryId: string): Promise<Record<string, any>> {
+  return request<Record<string, any>>(`/knowledge-graph/sync/memory/${memoryId}`, {
+    method: 'POST',
+  });
+}
+
+export async function syncGraphNodeToMemory(nodeId: string): Promise<Record<string, any>> {
+  return request<Record<string, any>>(`/knowledge-graph/nodes/${nodeId}/sync-memory`, {
+    method: 'POST',
+  });
+}
+

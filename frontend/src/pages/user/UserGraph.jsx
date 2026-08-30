@@ -26,7 +26,14 @@ import {
   RefreshCw, 
   ExternalLink,
   Tag,
-  AlertCircle
+  AlertCircle,
+  Brain,
+  Sliders,
+  X,
+  Target,
+  Eye,
+  EyeOff,
+  Link as LinkIcon
 } from 'lucide-react';
 import { 
   listNodes, 
@@ -38,7 +45,8 @@ import {
   findPath, 
   getGraphContext,
   getDocumentEntities,
-  getDocumentRelationships
+  getDocumentRelationships,
+  syncGraphNodeToMemory
 } from '../../api/knowledgeGraph';
 
 const NODE_TYPES = [
@@ -78,58 +86,72 @@ export default function UserGraph() {
   const [nodes, setNodes] = useState([]);
   const [links, setLinks] = useState([]);
 
-  // States
+  // Loading & Error States
   const [isLoading, setIsLoading] = useState(true);
   const [isExpanding, setIsExpanding] = useState(false);
   const [errorMessage, setErrorMessage] = useState(null);
+  const [toastMessage, setToastMessage] = useState(null);
+
+  // Search & Filter Controls
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
   const [selectedType, setSelectedType] = useState('ALL');
   const [selectedRelType, setSelectedRelType] = useState('ALL');
-  const [depthLimit, setDepthLimit] = useState(2);
+  const [minConfidence, setMinConfidence] = useState(0.0);
   const [nodeLimit, setNodeLimit] = useState(50);
+  const [hideIsolated, setHideIsolated] = useState(false);
   const [isPhysicsActive, setIsPhysicsActive] = useState(true);
 
-  // Interaction States
+  // Selection & Inspector
   const [selectedNode, setSelectedNode] = useState(null);
+  const [selectedEdge, setSelectedEdge] = useState(null);
   const [hoveredNode, setHoveredNode] = useState(null);
+  const [hoveredEdge, setHoveredEdge] = useState(null);
   const [relatedEntities, setRelatedEntities] = useState([]);
   const [isLoadingRelated, setIsLoadingRelated] = useState(false);
 
-  // Modals & Panels
+  // Pathfinding Modal & Highlight
   const [showPathModal, setShowPathModal] = useState(false);
   const [pathSourceId, setPathSourceId] = useState('');
   const [pathTargetId, setPathTargetId] = useState('');
   const [pathResult, setPathResult] = useState(null);
   const [isFindingPath, setIsFindingPath] = useState(false);
+  const [highlightedPathNodeIds, setHighlightedPathNodeIds] = useState(new Set());
+  const [highlightedPathEdgeKeys, setHighlightedPathEdgeKeys] = useState(new Set());
 
+  // Graph Context Modal
   const [showContextModal, setShowContextModal] = useState(false);
   const [graphContextText, setGraphContextText] = useState('');
   const [isLoadingContext, setIsLoadingContext] = useState(false);
   const [copiedContext, setCopiedContext] = useState(false);
 
-  // Canvas & Physics
+  // Canvas Viewport & Physics
   const svgRef = useRef(null);
   const [zoomLevel, setZoomLevel] = useState(1);
   const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
   const [draggedNode, setDraggedNode] = useState(null);
-  const [dimensions, setDimensions] = useState({ width: 900, height: 600 });
+  const [dimensions, setDimensions] = useState({ width: 1000, height: 650 });
 
-  // Update canvas size on resize
+  // Update canvas size on window resize
   useEffect(() => {
     const updateDimensions = () => {
       if (svgRef.current) {
         const { clientWidth, clientHeight } = svgRef.current;
-        setDimensions({ width: clientWidth || 900, height: clientHeight || 600 });
+        setDimensions({ width: clientWidth || 1000, height: clientHeight || 650 });
       }
     };
     updateDimensions();
     window.addEventListener('resize', updateDimensions);
     return () => window.removeEventListener('resize', updateDimensions);
   }, []);
+
+  const showToast = (msg) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 3500);
+  };
 
   // ----------------------------------------------------------------------
   // 1. Initial Data Fetching
@@ -139,7 +161,6 @@ export default function UserGraph() {
     setErrorMessage(null);
     try {
       if (docIdParam) {
-        // Document-specific subgraph
         const [docNodes, docEdges] = await Promise.all([
           getDocumentEntities(docIdParam),
           getDocumentRelationships(docIdParam)
@@ -147,7 +168,6 @@ export default function UserGraph() {
         setRawNodes(docNodes || []);
         setRawEdges(docEdges || []);
       } else {
-        // General workspace graph
         const [nodeList, edgeList] = await Promise.all([
           listNodes({ limit: nodeLimit }),
           listEdges({ limit: nodeLimit * 2 })
@@ -168,7 +188,33 @@ export default function UserGraph() {
   }, [fetchGraphData]);
 
   // ----------------------------------------------------------------------
-  // 2. Transform Raw Nodes & Edges to Simulation Elements
+  // 2. Debounced Enhanced Search
+  // ----------------------------------------------------------------------
+  useEffect(() => {
+    if (!searchQuery.trim() || searchQuery.length < 2) {
+      setSearchResults([]);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      setIsSearching(true);
+      try {
+        const results = await searchEnhanced({
+          query: searchQuery.trim(),
+          node_type: selectedType !== 'ALL' ? selectedType : undefined,
+          limit: 8
+        });
+        setSearchResults(results || []);
+      } catch (err) {
+        console.warn('Search warning:', err);
+      } finally {
+        setIsSearching(false);
+      }
+    }, 280);
+    return () => clearTimeout(timer);
+  }, [searchQuery, selectedType]);
+
+  // ----------------------------------------------------------------------
+  // 3. Transform Raw Nodes & Edges to Simulation Elements
   // ----------------------------------------------------------------------
   useEffect(() => {
     let filteredNodes = rawNodes;
@@ -176,26 +222,39 @@ export default function UserGraph() {
       filteredNodes = rawNodes.filter(n => n.node_type === selectedType);
     }
 
+    const nodeIdsWithEdges = new Set();
+    rawEdges.forEach(e => {
+      if (e.confidence >= minConfidence) {
+        nodeIdsWithEdges.add(e.source_node_id);
+        nodeIdsWithEdges.add(e.target_node_id);
+      }
+    });
+
+    if (hideIsolated) {
+      filteredNodes = filteredNodes.filter(n => nodeIdsWithEdges.has(n.id));
+    }
+
     const validNodeIds = new Set(filteredNodes.map(n => n.id));
 
     let filteredEdges = rawEdges.filter(e => 
-      validNodeIds.has(e.source_node_id) && validNodeIds.has(e.target_node_id)
+      validNodeIds.has(e.source_node_id) && 
+      validNodeIds.has(e.target_node_id) &&
+      e.confidence >= minConfidence
     );
 
     if (selectedRelType !== 'ALL') {
       filteredEdges = filteredEdges.filter(e => e.relationship_type === selectedRelType);
     }
 
-    // Preserve existing node positions if present
+    // Preserve existing node positions across simulation updates
     const prevPosMap = new Map(nodes.map(n => [n.id, { x: n.x, y: n.y, vx: n.vx, vy: n.vy }]));
-
     const cx = dimensions.width / 2;
     const cy = dimensions.height / 2;
 
     const simNodes = filteredNodes.map((n, i) => {
       const prev = prevPosMap.get(n.id);
       const angle = (i / (filteredNodes.length || 1)) * 2 * Math.PI;
-      const radius = 120 + (i % 3) * 60;
+      const radius = 130 + (i % 3) * 60;
       return {
         ...n,
         x: prev ? prev.x : cx + radius * Math.cos(angle) + (Math.random() - 0.5) * 40,
@@ -213,20 +272,18 @@ export default function UserGraph() {
 
     setNodes(simNodes);
     setLinks(simLinks);
-  }, [rawNodes, rawEdges, selectedType, selectedRelType, dimensions]);
+  }, [rawNodes, rawEdges, selectedType, selectedRelType, minConfidence, hideIsolated, dimensions]);
 
   // ----------------------------------------------------------------------
-  // 3. Force Physics Simulation Loop
+  // 4. Force Physics Simulation Loop
   // ----------------------------------------------------------------------
   useEffect(() => {
     if (!isPhysicsActive || nodes.length === 0) return;
 
     let frameId;
-    let iterations = 0;
-
     const tick = () => {
       setNodes(prevNodes => {
-        const nextNodes = prevNodes.map(n => ({ ...n, vx: (n.vx || 0) * 0.85, vy: (n.vy || 0) * 0.85 }));
+        const nextNodes = prevNodes.map(n => ({ ...n, vx: (n.vx || 0) * 0.86, vy: (n.vy || 0) * 0.86 }));
         const cx = dimensions.width / 2;
         const cy = dimensions.height / 2;
 
@@ -238,7 +295,7 @@ export default function UserGraph() {
             const dx = nodeB.x - nodeA.x;
             const dy = nodeB.y - nodeA.y;
             const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-            const minDist = 140;
+            const minDist = 145;
 
             if (dist < minDist) {
               const force = (minDist - dist) / dist * 0.15;
@@ -249,239 +306,221 @@ export default function UserGraph() {
               if (nodeB.id !== draggedNode?.id) { nodeB.vx += fx; nodeB.vy += fy; }
             }
           }
+
+          // Center gravity
+          if (nodeA.id !== draggedNode?.id) {
+            nodeA.vx += (cx - nodeA.x) * 0.003;
+            nodeA.vy += (cy - nodeA.y) * 0.003;
+          }
         }
 
         // Link spring attraction
-        links.forEach(link => {
-          const source = nextNodes.find(n => n.id === link.source);
-          const target = nextNodes.find(n => n.id === link.target);
-          if (!source || !target) return;
+        const nodeMap = new Map(nextNodes.map(n => [n.id, n]));
+        for (const link of links) {
+          const src = nodeMap.get(link.source);
+          const tgt = nodeMap.get(link.target);
+          if (src && tgt) {
+            const dx = tgt.x - src.x;
+            const dy = tgt.y - src.y;
+            const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+            const targetDist = 120;
+            const force = (dist - targetDist) * 0.035;
+            const fx = (dx / dist) * force;
+            const fy = (dy / dist) * force;
 
-          const dx = target.x - source.x;
-          const dy = target.y - source.y;
-          const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-          const desiredDist = 120;
-          const k = 0.03;
+            if (src.id !== draggedNode?.id) { src.vx += fx; src.vy += fy; }
+            if (tgt.id !== draggedNode?.id) { tgt.vx -= fx; tgt.vy -= fy; }
+          }
+        }
 
-          const force = (dist - desiredDist) * k;
-          const fx = (dx / dist) * force;
-          const fy = (dy / dist) * force;
-
-          if (source.id !== draggedNode?.id) { source.vx += fx; source.vy += fy; }
-          if (target.id !== draggedNode?.id) { target.vx -= fx; target.vy -= fy; }
+        // Apply velocities & boundary limits
+        return nextNodes.map(n => {
+          if (n.id === draggedNode?.id) return n;
+          const nextX = Math.max(50, Math.min(dimensions.width - 50, n.x + n.vx));
+          const nextY = Math.max(50, Math.min(dimensions.height - 50, n.y + n.vy));
+          return { ...n, x: nextX, y: nextY };
         });
-
-        // Center gravity
-        nextNodes.forEach(node => {
-          if (node.id === draggedNode?.id) return;
-          node.vx += (cx - node.x) * 0.003;
-          node.vy += (cy - node.y) * 0.003;
-
-          node.x += node.vx;
-          node.y += node.vy;
-        });
-
-        return nextNodes;
       });
 
-      iterations++;
       frameId = requestAnimationFrame(tick);
     };
 
     frameId = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frameId);
-  }, [isPhysicsActive, links, dimensions, draggedNode]);
+  }, [isPhysicsActive, links, draggedNode, dimensions]);
 
   // ----------------------------------------------------------------------
-  // 4. Node Selection & Related Entity Lookup
+  // 5. Canvas Navigation & Drag Interactions
   // ----------------------------------------------------------------------
-  const handleSelectNode = async (node) => {
-    setSelectedNode(node);
-    setPathSourceId(node.id);
-    setIsLoadingRelated(true);
-    try {
-      const relResp = await getRelatedEntities(node.id, { depth: depthLimit, limit: 15 });
-      setRelatedEntities(relResp.related_entities || []);
-    } catch (err) {
-      console.warn('Could not load related entities:', err);
-      setRelatedEntities([]);
-    } finally {
-      setIsLoadingRelated(false);
-    }
+  const handleZoom = (delta) => {
+    setZoomLevel(prev => Math.min(3.0, Math.max(0.25, prev + delta)));
   };
 
-  // Expand Neighbors (Lazy expansion)
-  const handleExpandNeighbors = async (nodeId) => {
-    setIsExpanding(true);
-    try {
-      const neighbors = await getNeighbors(nodeId);
-      const newNodes = [];
-      const newEdges = [];
-
-      neighbors.forEach(item => {
-        if (!rawNodes.some(n => n.id === item.node.id)) {
-          newNodes.push(item.node);
-        }
-        const edgeId = item.edge_id;
-        const exists = rawEdges.some(e => e.id === edgeId);
-        if (!exists) {
-          newEdges.push({
-            id: edgeId,
-            source_node_id: item.direction === 'outgoing' ? nodeId : item.node.id,
-            target_node_id: item.direction === 'outgoing' ? item.node.id : nodeId,
-            relationship_type: item.relationship_type,
-            confidence: item.confidence
-          });
-        }
-      });
-
-      if (newNodes.length > 0) setRawNodes(prev => [...prev, ...newNodes]);
-      if (newEdges.length > 0) setRawEdges(prev => [...prev, ...newEdges]);
-    } catch (err) {
-      console.error('Failed to expand neighbors:', err);
-    } finally {
-      setIsExpanding(false);
-    }
+  const handleResetView = () => {
+    setZoomLevel(1);
+    setPanOffset({ x: 0, y: 0 });
   };
 
-  // ----------------------------------------------------------------------
-  // 5. Enhanced Live Search
-  // ----------------------------------------------------------------------
-  useEffect(() => {
-    if (!searchQuery || searchQuery.trim().length < 2) {
-      setSearchResults([]);
-      return;
-    }
-
-    const timer = setTimeout(async () => {
-      setIsSearching(true);
-      try {
-        const results = await searchEnhanced({ q: searchQuery.trim(), limit: 10 });
-        setSearchResults(results || []);
-      } catch (err) {
-        console.warn('Search failed:', err);
-      } finally {
-        setIsSearching(false);
-      }
-    }, 250);
-
-    return () => clearTimeout(timer);
-  }, [searchQuery]);
-
-  const handleSelectSearchResult = (result) => {
-    const existing = nodes.find(n => n.id === result.node_id);
-    if (existing) {
-      handleSelectNode(existing);
-      // Center canvas on this node
-      setPanOffset({
-        x: dimensions.width / 2 - existing.x * zoomLevel,
-        y: dimensions.height / 2 - existing.y * zoomLevel
-      });
-    } else {
-      // Fetch node and add to graph
-      getNode(result.node_id).then(nodeData => {
-        setRawNodes(prev => [...prev, nodeData]);
-        handleSelectNode(nodeData);
-      });
-    }
-    setSearchResults([]);
+  const handleCenterGraph = () => {
+    if (nodes.length === 0) return;
+    const avgX = nodes.reduce((acc, n) => acc + n.x, 0) / nodes.length;
+    const avgY = nodes.reduce((acc, n) => acc + n.y, 0) / nodes.length;
+    setPanOffset({
+      x: dimensions.width / 2 - avgX * zoomLevel,
+      y: dimensions.height / 2 - avgY * zoomLevel
+    });
   };
 
-  // ----------------------------------------------------------------------
-  // 6. Path Finding
-  // ----------------------------------------------------------------------
-  const handleFindPath = async () => {
-    if (!pathSourceId || !pathTargetId) return;
-    setIsFindingPath(true);
-    setPathResult(null);
-    try {
-      const resp = await findPath({
-        source_node_id: pathSourceId,
-        target_node_id: pathTargetId,
-        max_depth: depthLimit
-      });
-      setPathResult(resp);
-
-      // Merge path nodes & edges into graph if not present
-      if (resp.nodes && resp.nodes.length > 0) {
-        const missingNodes = resp.nodes.filter(n => !rawNodes.some(rn => rn.id === n.id));
-        if (missingNodes.length > 0) setRawNodes(prev => [...prev, ...missingNodes]);
-      }
-    } catch (err) {
-      console.error('Path finding failed:', err);
-      setPathResult({ path_found: false, distance: 0, steps: [] });
-    } finally {
-      setIsFindingPath(false);
-    }
-  };
-
-  // ----------------------------------------------------------------------
-  // 7. Graph Context Generation
-  // ----------------------------------------------------------------------
-  const handleOpenGraphContext = async () => {
-    setShowContextModal(true);
-    setIsLoadingContext(true);
-    setCopiedContext(false);
-    try {
-      const activeIds = selectedNode ? [selectedNode.id] : nodes.slice(0, 5).map(n => n.id);
-      const resp = await getGraphContext({
-        node_ids: activeIds,
-        depth: depthLimit,
-        max_entities: 30
-      });
-      setGraphContextText(resp.formatted_context || 'No graph context generated.');
-    } catch (err) {
-      setGraphContextText('Failed to generate graph context: ' + (err.message || 'Unknown error'));
-    } finally {
-      setIsLoadingContext(false);
-    }
-  };
-
-  const handleCopyContext = () => {
-    navigator.clipboard.writeText(graphContextText);
-    setCopiedContext(true);
-    setTimeout(() => setCopiedContext(false), 2000);
-  };
-
-  // ----------------------------------------------------------------------
-  // 8. Pan & Zoom & Drag Handlers
-  // ----------------------------------------------------------------------
-  const handleMouseDown = (e) => {
-    if (e.target.tagName === 'svg' || e.target.id === 'canvas-bg') {
+  const handleMouseDownSvg = (e) => {
+    if (e.target.tagName === 'svg' || e.target.id === 'graph-bg') {
       setIsPanning(true);
       setPanStart({ x: e.clientX - panOffset.x, y: e.clientY - panOffset.y });
     }
   };
 
-  const handleMouseMove = (e) => {
+  const handleMouseMoveSvg = (e) => {
     if (isPanning) {
       setPanOffset({
         x: e.clientX - panStart.x,
         y: e.clientY - panStart.y
       });
     } else if (draggedNode) {
-      const svgRect = svgRef.current.getBoundingClientRect();
-      const mouseX = (e.clientX - svgRect.left - panOffset.x) / zoomLevel;
-      const mouseY = (e.clientY - svgRect.top - panOffset.y) / zoomLevel;
-
-      setNodes(prev => prev.map(n => n.id === draggedNode.id ? { ...n, x: mouseX, y: mouseY, vx: 0, vy: 0 } : n));
+      const rect = svgRef.current.getBoundingClientRect();
+      const rawX = (e.clientX - rect.left - panOffset.x) / zoomLevel;
+      const rawY = (e.clientY - rect.top - panOffset.y) / zoomLevel;
+      setNodes(prev => prev.map(n => n.id === draggedNode.id ? { ...n, x: rawX, y: rawY, vx: 0, vy: 0 } : n));
     }
   };
 
-  const handleMouseUp = () => {
+  const handleMouseUpSvg = () => {
     setIsPanning(false);
     setDraggedNode(null);
   };
 
-  const handleResetLayout = () => {
-    setZoomLevel(1);
-    setPanOffset({ x: 0, y: 0 });
-    setSelectedNode(null);
-    setPathResult(null);
-    fetchGraphData();
+  // Focus and select node
+  const handleSelectNode = async (node) => {
+    setSelectedNode(node);
+    setSelectedEdge(null);
+    setIsLoadingRelated(true);
+    try {
+      const related = await getRelatedEntities(node.id, { depth: 2, max_entities: 6 });
+      setRelatedEntities(related?.related_entities || []);
+    } catch (err) {
+      console.warn('Failed to load related entities:', err);
+    } finally {
+      setIsLoadingRelated(false);
+    }
   };
 
-  // Node Color Helper
+  // Expand node neighbors dynamically
+  const handleExpandNeighbors = async (node) => {
+    if (!node) return;
+    setIsExpanding(true);
+    try {
+      const res = await getNeighbors(node.id);
+      const neighborItems = res?.neighbors || [];
+      const newNodesMap = new Map(rawNodes.map(n => [n.id, n]));
+      const newEdgesMap = new Map(rawEdges.map(e => [e.id, e]));
+
+      neighborItems.forEach(item => {
+        if (!newNodesMap.has(item.node.id)) {
+          newNodesMap.set(item.node.id, item.node);
+        }
+        if (!newEdgesMap.has(item.edge_id)) {
+          newEdgesMap.set(item.edge_id, {
+            id: item.edge_id,
+            source_node_id: item.direction === 'outgoing' ? node.id : item.node.id,
+            target_node_id: item.direction === 'outgoing' ? item.node.id : node.id,
+            relationship_type: item.relationship_type,
+            confidence: item.confidence,
+            properties: {}
+          });
+        }
+      });
+
+      setRawNodes(Array.from(newNodesMap.values()));
+      setRawEdges(Array.from(newEdgesMap.values()));
+      showToast(`Expanded ${neighborItems.length} neighbors for ${node.name}`);
+    } catch (err) {
+      console.error('Failed to expand neighbors:', err);
+      showToast('Error expanding neighbors');
+    } finally {
+      setIsExpanding(false);
+    }
+  };
+
+  // Sync Graph Node into Agent Memory
+  const handleSyncNodeToMemory = async (node) => {
+    if (!node) return;
+    try {
+      const res = await syncGraphNodeToMemory(node.id);
+      showToast(`Synced ${node.name} into Agent Memory`);
+    } catch (err) {
+      console.error('Failed to sync node to memory:', err);
+      showToast(err.message || 'Failed to sync node to memory');
+    }
+  };
+
+  // Pathfinding execution
+  const handleFindPath = async () => {
+    if (!pathSourceId || !pathTargetId) return;
+    setIsFindingPath(true);
+    setPathResult(null);
+    try {
+      const res = await findPath({
+        source_node_id: pathSourceId,
+        target_node_id: pathTargetId,
+        max_depth: 5
+      });
+      setPathResult(res);
+
+      if (res.path_found && res.steps) {
+        const nodeIds = new Set();
+        const edgeKeys = new Set();
+        res.steps.forEach(s => {
+          nodeIds.add(s.from_node_id);
+          nodeIds.add(s.to_node_id);
+          edgeKeys.add(`${s.from_node_id}->${s.to_node_id}`);
+          edgeKeys.add(`${s.to_node_id}->${s.from_node_id}`);
+        });
+        setHighlightedPathNodeIds(nodeIds);
+        setHighlightedPathEdgeKeys(edgeKeys);
+      }
+    } catch (err) {
+      console.error('Path finding error:', err);
+      setPathResult({ path_found: false, error: err.message });
+    } finally {
+      setIsFindingPath(false);
+    }
+  };
+
+  const handleClearPath = () => {
+    setPathResult(null);
+    setHighlightedPathNodeIds(new Set());
+    setHighlightedPathEdgeKeys(new Set());
+  };
+
+  // Graph context retrieval
+  const handleGenerateContext = async (node) => {
+    setIsLoadingContext(true);
+    setShowContextModal(true);
+    setGraphContextText('');
+    setCopiedContext(false);
+    try {
+      const res = await getGraphContext({
+        node_ids: node ? [node.id] : undefined,
+        max_entities: 15,
+        depth: 2
+      });
+      setGraphContextText(res?.formatted_context || 'No graph context generated.');
+    } catch (err) {
+      console.error('Context generation error:', err);
+      setGraphContextText('Failed to generate context.');
+    } finally {
+      setIsLoadingContext(false);
+    }
+  };
+
   const getNodeColor = (type) => {
     const found = NODE_TYPES.find(t => t.id === type);
     return found ? found.color : '#94a3b8';
@@ -492,165 +531,236 @@ export default function UserGraph() {
     return found ? found.bg : 'rgba(148, 163, 184, 0.15)';
   };
 
-  // Highlighted path node/edge IDs
-  const pathNodeIds = useMemo(() => {
-    if (!pathResult || !pathResult.steps) return new Set();
-    const ids = new Set();
-    pathResult.steps.forEach(s => {
-      ids.add(s.from_node_id);
-      ids.add(s.to_node_id);
+  const getNodeBorder = (type) => {
+    const found = NODE_TYPES.find(t => t.id === type);
+    return found ? found.border : '#64748b';
+  };
+
+  // Connected node IDs for highlighting
+  const connectedNodeIds = useMemo(() => {
+    if (!selectedNode) return new Set();
+    const ids = new Set([selectedNode.id]);
+    links.forEach(l => {
+      if (l.source === selectedNode.id) ids.add(l.target);
+      if (l.target === selectedNode.id) ids.add(l.source);
     });
     return ids;
-  }, [pathResult]);
+  }, [selectedNode, links]);
 
   return (
-    <div className="flex flex-col h-[calc(100vh-4.5rem)] bg-[#0b0f17] text-slate-200 overflow-hidden select-none">
+    <div className="flex h-screen w-full bg-slate-950 text-slate-100 overflow-hidden font-sans select-none">
       
-      {/* Top Controls Toolbar */}
-      <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-3 border-b border-slate-800/80 bg-[#0d131f]/90 backdrop-blur-md z-20">
+      {/* Toast Notification */}
+      {toastMessage && (
+        <div className="fixed top-6 right-6 z-50 bg-indigo-600 text-white px-4 py-2.5 rounded-lg shadow-lg border border-indigo-400/30 text-sm flex items-center gap-2 animate-fade-in">
+          <Sparkles className="w-4 h-4 text-indigo-200" />
+          <span>{toastMessage}</span>
+        </div>
+      )}
+
+      {/* Main Graph Viewport */}
+      <div className="flex-1 flex flex-col relative h-full">
         
-        {/* Left: Title & Quick Stats */}
-        <div className="flex items-center gap-3">
-          <div className="p-2 rounded-xl bg-cyan-500/10 border border-cyan-500/30 text-cyan-400">
-            <GitBranch size={20} />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-base font-bold text-white tracking-wide">Knowledge Graph Explorer</h1>
-              {docIdParam && (
-                <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30">
-                  Document Subgraph
-                </span>
-              )}
+        {/* Top Control Bar */}
+        <header className="h-16 px-5 border-b border-slate-800/80 bg-slate-900/60 backdrop-blur-md flex items-center justify-between z-10 gap-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-lg bg-indigo-500/10 border border-indigo-500/20 text-indigo-400">
+              <GitBranch className="w-5 h-5" />
             </div>
-            <p className="text-xs text-slate-400">
-              {nodes.length} entities • {links.length} relationships
-            </p>
-          </div>
-        </div>
-
-        {/* Center: Live Enhanced Search */}
-        <div className="relative w-72">
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-900/90 border border-slate-700/80 focus-within:border-cyan-500 transition-colors">
-            <Search size={15} className="text-slate-400" />
-            <input
-              type="text"
-              placeholder="Search entities or concepts..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full text-xs bg-transparent text-white placeholder-slate-500 focus:outline-none"
-            />
-            {isSearching && <RefreshCw size={13} className="animate-spin text-cyan-400" />}
-          </div>
-
-          {/* Autocomplete Dropdown */}
-          {searchResults.length > 0 && (
-            <div className="absolute left-0 right-0 top-full mt-1.5 max-h-60 overflow-y-auto bg-slate-900 border border-slate-700 rounded-lg shadow-2xl z-50 divide-y divide-slate-800">
-              {searchResults.map((res) => (
-                <button
-                  key={res.node_id}
-                  onClick={() => handleSelectSearchResult(res)}
-                  className="w-full flex items-center justify-between px-3 py-2 text-left hover:bg-slate-800 transition-colors"
-                >
-                  <div>
-                    <div className="text-xs font-medium text-white">{res.name}</div>
-                    <div className="text-[10px] text-slate-400">{res.node_type} • Score: {(res.relevance_score * 100).toFixed(0)}%</div>
-                  </div>
-                  <ChevronRight size={14} className="text-slate-500" />
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Right: Type Filters & Actions */}
-        <div className="flex items-center gap-2">
-          {/* Node Type Filter */}
-          <select
-            value={selectedType}
-            onChange={(e) => setSelectedType(e.target.value)}
-            className="px-2.5 py-1.5 text-xs rounded-lg bg-slate-900 border border-slate-700 text-slate-300 focus:border-cyan-500 focus:outline-none"
-          >
-            {NODE_TYPES.map(t => (
-              <option key={t.id} value={t.id}>{t.label}</option>
-            ))}
-          </select>
-
-          {/* Relationship Filter */}
-          <select
-            value={selectedRelType}
-            onChange={(e) => setSelectedRelType(e.target.value)}
-            className="px-2.5 py-1.5 text-xs rounded-lg bg-slate-900 border border-slate-700 text-slate-300 focus:border-cyan-500 focus:outline-none"
-          >
-            {RELATIONSHIP_TYPES.map(r => (
-              <option key={r} value={r}>{r === 'ALL' ? 'All Relationships' : r}</option>
-            ))}
-          </select>
-
-          {/* Path Finding Trigger */}
-          <button
-            onClick={() => setShowPathModal(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-cyan-500/30 transition-colors"
-          >
-            <Navigation size={14} />
-            <span>Find Path</span>
-          </button>
-
-          {/* Graph Context Trigger */}
-          <button
-            onClick={handleOpenGraphContext}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/40 transition-colors"
-          >
-            <Code size={14} />
-            <span>Graph Context</span>
-          </button>
-
-          {/* Refresh / Rebuild */}
-          <button
-            onClick={fetchGraphData}
-            title="Refresh graph"
-            className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-colors"
-          >
-            <RefreshCw size={15} />
-          </button>
-        </div>
-      </div>
-
-      {/* Main Content Area: Graph Canvas + Details Sidebar */}
-      <div className="relative flex-1 flex overflow-hidden">
-        
-        {/* SVG Interactive Canvas */}
-        <div 
-          className="relative flex-1 bg-[#070a10] overflow-hidden cursor-grab active:cursor-grabbing"
-          onMouseDown={handleMouseDown}
-          onMouseMove={handleMouseMove}
-          onMouseUp={handleMouseUp}
-        >
-          {isLoading ? (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-[#070a10]/80 z-30">
-              <div className="w-10 h-10 border-4 border-cyan-500/20 border-t-cyan-500 rounded-full animate-spin"></div>
-              <span className="text-xs font-medium text-cyan-400">Loading graph topology...</span>
-            </div>
-          ) : nodes.length === 0 ? (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-slate-500 z-10">
-              <GitBranch size={48} className="text-slate-700 stroke-1" />
-              <p className="text-sm font-medium">No knowledge graph entities found.</p>
-              <p className="text-xs text-slate-600 max-w-sm text-center">
-                Upload and process documents to automatically generate knowledge graph entities and relationships.
+            <div>
+              <h1 className="text-base font-semibold tracking-tight text-white flex items-center gap-2">
+                Knowledge Graph Explorer
+                {docIdParam && (
+                  <span className="text-xs px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                    Document Subgraph
+                  </span>
+                )}
+              </h1>
+              <p className="text-xs text-slate-400">
+                {nodes.length} nodes · {links.length} relationships
               </p>
             </div>
-          ) : null}
+          </div>
 
+          {/* Search Bar */}
+          <div className="relative flex-1 max-w-md">
+            <div className="relative flex items-center">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 pointer-events-none" />
+              <input
+                type="text"
+                placeholder="Search entities, technologies, documents..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full bg-slate-800/60 border border-slate-700/60 rounded-lg pl-9 pr-8 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 placeholder-slate-500"
+              />
+              {searchQuery && (
+                <button onClick={() => setSearchQuery('')} className="absolute right-2.5 text-slate-400 hover:text-white">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+
+            {/* Search Autocomplete Dropdown */}
+            {searchResults.length > 0 && (
+              <div className="absolute top-full left-0 w-full mt-1.5 bg-slate-900 border border-slate-800 rounded-lg shadow-2xl overflow-hidden z-50">
+                <div className="p-1.5 space-y-1">
+                  {searchResults.map((res) => (
+                    <button
+                      key={res.node_id}
+                      onClick={() => {
+                        const targetNode = nodes.find(n => n.id === res.node_id);
+                        if (targetNode) {
+                          handleSelectNode(targetNode);
+                          setPanOffset({
+                            x: dimensions.width / 2 - targetNode.x * zoomLevel,
+                            y: dimensions.height / 2 - targetNode.y * zoomLevel
+                          });
+                        }
+                        setSearchQuery('');
+                        setSearchResults([]);
+                      }}
+                      className="w-full text-left px-3 py-2 rounded-md hover:bg-slate-800/80 flex items-center justify-between text-xs transition"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full" style={{ backgroundColor: getNodeColor(res.node_type) }} />
+                        <span className="font-medium text-slate-200">{res.name}</span>
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">
+                          {res.node_type}
+                        </span>
+                      </div>
+                      <ChevronRight className="w-3.5 h-3.5 text-slate-500" />
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Action Toolbar */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowPathModal(true)}
+              className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700/60 text-xs font-medium text-slate-200 flex items-center gap-1.5 transition"
+            >
+              <Navigation className="w-3.5 h-3.5 text-emerald-400" />
+              Pathfinder
+            </button>
+            <button
+              onClick={() => handleGenerateContext(selectedNode)}
+              className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-xs font-medium text-white flex items-center gap-1.5 transition shadow-sm"
+            >
+              <Brain className="w-3.5 h-3.5" />
+              Graph Context
+            </button>
+            <button
+              onClick={fetchGraphData}
+              title="Refresh Graph"
+              className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700/60 text-slate-300 transition"
+            >
+              <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
+            </button>
+          </div>
+        </header>
+
+        {/* Filter Toolbar */}
+        <div className="px-5 py-2.5 border-b border-slate-800/60 bg-slate-900/30 flex items-center justify-between text-xs gap-4 flex-wrap">
+          <div className="flex items-center gap-3">
+            {/* Node Type Selector */}
+            <div className="flex items-center gap-1.5">
+              <Layers className="w-3.5 h-3.5 text-slate-400" />
+              <select
+                value={selectedType}
+                onChange={(e) => setSelectedType(e.target.value)}
+                className="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-slate-200 text-xs focus:outline-none focus:border-indigo-500"
+              >
+                {NODE_TYPES.map(t => (
+                  <option key={t.id} value={t.id}>{t.label}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Relationship Type Selector */}
+            <div className="flex items-center gap-1.5">
+              <Filter className="w-3.5 h-3.5 text-slate-400" />
+              <select
+                value={selectedRelType}
+                onChange={(e) => setSelectedRelType(e.target.value)}
+                className="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-slate-200 text-xs focus:outline-none focus:border-indigo-500"
+              >
+                {RELATIONSHIP_TYPES.map(r => (
+                  <option key={r} value={r}>{r}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Confidence Slider */}
+            <div className="flex items-center gap-2 ml-2">
+              <span className="text-slate-400">Min Conf:</span>
+              <input
+                type="range"
+                min="0.0"
+                max="1.0"
+                step="0.05"
+                value={minConfidence}
+                onChange={(e) => setMinConfidence(parseFloat(e.target.value))}
+                className="w-20 accent-indigo-500 h-1 bg-slate-700 rounded-lg cursor-pointer"
+              />
+              <span className="font-mono text-slate-300 w-8">{minConfidence.toFixed(2)}</span>
+            </div>
+
+            {/* Hide Isolated Nodes */}
+            <button
+              onClick={() => setHideIsolated(prev => !prev)}
+              className={`px-2 py-1 rounded border text-xs flex items-center gap-1 transition ${
+                hideIsolated 
+                  ? 'bg-indigo-500/20 border-indigo-500/40 text-indigo-300' 
+                  : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              {hideIsolated ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+              <span>Hide Isolated</span>
+            </button>
+          </div>
+
+          {/* Canvas Controls */}
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setIsPhysicsActive(prev => !prev)}
+              className={`p-1.5 rounded border text-xs transition ${
+                isPhysicsActive ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400' : 'bg-slate-800 border-slate-700 text-slate-400'
+              }`}
+              title={isPhysicsActive ? 'Pause Physics' : 'Resume Physics'}
+            >
+              {isPhysicsActive ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
+            </button>
+            <button onClick={() => handleZoom(0.15)} className="p-1.5 rounded bg-slate-800 border border-slate-700 hover:bg-slate-700 text-slate-300">
+              <ZoomIn className="w-3.5 h-3.5" />
+            </button>
+            <button onClick={() => handleZoom(-0.15)} className="p-1.5 rounded bg-slate-800 border border-slate-700 hover:bg-slate-700 text-slate-300">
+              <ZoomOut className="w-3.5 h-3.5" />
+            </button>
+            <button onClick={handleCenterGraph} className="p-1.5 rounded bg-slate-800 border border-slate-700 hover:bg-slate-700 text-slate-300" title="Center View">
+              <Target className="w-3.5 h-3.5" />
+            </button>
+            <button onClick={handleResetView} className="p-1.5 rounded bg-slate-800 border border-slate-700 hover:bg-slate-700 text-slate-300" title="Reset Zoom">
+              <RotateCcw className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+
+        {/* SVG Canvas */}
+        <div className="flex-1 w-full h-full relative bg-slate-950 overflow-hidden cursor-crosshair">
           <svg
             ref={svgRef}
-            id="canvas-bg"
+            id="graph-bg"
             className="w-full h-full"
-            style={{ touchAction: 'none' }}
+            onMouseDown={handleMouseDownSvg}
+            onMouseMove={handleMouseMoveSvg}
+            onMouseUp={handleMouseUpSvg}
           >
             <defs>
-              {/* Arrow Marker definition */}
               <marker
-                id="arrow"
+                id="arrowhead"
                 viewBox="0 0 10 10"
                 refX="22"
                 refY="5"
@@ -658,10 +768,10 @@ export default function UserGraph() {
                 markerHeight="6"
                 orient="auto-start-reverse"
               >
-                <path d="M 0 0 L 10 5 L 0 10 z" fill="#475569" />
+                <path d="M 0 1 L 10 5 L 0 9 z" fill="#64748b" />
               </marker>
               <marker
-                id="arrow-active"
+                id="arrowhead-path"
                 viewBox="0 0 10 10"
                 refX="22"
                 refY="5"
@@ -669,154 +779,121 @@ export default function UserGraph() {
                 markerHeight="7"
                 orient="auto-start-reverse"
               >
-                <path d="M 0 0 L 10 5 L 0 10 z" fill="#06b6d4" />
-              </marker>
-              <marker
-                id="arrow-path"
-                viewBox="0 0 10 10"
-                refX="22"
-                refY="5"
-                markerWidth="8"
-                markerHeight="8"
-                orient="auto-start-reverse"
-              >
-                <path d="M 0 0 L 10 5 L 0 10 z" fill="#ec4899" />
+                <path d="M 0 1 L 10 5 L 0 9 z" fill="#10b981" />
               </marker>
             </defs>
 
             <g transform={`translate(${panOffset.x}, ${panOffset.y}) scale(${zoomLevel})`}>
               
-              {/* Relationship Links */}
-              {links.map((link, i) => {
-                const source = nodes.find(n => n.id === link.source);
-                const target = nodes.find(n => n.id === link.target);
-                if (!source || !target) return null;
+              {/* Edges */}
+              {links.map((link) => {
+                const srcNode = nodes.find(n => n.id === link.source);
+                const tgtNode = nodes.find(n => n.id === link.target);
+                if (!srcNode || !tgtNode) return null;
 
-                const isConnectedToSelected = selectedNode && (selectedNode.id === source.id || selectedNode.id === target.id);
-                const isPathEdge = pathNodeIds.has(source.id) && pathNodeIds.has(target.id);
+                const isSelected = selectedEdge?.id === link.id;
+                const isPathEdge = highlightedPathEdgeKeys.has(`${srcNode.id}->${tgtNode.id}`);
+                const isConnectedToSelected = selectedNode && (srcNode.id === selectedNode.id || tgtNode.id === selectedNode.id);
+                const isDimmed = (selectedNode && !isConnectedToSelected) || (highlightedPathNodeIds.size > 0 && !isPathEdge);
 
-                let strokeColor = '#334155';
-                let markerId = 'arrow';
-                let strokeWidth = 1.5;
+                const strokeColor = isPathEdge ? '#10b981' : isSelected ? '#38bdf8' : isConnectedToSelected ? '#818cf8' : '#334155';
+                const strokeWidth = isPathEdge ? 3 : isSelected ? 2.5 : isConnectedToSelected ? 2 : Math.max(1, (link.confidence || 0.8) * 1.8);
 
-                if (isPathEdge) {
-                  strokeColor = '#ec4899';
-                  markerId = 'arrow-path';
-                  strokeWidth = 2.5;
-                } else if (isConnectedToSelected) {
-                  strokeColor = '#06b6d4';
-                  markerId = 'arrow-active';
-                  strokeWidth = 2;
-                }
-
-                // Midpoint for label
-                const midX = (source.x + target.x) / 2;
-                const midY = (source.y + target.y) / 2;
+                const midX = (srcNode.x + tgtNode.x) / 2;
+                const midY = (srcNode.y + tgtNode.y) / 2;
 
                 return (
-                  <g key={`link-${link.id || i}`}>
+                  <g key={link.id} className="cursor-pointer" onClick={() => { setSelectedEdge(link); setSelectedNode(null); }}>
                     <line
-                      x1={source.x}
-                      y1={source.y}
-                      x2={target.x}
-                      y2={target.y}
+                      x1={srcNode.x}
+                      y1={srcNode.y}
+                      x2={tgtNode.x}
+                      y2={tgtNode.y}
                       stroke={strokeColor}
                       strokeWidth={strokeWidth}
-                      strokeDasharray={link.relationship_type === 'DEPENDS_ON' ? '4 3' : undefined}
-                      markerEnd={`url(#${markerId})`}
+                      strokeOpacity={isDimmed ? 0.2 : 0.85}
+                      markerEnd={isPathEdge ? "url(#arrowhead-path)" : "url(#arrowhead)"}
                       className="transition-colors duration-200"
                     />
-                    {(isConnectedToSelected || isPathEdge || zoomLevel > 1.2) && (
-                      <text
-                        x={midX}
-                        y={midY - 4}
-                        fill={isPathEdge ? '#f472b6' : isConnectedToSelected ? '#67e8f9' : '#64748b'}
-                        fontSize="9"
-                        textAnchor="middle"
-                        className="pointer-events-none font-mono"
-                      >
-                        {link.relationship_type}
-                      </text>
-                    )}
+                    {/* Edge Label */}
+                    <text
+                      x={midX}
+                      y={midY - 4}
+                      fill={isPathEdge ? '#10b981' : isSelected ? '#38bdf8' : '#64748b'}
+                      fontSize="9"
+                      fontFamily="monospace"
+                      textAnchor="middle"
+                      opacity={isDimmed ? 0.2 : 0.8}
+                    >
+                      {link.relationship_type}
+                    </text>
                   </g>
                 );
               })}
 
-              {/* Entity Nodes */}
+              {/* Nodes */}
               {nodes.map((node) => {
                 const isSelected = selectedNode?.id === node.id;
                 const isHovered = hoveredNode?.id === node.id;
-                const isPathNode = pathNodeIds.has(node.id);
-                const color = getNodeColor(node.node_type);
-                const bg = getNodeBg(node.node_type);
+                const isPathNode = highlightedPathNodeIds.has(node.id);
+                const isConnected = connectedNodeIds.has(node.id);
+                const isDimmed = (selectedNode && !isConnected) || (highlightedPathNodeIds.size > 0 && !isPathNode);
+
+                const nodeColor = getNodeColor(node.node_type);
+                const nodeBg = getNodeBg(node.node_type);
+                const nodeBorder = getNodeBorder(node.node_type);
 
                 return (
                   <g
-                    key={`node-${node.id}`}
+                    key={node.id}
                     transform={`translate(${node.x}, ${node.y})`}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleSelectNode(node);
-                    }}
+                    className="cursor-pointer transition-opacity duration-200"
+                    opacity={isDimmed ? 0.25 : 1}
                     onMouseEnter={() => setHoveredNode(node)}
                     onMouseLeave={() => setHoveredNode(null)}
                     onMouseDown={(e) => {
                       e.stopPropagation();
                       setDraggedNode(node);
                     }}
-                    className="cursor-pointer group"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleSelectNode(node);
+                    }}
                   >
-                    {/* Pulsing ring on selected/path node */}
+                    {/* Glowing Selection Halo */}
                     {(isSelected || isPathNode) && (
                       <circle
-                        r={24}
+                        r="26"
                         fill="none"
-                        stroke={isPathNode ? '#ec4899' : '#06b6d4'}
-                        strokeWidth="2"
-                        strokeOpacity="0.8"
-                        className="animate-ping"
+                        stroke={isPathNode ? '#10b981' : '#38bdf8'}
+                        strokeWidth="3"
+                        strokeDasharray={isPathNode ? '4 2' : 'none'}
+                        className="animate-pulse"
                       />
                     )}
 
-                    {/* Node Circle Outer Glow */}
+                    {/* Main Node Circle */}
                     <circle
-                      r={18}
-                      fill={bg}
-                      stroke={isSelected ? '#38bdf8' : isPathNode ? '#f472b6' : color}
-                      strokeWidth={isSelected || isPathNode ? 2.5 : 1.5}
-                      className="transition-all duration-200 shadow-lg"
+                      r="18"
+                      fill={nodeBg}
+                      stroke={isSelected ? '#38bdf8' : nodeBorder}
+                      strokeWidth={isSelected ? 2.5 : 1.5}
                     />
 
-                    {/* Node Center Badge */}
-                    <circle
-                      r={6}
-                      fill={color}
-                    />
+                    {/* Inner Badge dot */}
+                    <circle r="5" fill={nodeColor} />
 
-                    {/* Node Label */}
+                    {/* Node Text Label */}
                     <text
-                      y={28}
+                      y="30"
                       textAnchor="middle"
-                      fill={isSelected ? '#38bdf8' : isPathNode ? '#f472b6' : '#e2e8f0'}
-                      fontSize={isSelected ? '12' : '11'}
-                      fontWeight={isSelected ? 'bold' : 'normal'}
-                      className="pointer-events-none drop-shadow-md select-none"
+                      fill={isSelected ? '#ffffff' : '#cbd5e1'}
+                      fontSize="11"
+                      fontWeight={isSelected ? '600' : '400'}
+                      className="pointer-events-none drop-shadow"
                     >
-                      {node.name.length > 20 ? `${node.name.slice(0, 18)}...` : node.name}
+                      {node.name.length > 16 ? `${node.name.slice(0, 14)}…` : node.name}
                     </text>
-
-                    {/* Node Type Pill Subtext */}
-                    {(isSelected || isHovered) && (
-                      <text
-                        y={40}
-                        textAnchor="middle"
-                        fill="#94a3b8"
-                        fontSize="9"
-                        className="pointer-events-none font-mono"
-                      >
-                        {node.node_type}
-                      </text>
-                    )}
                   </g>
                 );
               })}
@@ -824,229 +901,259 @@ export default function UserGraph() {
             </g>
           </svg>
 
-          {/* Floating Canvas Controls (Bottom Left) */}
-          <div className="absolute bottom-4 left-4 flex items-center gap-1.5 p-1.5 rounded-xl bg-slate-900/90 border border-slate-800 shadow-xl backdrop-blur-md z-10">
-            <button
-              onClick={() => setZoomLevel(prev => Math.min(prev + 0.2, 2.5))}
-              title="Zoom in"
-              className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-300 transition-colors"
-            >
-              <ZoomIn size={16} />
-            </button>
-            <button
-              onClick={() => setZoomLevel(prev => Math.max(prev - 0.2, 0.4))}
-              title="Zoom out"
-              className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-300 transition-colors"
-            >
-              <ZoomOut size={16} />
-            </button>
-            <button
-              onClick={handleResetLayout}
-              title="Fit to center / Reset"
-              className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-300 transition-colors"
-            >
-              <RotateCcw size={16} />
-            </button>
-            <div className="w-[1px] h-4 bg-slate-800 mx-1" />
-            <button
-              onClick={() => setIsPhysicsActive(prev => !prev)}
-              title={isPhysicsActive ? 'Pause physics simulation' : 'Resume physics simulation'}
-              className={`p-1.5 rounded-lg transition-colors ${
-                isPhysicsActive ? 'text-cyan-400 bg-cyan-500/10' : 'text-slate-400 hover:bg-slate-800'
-              }`}
-            >
-              {isPhysicsActive ? <Pause size={16} /> : <Play size={16} />}
-            </button>
-          </div>
+          {/* Active Pathfinder Clear Banner */}
+          {highlightedPathNodeIds.size > 0 && (
+            <div className="absolute top-4 left-1/2 transform -translate-x-1/2 bg-emerald-950/90 border border-emerald-500/40 text-emerald-300 px-4 py-1.5 rounded-full text-xs flex items-center gap-3 backdrop-blur shadow-xl z-20">
+              <Navigation className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Active Path ({highlightedPathNodeIds.size} nodes)</span>
+              <button
+                onClick={handleClearPath}
+                className="text-emerald-400 hover:text-white underline font-medium ml-2"
+              >
+                Clear
+              </button>
+            </div>
+          )}
         </div>
+      </div>
 
-        {/* Selected Node Details Drawer (Right Panel) */}
-        {selectedNode && (
-          <div className="w-80 border-l border-slate-800 bg-[#0d131f] flex flex-col z-20 shadow-2xl overflow-y-auto">
-            
+      {/* Node & Edge Inspector Side Panel */}
+      <aside className="w-96 border-l border-slate-800 bg-slate-900/90 backdrop-blur-md flex flex-col h-full z-20 overflow-y-auto">
+        
+        {selectedNode ? (
+          <div className="p-5 flex-1 flex flex-col space-y-5">
             {/* Header */}
-            <div className="p-4 border-b border-slate-800 flex items-start justify-between gap-2">
+            <div className="flex items-start justify-between">
               <div>
-                <span 
-                  className="inline-block px-2 py-0.5 text-[10px] font-bold rounded-full mb-1 uppercase tracking-wider"
+                <span
+                  className="text-[10px] font-semibold tracking-wider px-2 py-0.5 rounded border uppercase"
                   style={{
+                    color: getNodeColor(selectedNode.node_type),
                     backgroundColor: getNodeBg(selectedNode.node_type),
-                    color: getNodeColor(selectedNode.node_type)
+                    borderColor: getNodeBorder(selectedNode.node_type)
                   }}
                 >
                   {selectedNode.node_type}
                 </span>
-                <h2 className="text-sm font-bold text-white break-words">{selectedNode.name}</h2>
+                <h2 className="text-lg font-bold text-white mt-2 leading-tight">{selectedNode.name}</h2>
               </div>
-              <button
-                onClick={() => setSelectedNode(null)}
-                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800"
-              >
-                ✕
+              <button onClick={() => setSelectedNode(null)} className="text-slate-400 hover:text-white p-1">
+                <X className="w-4 h-4" />
               </button>
             </div>
 
-            {/* Content Body */}
-            <div className="p-4 space-y-4 flex-1">
-              
-              {/* Description */}
-              <div>
-                <label className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Description</label>
-                <p className="text-xs text-slate-300 mt-1 leading-relaxed bg-slate-900/60 p-2.5 rounded-lg border border-slate-800">
-                  {selectedNode.description || 'No description provided.'}
-                </p>
+            {/* Description */}
+            {selectedNode.description && (
+              <div className="p-3 bg-slate-800/40 rounded-lg border border-slate-700/50 text-xs text-slate-300 leading-relaxed">
+                {selectedNode.description}
               </div>
+            )}
 
-              {/* Actions */}
-              <div className="space-y-2">
-                <button
-                  onClick={() => handleExpandNeighbors(selectedNode.id)}
-                  disabled={isExpanding}
-                  className="w-full flex items-center justify-center gap-2 py-2 text-xs font-semibold rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/40 transition-colors disabled:opacity-50"
-                >
-                  {isExpanding ? <RefreshCw size={14} className="animate-spin" /> : <Plus size={14} />}
-                  <span>Expand Connected Neighbors</span>
-                </button>
+            {/* Action Buttons */}
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={() => handleExpandNeighbors(selectedNode)}
+                disabled={isExpanding}
+                className="px-3 py-2 rounded-lg bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/30 text-indigo-300 text-xs font-medium flex items-center justify-center gap-1.5 transition"
+              >
+                <Plus className={`w-3.5 h-3.5 ${isExpanding ? 'animate-spin' : ''}`} />
+                <span>Expand Neighbors</span>
+              </button>
+              <button
+                onClick={() => handleSyncNodeToMemory(selectedNode)}
+                className="px-3 py-2 rounded-lg bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/30 text-purple-300 text-xs font-medium flex items-center justify-center gap-1.5 transition"
+              >
+                <Brain className="w-3.5 h-3.5" />
+                <span>Sync to Memory</span>
+              </button>
+            </div>
 
-                <button
-                  onClick={() => {
-                    setPathSourceId(selectedNode.id);
-                    setShowPathModal(true);
-                  }}
-                  className="w-full flex items-center justify-center gap-2 py-2 text-xs font-semibold rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-colors"
-                >
-                  <Navigation size={14} />
-                  <span>Find Path From Here</span>
-                </button>
-              </div>
-
-              {/* Multi-Hop Related Entities */}
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <label className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Related Entities ({relatedEntities.length})</label>
-                  {isLoadingRelated && <RefreshCw size={12} className="animate-spin text-cyan-400" />}
+            {/* Node Metadata & Provenance */}
+            <div className="space-y-2 text-xs">
+              <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Node Details</h3>
+              <div className="p-3 bg-slate-950/60 rounded-lg border border-slate-800 space-y-2 font-mono text-[11px]">
+                <div className="flex justify-between text-slate-400">
+                  <span>ID:</span>
+                  <span className="text-slate-200">{selectedNode.id.slice(0, 13)}…</span>
                 </div>
-
-                {relatedEntities.length === 0 ? (
-                  <p className="text-xs text-slate-500 italic">No multi-hop entities discovered within {depthLimit} hops.</p>
-                ) : (
-                  <div className="space-y-1.5 max-h-48 overflow-y-auto">
-                    {relatedEntities.map((rel, i) => (
-                      <div
-                        key={rel.node_id || i}
-                        onClick={() => {
-                          const existing = nodes.find(n => n.id === rel.node_id);
-                          if (existing) handleSelectNode(existing);
-                        }}
-                        className="p-2 rounded-lg bg-slate-900/80 hover:bg-slate-800/80 border border-slate-800/80 cursor-pointer transition-colors"
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-medium text-slate-200">{rel.name}</span>
-                          <span className="text-[10px] font-mono text-cyan-400">{(rel.relevance_score * 100).toFixed(0)}%</span>
-                        </div>
-                        <div className="text-[10px] text-slate-400 flex items-center gap-2 mt-0.5">
-                          <span>{rel.node_type}</span>
-                          <span>•</span>
-                          <span>{rel.distance} hop{rel.distance > 1 ? 's' : ''}</span>
-                        </div>
-                      </div>
-                    ))}
+                {selectedNode.external_id && (
+                  <div className="flex justify-between text-slate-400">
+                    <span>External ID:</span>
+                    <span className="text-slate-200">{selectedNode.external_id}</span>
                   </div>
                 )}
-              </div>
-
-              {/* Provenance Metadata */}
-              {selectedNode.metadata && Object.keys(selectedNode.metadata).length > 0 && (
-                <div>
-                  <label className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Provenance & Metadata</label>
-                  <pre className="text-[10px] font-mono text-slate-400 mt-1 bg-slate-950 p-2.5 rounded-lg border border-slate-800/80 overflow-x-auto max-h-36">
-                    {JSON.stringify(selectedNode.metadata, null, 2)}
-                  </pre>
+                <div className="flex justify-between text-slate-400">
+                  <span>Connections:</span>
+                  <span className="text-indigo-400 font-semibold">{connectedNodeIds.size - 1}</span>
                 </div>
-              )}
-
+              </div>
             </div>
+
+            {/* Related Entities Multi-Hop Section */}
+            <div className="space-y-2 text-xs flex-1">
+              <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider flex items-center justify-between">
+                <span>Multi-Hop Related Entities</span>
+                {isLoadingRelated && <RefreshCw className="w-3 h-3 animate-spin text-indigo-400" />}
+              </h3>
+              <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
+                {relatedEntities.length === 0 && !isLoadingRelated ? (
+                  <p className="text-xs text-slate-500 italic p-2">No multi-hop entities found.</p>
+                ) : (
+                  relatedEntities.map((rel) => (
+                    <div
+                      key={rel.node_id}
+                      onClick={() => {
+                        const target = nodes.find(n => n.id === rel.node_id);
+                        if (target) handleSelectNode(target);
+                      }}
+                      className="p-2.5 rounded-lg bg-slate-800/40 hover:bg-slate-800 border border-slate-700/40 cursor-pointer flex items-center justify-between transition"
+                    >
+                      <div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-medium text-slate-200">{rel.name}</span>
+                          <span className="text-[9px] px-1 py-0.5 rounded bg-slate-700/60 text-slate-400">
+                            {rel.node_type}
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-slate-400 mt-0.5">
+                          {rel.relationship_path.join(' → ')}
+                        </p>
+                      </div>
+                      <span className="text-[10px] font-mono text-emerald-400">
+                        {Math.round(rel.relevance_score * 100)}%
+                      </span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+          </div>
+        ) : selectedEdge ? (
+          <div className="p-5 flex-1 flex flex-col space-y-4">
+            <div className="flex items-start justify-between">
+              <div>
+                <span className="text-[10px] font-semibold tracking-wider px-2 py-0.5 rounded bg-sky-500/20 text-sky-300 border border-sky-500/30 uppercase">
+                  Relationship
+                </span>
+                <h2 className="text-lg font-bold text-white mt-2">{selectedEdge.relationship_type}</h2>
+              </div>
+              <button onClick={() => setSelectedEdge(null)} className="text-slate-400 hover:text-white p-1">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-3 bg-slate-950/60 rounded-lg border border-slate-800 space-y-2 text-xs font-mono">
+              <div className="flex justify-between text-slate-400">
+                <span>Confidence:</span>
+                <span className="text-emerald-400 font-bold">{Math.round((selectedEdge.confidence || 1) * 100)}%</span>
+              </div>
+              <div className="flex justify-between text-slate-400">
+                <span>Source Node:</span>
+                <span className="text-slate-200">{nodes.find(n => n.id === selectedEdge.source)?.name || selectedEdge.source}</span>
+              </div>
+              <div className="flex justify-between text-slate-400">
+                <span>Target Node:</span>
+                <span className="text-slate-200">{nodes.find(n => n.id === selectedEdge.target)?.name || selectedEdge.target}</span>
+              </div>
+            </div>
+
+            {selectedEdge.properties && Object.keys(selectedEdge.properties).length > 0 && (
+              <div className="space-y-1.5 text-xs">
+                <h3 className="font-semibold text-slate-400 uppercase tracking-wider">Provenance & Attributes</h3>
+                <pre className="p-3 bg-slate-950 rounded-lg border border-slate-800 text-[11px] text-slate-300 overflow-x-auto whitespace-pre-wrap">
+                  {JSON.stringify(selectedEdge.properties, null, 2)}
+                </pre>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="p-6 flex-1 flex flex-col items-center justify-center text-center space-y-3">
+            <div className="p-3 rounded-full bg-slate-800/80 border border-slate-700 text-slate-400">
+              <Info className="w-6 h-6" />
+            </div>
+            <h3 className="text-sm font-semibold text-slate-200">No Element Selected</h3>
+            <p className="text-xs text-slate-400 max-w-xs leading-relaxed">
+              Click any node or relationship edge in the graph canvas to inspect its semantic properties, provenance, and multi-hop connections.
+            </p>
           </div>
         )}
 
-      </div>
+      </aside>
 
-      {/* Path Finding Modal */}
+      {/* Pathfinder Modal */}
       {showPathModal && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-[#0f172a] border border-slate-700 rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4">
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-xl max-w-lg w-full p-6 space-y-4 shadow-2xl">
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                <Navigation size={18} className="text-cyan-400" />
-                <span>Bounded Shortest Path Search</span>
-              </h3>
-              <button onClick={() => setShowPathModal(false)} className="text-slate-400 hover:text-white">✕</button>
+              <h2 className="text-base font-bold text-white flex items-center gap-2">
+                <Navigation className="w-4 h-4 text-emerald-400" />
+                Shortest-Path Discovery
+              </h2>
+              <button onClick={() => setShowPathModal(false)} className="text-slate-400 hover:text-white">
+                <X className="w-4 h-4" />
+              </button>
             </div>
 
-            <div className="space-y-3">
+            <div className="space-y-3 text-xs">
               <div>
-                <label className="text-xs font-medium text-slate-400">Source Entity</label>
+                <label className="block text-slate-400 mb-1">Source Entity</label>
                 <select
                   value={pathSourceId}
                   onChange={(e) => setPathSourceId(e.target.value)}
-                  className="w-full mt-1 p-2 text-xs rounded-lg bg-slate-900 border border-slate-700 text-white focus:border-cyan-500 focus:outline-none"
+                  className="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-slate-200 focus:outline-none focus:border-indigo-500"
                 >
-                  <option value="">Select source entity...</option>
-                  {rawNodes.map(n => (
-                    <option key={`src-${n.id}`} value={n.id}>{n.name} ({n.node_type})</option>
+                  <option value="">Select source node...</option>
+                  {nodes.map(n => (
+                    <option key={n.id} value={n.id}>{n.name} [{n.node_type}]</option>
                   ))}
                 </select>
               </div>
 
               <div>
-                <label className="text-xs font-medium text-slate-400">Target Entity</label>
+                <label className="block text-slate-400 mb-1">Target Entity</label>
                 <select
                   value={pathTargetId}
                   onChange={(e) => setPathTargetId(e.target.value)}
-                  className="w-full mt-1 p-2 text-xs rounded-lg bg-slate-900 border border-slate-700 text-white focus:border-cyan-500 focus:outline-none"
+                  className="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-slate-200 focus:outline-none focus:border-indigo-500"
                 >
-                  <option value="">Select target entity...</option>
-                  {rawNodes.map(n => (
-                    <option key={`tgt-${n.id}`} value={n.id}>{n.name} ({n.node_type})</option>
+                  <option value="">Select target node...</option>
+                  {nodes.map(n => (
+                    <option key={n.id} value={n.id}>{n.name} [{n.node_type}]</option>
                   ))}
                 </select>
               </div>
 
               <button
                 onClick={handleFindPath}
-                disabled={!pathSourceId || !pathTargetId || isFindingPath}
-                className="w-full py-2 text-xs font-semibold rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                disabled={isFindingPath || !pathSourceId || !pathTargetId}
+                className="w-full py-2 bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-800 text-white font-medium rounded-lg transition flex items-center justify-center gap-2 mt-2"
               >
-                {isFindingPath && <RefreshCw size={14} className="animate-spin" />}
-                <span>Calculate Shortest Pathway</span>
+                {isFindingPath ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Navigation className="w-4 h-4" />}
+                <span>Calculate Shortest Path</span>
               </button>
             </div>
 
-            {/* Path Result Display */}
             {pathResult && (
-              <div className="mt-4 p-3 rounded-lg bg-slate-950 border border-slate-800">
+              <div className="p-3 bg-slate-950 rounded-lg border border-slate-800 text-xs space-y-2">
                 {pathResult.path_found ? (
-                  <div>
-                    <div className="flex items-center justify-between text-xs font-semibold text-emerald-400 mb-2">
+                  <>
+                    <div className="flex items-center justify-between text-emerald-400 font-semibold">
                       <span>Path Found!</span>
-                      <span>{pathResult.distance} hop{pathResult.distance > 1 ? 's' : ''}</span>
+                      <span>{pathResult.distance} Hops</span>
                     </div>
-                    <div className="space-y-2">
+                    <div className="space-y-1 font-mono text-[11px] text-slate-300">
                       {pathResult.steps.map((step, idx) => (
-                        <div key={idx} className="flex items-center gap-2 text-xs text-slate-300">
-                          <span className="font-semibold text-white">{step.from_node_name}</span>
-                          <ArrowRight size={12} className="text-cyan-400" />
-                          <span className="px-1.5 py-0.5 text-[10px] font-mono bg-cyan-500/20 text-cyan-300 rounded">
-                            {step.relationship_type}
-                          </span>
-                          <ArrowRight size={12} className="text-cyan-400" />
-                          <span className="font-semibold text-white">{step.to_node_name}</span>
+                        <div key={idx} className="flex items-center gap-1.5">
+                          <span className="text-slate-400">{step.from_node_name}</span>
+                          <span className="text-indigo-400 font-bold">--[{step.relationship_type}]--&gt;</span>
+                          <span className="text-emerald-300 font-medium">{step.to_node_name}</span>
                         </div>
                       ))}
                     </div>
-                  </div>
+                  </>
                 ) : (
-                  <p className="text-xs text-rose-400">No relationship pathway found within {depthLimit} hops.</p>
+                  <p className="text-rose-400">{pathResult.error || 'No path exists between the selected entities.'}</p>
                 )}
               </div>
             )}
@@ -1056,39 +1163,43 @@ export default function UserGraph() {
 
       {/* Graph Context Modal */}
       {showContextModal && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-[#0f172a] border border-slate-700 rounded-2xl max-w-2xl w-full p-6 shadow-2xl space-y-4">
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-xl max-w-2xl w-full p-6 space-y-4 shadow-2xl">
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                <Code size={18} className="text-purple-400" />
-                <span>Generated Hierarchical Graph Context</span>
-              </h3>
-              <button onClick={() => setShowContextModal(false)} className="text-slate-400 hover:text-white">✕</button>
+              <h2 className="text-base font-bold text-white flex items-center gap-2">
+                <Brain className="w-4 h-4 text-indigo-400" />
+                Structured Knowledge Graph Context
+              </h2>
+              <button onClick={() => setShowContextModal(false)} className="text-slate-400 hover:text-white">
+                <X className="w-4 h-4" />
+              </button>
             </div>
-
-            <p className="text-xs text-slate-400">
-              Formatted graph context tree generated for LLM prompt augmentation and RAG reasoning.
-            </p>
 
             <div className="relative">
               {isLoadingContext ? (
-                <div className="h-48 flex items-center justify-center gap-2 text-purple-400 text-xs">
-                  <RefreshCw size={16} className="animate-spin" />
-                  <span>Formatting hierarchical graph context...</span>
+                <div className="py-12 flex flex-col items-center justify-center text-slate-400 space-y-2">
+                  <RefreshCw className="w-6 h-6 animate-spin text-indigo-400" />
+                  <span className="text-xs">Generating graph context topology...</span>
                 </div>
               ) : (
-                <pre className="h-64 overflow-y-auto p-4 rounded-xl bg-slate-950 border border-slate-800 text-xs font-mono text-slate-300 leading-relaxed whitespace-pre-wrap">
+                <pre className="p-4 bg-slate-950 rounded-lg border border-slate-800 text-xs text-slate-200 max-h-96 overflow-y-auto whitespace-pre-wrap font-mono">
                   {graphContextText}
                 </pre>
               )}
+            </div>
 
+            <div className="flex justify-end gap-2">
               <button
-                onClick={handleCopyContext}
-                disabled={isLoadingContext}
-                className="absolute top-3 right-3 px-3 py-1 text-xs font-medium rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 flex items-center gap-1.5 transition-colors"
+                onClick={() => {
+                  navigator.clipboard.writeText(graphContextText);
+                  setCopiedContext(true);
+                  setTimeout(() => setCopiedContext(false), 2500);
+                }}
+                disabled={isLoadingContext || !graphContextText}
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium rounded-lg flex items-center gap-1.5 transition"
               >
-                {copiedContext ? <Check size={13} className="text-emerald-400" /> : <Copy size={13} />}
-                <span>{copiedContext ? 'Copied' : 'Copy'}</span>
+                {copiedContext ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                <span>{copiedContext ? 'Copied to Clipboard!' : 'Copy Context'}</span>
               </button>
             </div>
           </div>
