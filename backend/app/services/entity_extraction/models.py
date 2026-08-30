@@ -42,7 +42,7 @@ class ExtractedRelationship(BaseModel):
     def validate_relationship_type(cls, v: str) -> str:
         valid_rels = {r.value for r in RelationshipType}
         if v not in valid_rels:
-            return RelationshipType.RELATED_TO.value
+            raise ValueError(f"Invalid relationship type '{v}'. Allowed types: {sorted(list(valid_rels))}")
         return v
 
 class ExtractionResult(BaseModel):

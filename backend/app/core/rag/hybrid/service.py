@@ -101,10 +101,10 @@ class HybridRAGService:
             except Exception as ce:
                 logger.warning(f"Hybrid RAG cache read error: {ce}")
 
-        # 2. Query Entity & Intent Analysis
+        # 2. Query Entity & Intent Analysis & Resolution
         intent = QueryEntityExtractor.analyze_query_intent(query)
-        extracted_entities = intent.get("entities", [])
-
+        extracted_entity_names = intent.get("entities", [])
+        
         # 3. Vector Retrieval & Reranking
         vector_candidates: List[Dict[str, Any]] = []
         try:
@@ -121,39 +121,85 @@ class HybridRAGService:
         except Exception as ve:
             logger.warning(f"Vector retrieval warning in Hybrid RAG: {ve}")
 
-        # 4. Knowledge Graph Retrieval & Intelligence
+        # 4. Knowledge Graph Retrieval & Intelligence via Entity Resolution
+        from app.services.entity_extraction.resolver import EntityResolver
+        from app.services.entity_extraction.models import ExtractedEntity
+        
+        resolver = EntityResolver(self.db)
+        resolved_nodes: List[KnowledgeGraphNode] = []
+        matched_node_ids: List[uuid.UUID] = []
         graph_nodes: List[Dict[str, Any]] = []
+        graph_edges_data: List[Dict[str, Any]] = []
         graph_context_str = ""
-        try:
-            # Search matching nodes by query text and extracted entity names
-            search_terms = [query] + extracted_entities
-            matched_node_ids: List[uuid.UUID] = []
 
-            for term in search_terms[:3]:
-                found = self.kg_service.search_nodes(
+        try:
+            # A. Resolve extracted entity mentions against tenant graph
+            for ent_name in extracted_entity_names:
+                mock_ent = ExtractedEntity(name=ent_name, entity_type="SKILL")
+                node, res = resolver.resolve_entity(
                     user_id=user_id,
                     workspace_id=workspace_id,
-                    query=term,
-                    limit=10
+                    extracted=mock_ent,
+                    allow_fuzzy=True
                 )
-                for n in found:
-                    if n.id not in matched_node_ids:
-                        matched_node_ids.append(n.id)
-                        graph_nodes.append({
-                            "id": str(n.id),
-                            "name": n.name,
-                            "node_type": n.node_type,
-                            "description": n.description,
-                            "relevance_score": 0.85,
-                            "metadata": n.meta_data or {}
+                if node and node.id not in matched_node_ids:
+                    matched_node_ids.append(node.id)
+                    resolved_nodes.append(node)
+                    graph_nodes.append({
+                        "id": str(node.id),
+                        "name": node.name,
+                        "node_type": node.node_type,
+                        "description": node.description,
+                        "relevance_score": res.confidence,
+                        "metadata": node.meta_data or {}
+                    })
+
+            # B. Search matching nodes for general query text
+            found = self.kg_service.search_nodes(
+                user_id=user_id,
+                workspace_id=workspace_id,
+                query=query,
+                limit=5
+            )
+            for n in found:
+                if n.id not in matched_node_ids:
+                    matched_node_ids.append(n.id)
+                    resolved_nodes.append(n)
+                    graph_nodes.append({
+                        "id": str(n.id),
+                        "name": n.name,
+                        "node_type": n.node_type,
+                        "description": n.description,
+                        "relevance_score": 0.85,
+                        "metadata": n.meta_data or {}
+                    })
+
+            # C. Fetch active edges between matched nodes
+            if matched_node_ids:
+                edge_res = self.kg_service.list_edges(
+                    user_id=user_id,
+                    workspace_id=workspace_id,
+                    limit=50
+                )
+                all_edges = edge_res[0] if isinstance(edge_res, tuple) else edge_res
+                id_set = set(matched_node_ids)
+                for edge in all_edges:
+                    if edge.source_node_id in id_set or edge.target_node_id in id_set:
+                        graph_edges_data.append({
+                            "id": str(edge.id),
+                            "source_node_id": str(edge.source_node_id),
+                            "target_node_id": str(edge.target_node_id),
+                            "relationship_type": edge.relationship_type,
+                            "confidence": edge.confidence,
+                            "properties": edge.meta_data or {}
                         })
 
-            # Build structured hierarchical graph context
-            if matched_node_ids or extracted_entities:
+            # D. Build structured hierarchical graph context
+            if matched_node_ids or extracted_entity_names:
                 graph_context_str = self.kg_intel.build_graph_context(
                     user_id=user_id,
                     workspace_id=workspace_id,
-                    entity_names=extracted_entities if extracted_entities else None,
+                    entity_names=extracted_entity_names if extracted_entity_names else None,
                     node_ids=matched_node_ids[:5] if matched_node_ids else None,
                     depth=graph_depth,
                     max_entities=15
@@ -165,7 +211,7 @@ class HybridRAGService:
         fused_items: List[HybridRetrievedItem] = self.fusion.fuse_results(
             vector_items=vector_candidates,
             graph_nodes=graph_nodes,
-            graph_context_entities=extracted_entities
+            graph_context_entities=extracted_entity_names
         )
 
         # 6. Conflict Detection
@@ -220,7 +266,7 @@ class HybridRAGService:
             answer=answer,
             retrieved_chunks=fused_items,
             graph_entities=graph_nodes,
-            graph_relationships=[],
+            graph_relationships=graph_edges_data,
             graph_context=graph_context_str,
             combined_context=combined_context,
             citations=citations,
