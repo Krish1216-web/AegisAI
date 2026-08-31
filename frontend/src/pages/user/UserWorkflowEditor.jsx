@@ -28,10 +28,27 @@ import {
   activateWorkflow,
   pauseWorkflow,
   executeWorkflow,
+  getWorkflowExecutions,
+  getWorkflowExecution,
+  cancelWorkflowExecution,
+  approveWorkflowExecution,
   cloneWorkflow
 } from '../../api/workflows';
 
-import { Play, RefreshCw, X, AlertCircle } from 'lucide-react';
+import {
+  Play,
+  RefreshCw,
+  X,
+  AlertCircle,
+  Clock,
+  CheckCircle2,
+  AlertTriangle,
+  History,
+  StopCircle,
+  Check,
+  ChevronRight,
+  FileText
+} from 'lucide-react';
 
 const nodeTypes = {
   workflowNode: WorkflowNodeComponent
@@ -61,9 +78,14 @@ function WorkflowEditorContent({ triggerNotification }) {
   const [showVariablesModal, setShowVariablesModal] = useState(false);
   const [validationResult, setValidationResult] = useState(null);
   const [showRunModal, setShowRunModal] = useState(false);
-  const [runInput, setRunInput] = useState('{\n  "message": "Test input"\n}');
-  const [runResult, setRunResult] = useState(null);
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [runInput, setRunInput] = useState('{\n  "message": "Hello AegisAI Workflow"\n}');
+
+  // Execution state
+  const [activeExecution, setActiveExecution] = useState(null);
+  const [executions, setExecutions] = useState([]);
   const [isRunning, setIsRunning] = useState(false);
+  const [isApproving, setIsApproving] = useState(false);
 
   // History for Undo/Redo
   const [history, setHistory] = useState([]);
@@ -86,23 +108,20 @@ function WorkflowEditorContent({ triggerNotification }) {
       setWorkflow(data);
       setVariables(data.variables || []);
 
-      const nodeMap = {};
-      const rfNodes = (data.nodes || []).map((n) => {
-        nodeMap[n.id] = n.node_key;
-        return {
-          id: n.id,
-          type: 'workflowNode',
-          position: n.position || { x: 100, y: 100 },
-          data: {
-            name: n.name,
-            node_key: n.node_key,
-            node_type: n.node_type,
-            config: n.config || {},
-            is_enabled: n.is_enabled !== false,
-            onDelete: (id) => handleDeleteNode(id)
-          }
-        };
-      });
+      const rfNodes = (data.nodes || []).map((n) => ({
+        id: n.id,
+        type: 'workflowNode',
+        position: n.position || { x: 100, y: 100 },
+        data: {
+          name: n.name,
+          node_key: n.node_key,
+          node_type: n.node_type,
+          config: n.config || {},
+          is_enabled: n.is_enabled !== false,
+          executionStatus: null,
+          onDelete: (id) => handleDeleteNode(id)
+        }
+      }));
 
       const rfEdges = (data.edges || []).map((e) => ({
         id: e.id,
@@ -134,7 +153,28 @@ function WorkflowEditorContent({ triggerNotification }) {
     loadWorkflow();
   }, [loadWorkflow]);
 
-  // 2. Drag and Drop Node Addition
+  // 2. Sync Execution status to node graph
+  const syncExecutionToNodes = useCallback((exec) => {
+    if (!exec) return;
+    setActiveExecution(exec);
+
+    const statusMap = {};
+    (exec.execution_nodes || []).forEach((en) => {
+      statusMap[en.node_key] = en.status?.toLowerCase();
+    });
+
+    setNodes((prevNodes) =>
+      prevNodes.map((n) => ({
+        ...n,
+        data: {
+          ...n.data,
+          executionStatus: statusMap[n.data.node_key] || null
+        }
+      }))
+    );
+  }, [setNodes]);
+
+  // 3. Drag and Drop Node Addition
   const onDragOver = useCallback((event) => {
     event.preventDefault();
     event.dataTransfer.dropEffect = 'move';
@@ -170,6 +210,7 @@ function WorkflowEditorContent({ triggerNotification }) {
         node_type: nodeType,
         config: {},
         is_enabled: true,
+        executionStatus: null,
         onDelete: (id) => handleDeleteNode(id)
       }
     };
@@ -194,7 +235,7 @@ function WorkflowEditorContent({ triggerNotification }) {
     handleAddNode(type, position);
   }, [reactFlowInstance, handleAddNode]);
 
-  // 3. Connect Edges
+  // 4. Connect Edges
   const onConnect = useCallback((params) => {
     if (params.source === params.target) {
       if (triggerNotification) triggerNotification('Invalid Connection', 'Self-loops are not allowed in a DAG.');
@@ -223,7 +264,7 @@ function WorkflowEditorContent({ triggerNotification }) {
     pushHistory(nodes, nextEdges, variables);
   }, [edges, nodes, variables, pushHistory, triggerNotification]);
 
-  // 4. Update Node
+  // 5. Update Node
   const handleUpdateNode = useCallback((id, updatedData) => {
     const nextNodes = nodes.map((n) => {
       if (n.id === id) {
@@ -235,7 +276,7 @@ function WorkflowEditorContent({ triggerNotification }) {
     pushHistory(nextNodes, edges, variables);
   }, [nodes, edges, variables, pushHistory]);
 
-  // 5. Delete Node
+  // 6. Delete Node
   const handleDeleteNode = useCallback((id) => {
     const nextNodes = nodes.filter((n) => n.id !== id);
     const nextEdges = edges.filter((e) => e.source !== id && e.target !== id);
@@ -245,7 +286,7 @@ function WorkflowEditorContent({ triggerNotification }) {
     pushHistory(nextNodes, nextEdges, variables);
   }, [nodes, edges, variables, selectedNodeId, pushHistory]);
 
-  // 6. Update Edge
+  // 7. Update Edge
   const handleUpdateEdge = useCallback((id, updatedData) => {
     const nextEdges = edges.map((e) => {
       if (e.id === id) {
@@ -257,7 +298,7 @@ function WorkflowEditorContent({ triggerNotification }) {
     pushHistory(nodes, nextEdges, variables);
   }, [edges, nodes, variables, pushHistory]);
 
-  // 7. Delete Edge
+  // 8. Delete Edge
   const handleDeleteEdge = useCallback((id) => {
     const nextEdges = edges.filter((e) => e.id !== id);
     setEdges(nextEdges);
@@ -265,13 +306,13 @@ function WorkflowEditorContent({ triggerNotification }) {
     pushHistory(nodes, nextEdges, variables);
   }, [edges, nodes, variables, selectedEdgeId, pushHistory]);
 
-  // 8. Variables Update
+  // 9. Variables Update
   const handleVariablesChange = useCallback((newVars) => {
     setVariables(newVars);
     pushHistory(nodes, edges, newVars);
   }, [nodes, edges, pushHistory]);
 
-  // 9. Undo / Redo
+  // 10. Undo / Redo
   const handleUndo = useCallback(() => {
     if (historyIndex > 0) {
       const prev = history[historyIndex - 1];
@@ -294,11 +335,10 @@ function WorkflowEditorContent({ triggerNotification }) {
     }
   }, [history, historyIndex]);
 
-  // 10. Auto-Layout (Topological)
+  // 11. Auto-Layout
   const handleAutoLayout = useCallback(() => {
     if (nodes.length === 0) return;
 
-    // Simple deterministic grid layout based on in-degree / BFS
     const adj = {};
     const inDegree = {};
     nodes.forEach((n) => {
@@ -358,7 +398,7 @@ function WorkflowEditorContent({ triggerNotification }) {
     }, 50);
   }, [nodes, edges, variables, pushHistory, reactFlowInstance]);
 
-  // 11. Save Workflow Definition (Atomic + Optimistic Concurrency)
+  // 12. Save Workflow Definition (Atomic + Optimistic Version Check)
   const handleSave = async () => {
     if (!workflow) return;
     try {
@@ -414,7 +454,7 @@ function WorkflowEditorContent({ triggerNotification }) {
     }
   };
 
-  // 12. Validate
+  // 13. Validate
   const handleValidate = async () => {
     if (!workflow) return;
     try {
@@ -431,7 +471,7 @@ function WorkflowEditorContent({ triggerNotification }) {
     }
   };
 
-  // 13. Status Toggle
+  // 14. Status Toggle
   const handleToggleStatus = async () => {
     if (!workflow) return;
     try {
@@ -450,19 +490,7 @@ function WorkflowEditorContent({ triggerNotification }) {
     }
   };
 
-  // 14. Clone
-  const handleClone = async () => {
-    if (!workflow) return;
-    try {
-      const cloned = await cloneWorkflow(workflow.id);
-      if (triggerNotification) triggerNotification('Workflow Cloned', `Created draft copy: ${cloned.name}`);
-      navigate(`/user/workflows/${cloned.id}/edit`);
-    } catch (err) {
-      console.error('Clone failed:', err);
-    }
-  };
-
-  // 15. Run / Execute
+  // 15. Execute Run
   const handleRun = async () => {
     if (!workflow) return;
     try {
@@ -476,13 +504,65 @@ function WorkflowEditorContent({ triggerNotification }) {
         return;
       }
       const res = await executeWorkflow(workflow.id, parsed);
-      setRunResult(res);
-      if (triggerNotification) triggerNotification('Execution Completed', `Execution ${res.status}`);
+      syncExecutionToNodes(res);
+      if (triggerNotification) triggerNotification('Execution Started', `Status: ${res.status}`);
     } catch (err) {
       console.error('Run failed:', err);
       if (triggerNotification) triggerNotification('Execution Failed', err.message || 'Execution error');
     } finally {
       setIsRunning(false);
+    }
+  };
+
+  // 16. Approve Waiting Execution
+  const handleApprove = async (approved = true) => {
+    if (!activeExecution) return;
+    try {
+      setIsApproving(true);
+      const res = await approveWorkflowExecution(activeExecution.id, approved);
+      const detailed = await getWorkflowExecution(res.id);
+      syncExecutionToNodes(detailed);
+      if (triggerNotification) triggerNotification('Approval Submitted', `Execution is now ${res.status}`);
+    } catch (err) {
+      console.error('Approval failed:', err);
+      if (triggerNotification) triggerNotification('Approval Error', err.message);
+    } finally {
+      setIsApproving(false);
+    }
+  };
+
+  // 17. Cancel Running Execution
+  const handleCancelExecution = async () => {
+    if (!activeExecution) return;
+    try {
+      const res = await cancelWorkflowExecution(activeExecution.id);
+      const detailed = await getWorkflowExecution(res.id);
+      syncExecutionToNodes(detailed);
+      if (triggerNotification) triggerNotification('Execution Cancelled', 'Execution was aborted.');
+    } catch (err) {
+      console.error('Cancel failed:', err);
+    }
+  };
+
+  // 18. Load Execution History
+  const handleOpenHistory = async () => {
+    try {
+      const list = await getWorkflowExecutions(workflow.id, { limit: 20 });
+      setExecutions(list || []);
+      setShowHistoryModal(true);
+    } catch (err) {
+      console.error('Failed to load history:', err);
+    }
+  };
+
+  const handleSelectHistoryExecution = async (execId) => {
+    try {
+      const detailed = await getWorkflowExecution(execId);
+      syncExecutionToNodes(detailed);
+      setShowHistoryModal(false);
+      setShowRunModal(true);
+    } catch (err) {
+      console.error('Failed to get execution detail:', err);
     }
   };
 
@@ -498,6 +578,11 @@ function WorkflowEditorContent({ triggerNotification }) {
   const selectedNode = nodes.find((n) => n.id === selectedNodeId);
   const selectedEdge = edges.find((e) => e.id === selectedEdgeId);
   const hasStartNode = nodes.some((n) => n.data?.node_type === 'start');
+
+  // Selected node execution data if available
+  const selectedNodeExec = activeExecution?.execution_nodes?.find(
+    (en) => en.node_key === selectedNode?.data?.node_key
+  );
 
   return (
     <div className="h-screen w-full flex flex-col bg-[#07080a] text-slate-100 overflow-hidden font-sans">
@@ -518,11 +603,11 @@ function WorkflowEditorContent({ triggerNotification }) {
         canUndo={historyIndex > 0}
         canRedo={historyIndex < history.length - 1}
         onFitView={() => reactFlowInstance && reactFlowInstance.fitView({ padding: 0.2 })}
-        onRunWorkflow={() => {
-          setRunResult(null);
-          setShowRunModal(true);
+        onRunWorkflow={() => setShowRunModal(true)}
+        onCloneWorkflow={async () => {
+          const cloned = await cloneWorkflow(workflow.id);
+          navigate(`/user/workflows/${cloned.id}/edit`);
         }}
-        onCloneWorkflow={handleClone}
         onUpdateMetadata={(meta) => {
           setWorkflow((prev) => ({ ...prev, ...meta }));
           setIsDirty(true);
@@ -539,6 +624,69 @@ function WorkflowEditorContent({ triggerNotification }) {
 
         {/* Center: React Flow Canvas */}
         <div className="flex-1 h-full bg-[#050608] relative">
+          {/* Active Execution Banner */}
+          {activeExecution && (
+            <div className="absolute top-4 left-4 z-10 flex items-center gap-3 bg-slate-900/90 border border-slate-800 p-2.5 rounded-2xl backdrop-blur-xl shadow-xl select-none">
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-mono text-slate-400">Execution:</span>
+                <span className="text-xs font-mono text-indigo-300 font-bold">
+                  {activeExecution.id.slice(0, 8)}...
+                </span>
+                <span
+                  className={`px-2 py-0.5 rounded text-[10px] font-mono uppercase font-bold ${
+                    activeExecution.status === 'completed'
+                      ? 'bg-emerald-500/20 text-emerald-400'
+                      : activeExecution.status === 'running'
+                      ? 'bg-indigo-500/20 text-indigo-400 animate-pulse'
+                      : activeExecution.status === 'waiting_approval'
+                      ? 'bg-amber-500/20 text-amber-400'
+                      : activeExecution.status === 'failed'
+                      ? 'bg-rose-500/20 text-rose-400'
+                      : 'bg-slate-800 text-slate-400'
+                  }`}
+                >
+                  {activeExecution.status}
+                </span>
+              </div>
+
+              {activeExecution.status === 'waiting_approval' && (
+                <div className="flex items-center gap-1.5 ml-2">
+                  <button
+                    onClick={() => handleApprove(true)}
+                    disabled={isApproving}
+                    className="px-2.5 py-1 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center gap-1 shadow-sm transition"
+                  >
+                    <Check className="w-3 h-3" /> Approve
+                  </button>
+                  <button
+                    onClick={() => handleApprove(false)}
+                    disabled={isApproving}
+                    className="px-2.5 py-1 rounded-xl bg-rose-600/30 hover:bg-rose-600/50 text-rose-300 text-xs font-semibold flex items-center gap-1 transition"
+                  >
+                    <X className="w-3 h-3" /> Reject
+                  </button>
+                </div>
+              )}
+
+              {activeExecution.status === 'running' && (
+                <button
+                  onClick={handleCancelExecution}
+                  className="px-2 py-1 rounded-xl bg-rose-600/20 hover:bg-rose-600/40 text-rose-300 text-xs font-medium flex items-center gap-1 transition"
+                >
+                  <StopCircle className="w-3 h-3" /> Cancel
+                </button>
+              )}
+
+              <button
+                onClick={handleOpenHistory}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition"
+                title="Execution History"
+              >
+                <History className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+
           <ReactFlow
             nodes={nodes}
             edges={edges}
@@ -574,6 +722,9 @@ function WorkflowEditorContent({ triggerNotification }) {
             <Controls className="!bg-slate-900 !border-slate-800 !text-slate-300" />
             <MiniMap
               nodeColor={(n) => {
+                if (n.data?.executionStatus === 'completed') return '#10b981';
+                if (n.data?.executionStatus === 'failed') return '#f43f5e';
+                if (n.data?.executionStatus === 'running') return '#818cf8';
                 if (n.data?.node_type === 'start') return '#10b981';
                 if (n.data?.node_type === 'end') return '#f43f5e';
                 return '#6366f1';
@@ -583,15 +734,73 @@ function WorkflowEditorContent({ triggerNotification }) {
           </ReactFlow>
         </div>
 
-        {/* Right: Inspectors */}
+        {/* Right: Node / Execution Inspector */}
         {selectedNode && (
-          <WorkflowNodeEditor
-            selectedNode={selectedNode}
-            allNodes={nodes}
-            onUpdateNode={handleUpdateNode}
-            onDeleteNode={handleDeleteNode}
-            onClose={() => setSelectedNodeId(null)}
-          />
+          <div className="w-96 bg-slate-950 border-l border-slate-800 h-full flex flex-col z-20 shadow-2xl">
+            {/* Tab switch if execution exists */}
+            {selectedNodeExec && (
+              <div className="p-3 bg-slate-900/80 border-b border-slate-800 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-slate-200">Execution Output</span>
+                  <span className={`px-1.5 py-0.5 rounded text-[9px] font-mono uppercase font-bold ${
+                    selectedNodeExec.status === 'COMPLETED' ? 'bg-emerald-500/20 text-emerald-300' : 'bg-rose-500/20 text-rose-300'
+                  }`}>
+                    {selectedNodeExec.status}
+                  </span>
+                </div>
+                <button onClick={() => setSelectedNodeId(null)} className="text-slate-400 hover:text-slate-200">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            )}
+
+            {selectedNodeExec ? (
+              <div className="flex-1 overflow-y-auto p-4 space-y-3 text-xs">
+                <div>
+                  <span className="text-slate-500 text-[10px] uppercase font-bold block mb-1">Node Key</span>
+                  <div className="font-mono text-slate-200 bg-slate-900 p-2 rounded-lg border border-slate-800">
+                    {selectedNodeExec.node_key}
+                  </div>
+                </div>
+
+                {selectedNodeExec.error && (
+                  <div>
+                    <span className="text-rose-400 text-[10px] uppercase font-bold block mb-1">Error</span>
+                    <div className="p-2.5 rounded-xl bg-rose-950/40 border border-rose-800/60 text-rose-300 font-mono">
+                      {selectedNodeExec.error}
+                    </div>
+                  </div>
+                )}
+
+                <div>
+                  <span className="text-slate-500 text-[10px] uppercase font-bold block mb-1">Output Data</span>
+                  <pre className="p-3 rounded-xl bg-slate-900 border border-slate-800 font-mono text-emerald-400 overflow-x-auto max-h-64">
+                    {JSON.stringify(selectedNodeExec.output_data, null, 2)}
+                  </pre>
+                </div>
+
+                <div className="pt-2 border-t border-slate-800 flex justify-end">
+                  <button
+                    onClick={() => {
+                      // Switch back to edit mode
+                      syncExecutionToNodes(null);
+                    }}
+                    className="text-xs text-indigo-400 hover:text-indigo-300"
+                  >
+                    Edit Node Config &rarr;
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <WorkflowNodeEditor
+                selectedNode={selectedNode}
+                allNodes={nodes}
+                onUpdateNode={handleUpdateNode}
+                onDeleteNode={handleDeleteNode}
+                onClose={() => setSelectedNodeId(null)}
+              />
+            )}
+          </div>
         )}
 
         {selectedEdge && (
@@ -634,7 +843,7 @@ function WorkflowEditorContent({ triggerNotification }) {
             <div className="flex items-center justify-between">
               <h3 className="text-base font-bold text-slate-100 flex items-center gap-2">
                 <Play className="w-4 h-4 text-cyan-400" />
-                Test Execute: {workflow.name}
+                Execute Workflow: {workflow.name}
               </h3>
               <button onClick={() => setShowRunModal(false)} className="text-slate-400 hover:text-slate-200">
                 <X className="w-4 h-4" />
@@ -642,7 +851,7 @@ function WorkflowEditorContent({ triggerNotification }) {
             </div>
 
             <div>
-              <label className="text-xs font-medium text-slate-300 block mb-1">Input Data (JSON)</label>
+              <label className="text-xs font-medium text-slate-300 block mb-1">Input Parameters (JSON)</label>
               <textarea
                 value={runInput}
                 onChange={(e) => setRunInput(e.target.value)}
@@ -651,16 +860,22 @@ function WorkflowEditorContent({ triggerNotification }) {
               />
             </div>
 
-            {runResult && (
+            {activeExecution && (
               <div className="space-y-2">
                 <div className="flex items-center justify-between text-xs">
-                  <span className="font-semibold text-slate-300">Execution Result</span>
-                  <span className={`px-2 py-0.5 rounded font-mono text-[10px] ${runResult.status === 'completed' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'}`}>
-                    {runResult.status}
+                  <span className="font-semibold text-slate-300">Execution Output</span>
+                  <span className={`px-2 py-0.5 rounded font-mono text-[10px] uppercase font-bold ${
+                    activeExecution.status === 'completed'
+                      ? 'bg-emerald-500/20 text-emerald-400'
+                      : activeExecution.status === 'waiting_approval'
+                      ? 'bg-amber-500/20 text-amber-400'
+                      : 'bg-rose-500/20 text-rose-400'
+                  }`}>
+                    {activeExecution.status}
                   </span>
                 </div>
                 <pre className="bg-slate-950 p-3 rounded-xl border border-slate-800 text-xs font-mono text-emerald-400 overflow-x-auto max-h-48">
-                  {JSON.stringify(runResult.output_data || runResult.error, null, 2)}
+                  {JSON.stringify(activeExecution.output_data || activeExecution.error, null, 2)}
                 </pre>
               </div>
             )}
@@ -680,6 +895,57 @@ function WorkflowEditorContent({ triggerNotification }) {
                 {isRunning ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />}
                 Execute Run
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Execution History Modal */}
+      {showHistoryModal && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-2xl w-full p-6 space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-bold text-slate-100 flex items-center gap-2">
+                <History className="w-4 h-4 text-indigo-400" />
+                Execution History
+              </h3>
+              <button onClick={() => setShowHistoryModal(false)} className="text-slate-400 hover:text-slate-200">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="max-h-80 overflow-y-auto space-y-2">
+              {executions.map((e) => (
+                <div
+                  key={e.id}
+                  onClick={() => handleSelectHistoryExecution(e.id)}
+                  className="p-3 bg-slate-950 hover:bg-slate-900 border border-slate-800 rounded-xl flex items-center justify-between cursor-pointer transition"
+                >
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-mono text-indigo-300 font-bold">{e.id.slice(0, 8)}...</span>
+                      <span className={`px-1.5 py-0.5 rounded text-[9px] font-mono uppercase font-bold ${
+                        e.status === 'completed'
+                          ? 'bg-emerald-500/20 text-emerald-400'
+                          : e.status === 'waiting_approval'
+                          ? 'bg-amber-500/20 text-amber-400'
+                          : e.status === 'failed'
+                          ? 'bg-rose-500/20 text-rose-400'
+                          : 'bg-slate-800 text-slate-400'
+                      }`}>
+                        {e.status}
+                      </span>
+                    </div>
+                    <div className="text-[10px] text-slate-500 mt-1">
+                      Started: {new Date(e.started_at || e.created_at).toLocaleString()}
+                    </div>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-slate-500" />
+                </div>
+              ))}
+              {executions.length === 0 && (
+                <div className="text-center py-8 text-xs text-slate-500">No past executions found.</div>
+              )}
             </div>
           </div>
         </div>

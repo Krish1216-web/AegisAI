@@ -233,3 +233,14 @@ export const getWorkflowExecution = async (executionId: string): Promise<Workflo
 export const cancelWorkflowExecution = async (executionId: string): Promise<WorkflowExecutionSummary> => {
   return request<WorkflowExecutionSummary>(`/workflows/executions/${executionId}/cancel`, { method: 'POST' });
 };
+
+export const approveWorkflowExecution = async (
+  executionId: string,
+  approved: boolean = true,
+  comments?: string
+): Promise<WorkflowExecutionSummary> => {
+  return request<WorkflowExecutionSummary>(`/workflows/executions/${executionId}/approve`, {
+    method: 'POST',
+    body: JSON.stringify({ approved, comments })
+  });
+};

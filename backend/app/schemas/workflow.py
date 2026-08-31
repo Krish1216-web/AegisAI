@@ -68,13 +68,18 @@ class LocalToolNodeConfig(BaseNodeConfig):
     arguments: Optional[Dict[str, Any]] = Field(default_factory=dict)
 
 class ConditionNodeConfig(BaseNodeConfig):
-    expression: str
+    expression: Optional[str] = None
+    left: Optional[str] = None
+    operator: Optional[str] = "equals"
+    right: Optional[Any] = None
     true_target: Optional[str] = None
     false_target: Optional[str] = None
 
 class HumanApprovalNodeConfig(BaseNodeConfig):
-    prompt: str = "Please review and approve this step."
+    prompt: Optional[str] = "Please review and approve this step."
+    approval_message: Optional[str] = None
     timeout_seconds: int = 86400
+    timeout: Optional[int] = 86400
     approver_roles: Optional[List[str]] = Field(default_factory=lambda: ["admin"])
 
 class TransformNodeConfig(BaseNodeConfig):
@@ -292,3 +297,7 @@ class WorkflowDefinitionUpdate(BaseModel):
 class WorkflowCloneRequest(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
+
+class WorkflowApproveRequest(BaseModel):
+    approved: bool = True
+    comments: Optional[str] = None

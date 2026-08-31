@@ -28,7 +28,8 @@ from app.schemas.workflow import (
     WorkflowVariableResponse,
     WorkflowExecutionNodeResponse,
     WorkflowDefinitionUpdate,
-    WorkflowCloneRequest
+    WorkflowCloneRequest,
+    WorkflowApproveRequest
 )
 from app.services.workflow import (
     WorkflowService,
@@ -398,3 +399,29 @@ async def cancel_workflow_execution(
             detail=f"Workflow execution '{execution_id}' not found."
         )
     return execution
+
+@router.post("/executions/{execution_id}/approve", response_model=WorkflowExecutionResponse, dependencies=[Depends(check_rate_limit)])
+async def approve_workflow_execution(
+    execution_id: uuid.UUID,
+    payload: WorkflowApproveRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Approves or rejects a workflow execution paused in WAITING_APPROVAL status.
+    """
+    workspace_id = resolve_workspace_id(current_user, db)
+    exec_service = WorkflowExecutionService(db)
+    try:
+        execution = exec_service.approve_execution(
+            current_user.id,
+            workspace_id,
+            execution_id,
+            approved=payload.approved
+        )
+        return execution
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )

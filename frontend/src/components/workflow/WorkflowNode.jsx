@@ -45,12 +45,26 @@ function WorkflowNodeComponent({ id, data, selected }) {
   const isEnd = nodeType === 'end';
   const hasError = data?.hasError;
   const isConfigured = data?.isConfigured !== false;
+  const execStatus = data?.executionStatus; // 'running', 'completed', 'failed', 'waiting_approval', 'skipped'
+
+  let execBorderClass = meta.border;
+  if (execStatus === 'running') {
+    execBorderClass = 'border-indigo-400 ring-2 ring-indigo-400/80 animate-pulse';
+  } else if (execStatus === 'completed') {
+    execBorderClass = 'border-emerald-400 ring-1 ring-emerald-400/50 shadow-emerald-900/30';
+  } else if (execStatus === 'failed') {
+    execBorderClass = 'border-rose-500 ring-2 ring-rose-500/80 shadow-rose-950/40';
+  } else if (execStatus === 'waiting_approval') {
+    execBorderClass = 'border-amber-400 ring-2 ring-amber-400/80 animate-bounce';
+  } else if (execStatus === 'skipped') {
+    execBorderClass = 'border-slate-800 opacity-40';
+  }
 
   return (
     <div
       className={`relative rounded-2xl min-w-[220px] max-w-[280px] p-3.5 backdrop-blur-xl transition-all shadow-xl select-none ${
         selected ? 'ring-2 ring-indigo-400 shadow-indigo-500/20' : 'hover:border-slate-600'
-      } ${meta.border} ${meta.bg} border`}
+      } ${execBorderClass} ${meta.bg} border`}
     >
       {/* Handles */}
       {!isStart && (
@@ -78,7 +92,7 @@ function WorkflowNodeComponent({ id, data, selected }) {
         </div>
 
         {/* Delete button when selected */}
-        {data?.onDelete && (
+        {data?.onDelete && !execStatus && (
           <button
             onClick={(e) => {
               e.stopPropagation();
@@ -104,7 +118,23 @@ function WorkflowNodeComponent({ id, data, selected }) {
           </span>
         )}
 
-        {hasError ? (
+        {execStatus ? (
+          <span
+            className={`flex items-center gap-1 text-[9px] ml-auto font-mono uppercase font-bold px-1.5 py-0.5 rounded ${
+              execStatus === 'running'
+                ? 'bg-indigo-500/20 text-indigo-300'
+                : execStatus === 'completed'
+                ? 'bg-emerald-500/20 text-emerald-300'
+                : execStatus === 'failed'
+                ? 'bg-rose-500/20 text-rose-300'
+                : execStatus === 'waiting_approval'
+                ? 'bg-amber-500/20 text-amber-300'
+                : 'bg-slate-800 text-slate-400'
+            }`}
+          >
+            {execStatus}
+          </span>
+        ) : hasError ? (
           <span className="flex items-center gap-1 text-[9px] text-rose-400 ml-auto font-mono">
             <AlertTriangle className="w-3 h-3" /> Error
           </span>
@@ -119,6 +149,7 @@ function WorkflowNodeComponent({ id, data, selected }) {
         )}
       </div>
 
+      {/* Outgoing Handle */}
       {!isEnd && (
         <Handle
           type="source"
