@@ -25,6 +25,10 @@ class PlanStep(BaseModel):
     estimated_duration: float = 0.0
     can_run_parallel: bool = False
     requires_confirmation: bool = False
+    tool_source: Optional[str] = None # "LOCAL" | "MCP"
+    tool_id: Optional[str] = None
+    server_id: Optional[str] = None
+    capability_type: Optional[str] = None # "TOOL" | "RESOURCE" | "PROMPT"
 
 class DetailedExecutionPlan(BaseModel):
     steps: List[PlanStep]
@@ -167,7 +171,53 @@ class PlannerAgent(BaseAgent):
                         )
                     )
                     step_idx += 1
-                if orch_plan.requires_tools:
+                if getattr(orch_plan, "requires_mcp", False):
+                    mcp_op = getattr(orch_plan, "mcp_operation", None) or "tool"
+                    if mcp_op in ("tool", "hybrid"):
+                        steps.append(
+                            PlanStep(
+                                step_id=f"step_{step_idx}",
+                                title="MCP Tool Execution",
+                                description="Execute authorized MCP tool capability",
+                                agent_type=AgentType.TOOL_EXECUTOR,
+                                action="mcp:execute_tool",
+                                tool_source="MCP",
+                                capability_type="TOOL",
+                                expected_output="MCP tool execution result"
+                            )
+                        )
+                        step_idx += 1
+                    elif mcp_op == "resource":
+                        steps.append(
+                            PlanStep(
+                                step_id=f"step_{step_idx}",
+                                title="MCP Resource Retrieval",
+                                description="Read authorized MCP workspace resource",
+                                agent_type=AgentType.TOOL_EXECUTOR,
+                                action="mcp:read_resource",
+                                tool_source="MCP",
+                                capability_type="RESOURCE",
+                                expected_output="Sanitized resource content",
+                                can_run_parallel=True
+                            )
+                        )
+                        step_idx += 1
+                    elif mcp_op == "prompt":
+                        steps.append(
+                            PlanStep(
+                                step_id=f"step_{step_idx}",
+                                title="MCP Prompt Template",
+                                description="Render authorized MCP prompt template",
+                                agent_type=AgentType.TOOL_EXECUTOR,
+                                action="mcp:render_prompt",
+                                tool_source="MCP",
+                                capability_type="PROMPT",
+                                expected_output="Rendered prompt messages",
+                                can_run_parallel=True
+                            )
+                        )
+                        step_idx += 1
+                elif orch_plan.requires_tools:
                     steps.append(
                         PlanStep(
                             step_id=f"step_{step_idx}",

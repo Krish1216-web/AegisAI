@@ -121,49 +121,124 @@ class ToolExecutorAgent(BaseAgent):
                 logger.error(f"Failed to record tool execution start: {e}")
 
         try:
-            # 2. Check if this is an MCP Tool invocation
+            # 2. Check if this is an MCP Tool, Resource, or Prompt invocation
             if (is_mcp_step or action.startswith("mcp:")) and db:
                 from app.services.mcp.mcp_tool_executor import MCPToolExecutionService
                 from app.services.mcp.mcp_tool_catalog import MCPToolCatalogService
+                from app.services.mcp.mcp_resource_service import MCPResourceService
+                from app.services.mcp.mcp_prompt_service import MCPPromptService
                 from app.core.mcp.base import MCPToolConfirmationRequired
 
                 clean_mcp_name = action[4:] if action.startswith("mcp:") else action
-                catalog = MCPToolCatalogService(db)
-                
-                # Resolve MCP capability by ID or name
-                target_tool = None
-                if mcp_tool_id:
-                    target_tool = catalog.get_tool(uuid.UUID(user_id), uuid.UUID(workspace_id), uuid.UUID(mcp_tool_id))
-                if not target_tool:
-                    candidates = catalog.search_tools(uuid.UUID(user_id), uuid.UUID(workspace_id), query=clean_mcp_name, limit=1)
-                    if candidates:
-                        target_tool = candidates[0]
 
-                if not target_tool:
-                    raise ToolNotFound(f"MCP tool '{action}' not found in workspace catalog.")
+                # A. MCP Resource read flow
+                if clean_mcp_name in ("read_resource", "resource_read") or (planner_output and "RESOURCE" in planner_output.get("output", "")):
+                    resource_service = MCPResourceService(db)
+                    target_res_id = mcp_tool_id
+                    target_res_name = "MCP Resource"
+                    if not target_res_id:
+                        res_items, _ = resource_service.list_resources(uuid.UUID(user_id), uuid.UUID(workspace_id), limit=1)
+                        if res_items:
+                            target_res_id = str(res_items[0]["id"])
+                            target_res_name = res_items[0].get("name", "MCP Resource")
+                    
+                    if not target_res_id:
+                        raise ToolNotFound("No active MCP resources available in this workspace.")
 
-                mcp_executor = MCPToolExecutionService(db)
-                try:
-                    mcp_res = await mcp_executor.execute_tool(
+                    res_read = await resource_service.read_resource(
                         user_id=uuid.UUID(user_id),
                         workspace_id=uuid.UUID(workspace_id),
-                        tool_id=uuid.UUID(str(target_tool["id"])),
-                        arguments=args,
-                        confirmation_token=conf_token,
-                        timeout=15.0
+                        resource_id=uuid.UUID(target_res_id)
                     )
-                except MCPToolConfirmationRequired as mcr:
-                    raise ToolConfirmationRequired(mcr.risk_reasons)
+                    resource_text = res_read.text or ""
+                    state["mcp_resource_context"] = resource_text
+                    elapsed = time.perf_counter() - start_time
+                    tool_res = ToolExecutionResult(
+                        execution_id=execution_id,
+                        tool_id=action,
+                        status=ToolExecutionStatus.SUCCESS,
+                        output={"content": resource_text, "uri": res_read.uri, "mime_type": res_read.mime_type},
+                        execution_time=elapsed,
+                        metadata={"source": "MCP_RESOURCE", "resource_id": target_res_id, "uri": res_read.uri, "title": target_res_name, "trust_label": "UNTRUSTED_MCP"}
+                    )
 
-                elapsed = time.perf_counter() - start_time
-                tool_res = ToolExecutionResult(
-                    execution_id=execution_id,
-                    tool_id=action,
-                    status=ToolExecutionStatus.SUCCESS,
-                    output=mcp_res.result,
-                    execution_time=elapsed,
-                    metadata={"source": "MCP", "tool_id": str(target_tool["id"])}
-                )
+                # B. MCP Prompt render flow
+                elif clean_mcp_name in ("render_prompt", "prompt_render") or (planner_output and "PROMPT" in planner_output.get("output", "")):
+                    prompt_service = MCPPromptService(db)
+                    target_pr_id = mcp_tool_id
+                    if not target_pr_id:
+                        pr_items, _ = prompt_service.list_prompts(uuid.UUID(user_id), uuid.UUID(workspace_id), limit=1)
+                        if pr_items:
+                            target_pr_id = str(pr_items[0]["id"])
+
+                    if not target_pr_id:
+                        raise ToolNotFound("No active MCP prompts available in this workspace.")
+
+                    pr_rendered = await prompt_service.render_prompt(
+                        user_id=uuid.UUID(user_id),
+                        workspace_id=uuid.UUID(workspace_id),
+                        prompt_id=uuid.UUID(target_pr_id),
+                        arguments=args
+                    )
+                    msg_list = [m.model_dump() if hasattr(m, "model_dump") else m for m in pr_rendered.messages]
+                    state["mcp_prompt_context"] = json.dumps(msg_list)
+                    elapsed = time.perf_counter() - start_time
+                    tool_res = ToolExecutionResult(
+                        execution_id=execution_id,
+                        tool_id=action,
+                        status=ToolExecutionStatus.SUCCESS,
+                        output={"messages": msg_list, "description": pr_rendered.description},
+                        execution_time=elapsed,
+                        metadata={"source": "MCP_PROMPT", "prompt_id": target_pr_id, "name": pr_rendered.name, "trust_label": "UNTRUSTED_MCP"}
+                    )
+
+                # C. MCP Tool execution flow
+                else:
+                    catalog = MCPToolCatalogService(db)
+                    target_tool = None
+                    if mcp_tool_id:
+                        target_tool = catalog.get_tool(uuid.UUID(user_id), uuid.UUID(workspace_id), uuid.UUID(mcp_tool_id))
+                    if not target_tool:
+                        candidates = catalog.search_tools(uuid.UUID(user_id), uuid.UUID(workspace_id), query=clean_mcp_name if clean_mcp_name != "execute_tool" else "", limit=1)
+                        if candidates:
+                            target_tool = candidates[0]
+
+                    if not target_tool:
+                        raise ToolNotFound(f"MCP tool '{action}' not found in workspace catalog.")
+
+                    mcp_executor = MCPToolExecutionService(db)
+                    try:
+                        mcp_res = await mcp_executor.execute_tool(
+                            user_id=uuid.UUID(user_id),
+                            workspace_id=uuid.UUID(workspace_id),
+                            tool_id=uuid.UUID(str(target_tool["id"])),
+                            arguments=args,
+                            confirmation_token=conf_token,
+                            timeout=15.0
+                        )
+                    except MCPToolConfirmationRequired as mcr:
+                        state["mcp_pending_confirmation"] = {
+                            "tool_id": str(target_tool["id"]),
+                            "tool_name": target_tool["name"],
+                            "risk_reasons": mcr.risk_reasons
+                        }
+                        raise ToolConfirmationRequired(mcr.risk_reasons)
+
+                    elapsed = time.perf_counter() - start_time
+                    tool_res = ToolExecutionResult(
+                        execution_id=execution_id,
+                        tool_id=action,
+                        status=ToolExecutionStatus.SUCCESS,
+                        output=mcp_res.result,
+                        execution_time=elapsed,
+                        metadata={
+                            "source": "MCP",
+                            "tool_id": str(target_tool["id"]),
+                            "tool_name": target_tool["name"],
+                            "server_id": str(target_tool.get("server_id", "")),
+                            "trust_label": "UNTRUSTED_MCP"
+                        }
+                    )
 
             else:
                 # 3. Retrieve and execute local tool from registry

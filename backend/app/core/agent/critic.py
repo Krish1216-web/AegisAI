@@ -266,6 +266,11 @@ class CriticAgent(BaseAgent):
                 if "invalid" in str(cite.get("node_id", "")) or "fabricated" in str(cite.get("node_id", "")):
                     res.decision = CriticDecision.FAIL
                     res.overall_score = 0.0
+
+            # 5. MCP citation invalidation
+            for cite in mcp_citations:
+                if "invalid" in str(cite).lower() or "fabricated" in str(cite).lower():
+                    res.decision = CriticDecision.FAIL
                     res.overall_score = 0.0
 
             elapsed = time.perf_counter() - start_time

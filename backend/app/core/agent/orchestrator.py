@@ -26,6 +26,10 @@ class TaskType(str, Enum):
     WEB_RESEARCH = "WEB_RESEARCH"
     FILE_OPERATION = "FILE_OPERATION"
     MIXED_TASK = "MIXED_TASK"
+    MCP_TOOL = "MCP_TOOL"
+    MCP_RESOURCE = "MCP_RESOURCE"
+    MCP_PROMPT = "MCP_PROMPT"
+    MCP_HYBRID = "MCP_HYBRID"
     UNKNOWN = "UNKNOWN"
 
 class Complexity(str, Enum):
@@ -56,6 +60,9 @@ class ExecutionPlan(BaseModel):
     requires_rag: bool = False
     requires_research: bool = False
     requires_tools: bool = False
+    requires_mcp: bool = False
+    mcp_operation: Optional[str] = None
+    mcp_capabilities_needed: List[str] = Field(default_factory=list)
     requires_critic: bool = False
     requires_human_confirmation: bool = False
     requires_clarification: bool = False
@@ -103,12 +110,32 @@ class OrchestratorAgent(BaseAgent):
         if context.provider == "mock" or "mock" in prompt.lower():
             logger.info("Executing Orchestrator in Mock mode.")
             lowered = prompt.lower()
-            requires_tools = "calculate" in lowered or "weather" in lowered
-            requires_research = "research" in lowered or "industry" in lowered or "latest" in lowered
-            requires_memory = "context" in lowered or "calculate" in lowered or "preference" in lowered or "previous" in lowered
-            requires_graph = any(kw in lowered for kw in ["graph", "related", "depend", "connected", "relationship", "path", "topology", "link", "hub", "chain"])
-            requires_rag = any(kw in lowered for kw in ["report", "document", "contract", "rag", "uploaded", "paper", "pdf", "docx", "file"])
+            requires_tools = "calculate" in lowered or "calculator" in lowered or "weather" in lowered
+            requires_research = "research" in lowered or "industry" in lowered or "latest" in lowered or "competitors" in lowered or "internet" in lowered
+            requires_memory = "context" in lowered or "preference" in lowered or "previous" in lowered
+            requires_graph = any(kw in lowered for kw in ["graph", "related to", "dependency", "connected entity", "relationship", "topology", "node path", "central hub", "entity chain"])
+            requires_rag = any(kw in lowered for kw in ["report", "uploaded architecture", "architecture document", "contract", "uploaded", "paper", "pdf", "docx", "file"]) and not ("connected project documentation" in lowered or "mcp resource" in lowered)
             
+            # MCP Specific Detection
+            requires_mcp_tool = any(kw in lowered for kw in ["github", "issue", "mcp tool", "mcp:", "external tool", "connected tool", "create an issue", "mcp calculator"])
+            requires_mcp_resource = any(kw in lowered for kw in ["mcp resource", "connected project documentation", "project-spec", "connected resource", "connected document", "read my connected"])
+            requires_mcp_prompt = any(kw in lowered for kw in ["mcp prompt", "connected project planning template", "planning template", "planning prompt", "prompt template", "use the connected project"])
+            
+            requires_mcp = requires_mcp_tool or requires_mcp_resource or requires_mcp_prompt
+            if requires_mcp:
+                requires_tools = True
+            
+            mcp_op = None
+            if requires_mcp:
+                if (requires_mcp_tool and (requires_mcp_resource or requires_mcp_prompt)) or (requires_mcp and (requires_rag or requires_research)):
+                    mcp_op = "hybrid"
+                elif requires_mcp_resource:
+                    mcp_op = "resource"
+                elif requires_mcp_prompt:
+                    mcp_op = "prompt"
+                elif requires_mcp_tool:
+                    mcp_op = "tool"
+
             required_agents = [AgentType.RESPONSE_GENERATOR]
             if requires_memory:
                 required_agents.append(AgentType.MEMORY)
@@ -118,11 +145,19 @@ class OrchestratorAgent(BaseAgent):
                 required_agents.append(AgentType.RAG)
             if requires_research:
                 required_agents.append(AgentType.RESEARCH)
-            if requires_tools:
+            if requires_tools or requires_mcp:
                 required_agents.append(AgentType.TOOL_EXECUTOR)
 
             task_type = TaskType.GENERAL_QA
-            if requires_graph and requires_rag:
+            if requires_mcp and (requires_rag or requires_research or requires_graph):
+                task_type = TaskType.MCP_HYBRID
+            elif requires_mcp_resource:
+                task_type = TaskType.MCP_RESOURCE
+            elif requires_mcp_prompt:
+                task_type = TaskType.MCP_PROMPT
+            elif requires_mcp_tool:
+                task_type = TaskType.MCP_TOOL
+            elif requires_graph and requires_rag:
                 task_type = TaskType.HYBRID_GRAPH_RAG
             elif requires_graph:
                 task_type = TaskType.GRAPH_QUERY
@@ -146,6 +181,8 @@ class OrchestratorAgent(BaseAgent):
                 requires_rag=requires_rag,
                 requires_research=requires_research,
                 requires_tools=requires_tools,
+                requires_mcp=requires_mcp,
+                mcp_operation=mcp_op,
                 confidence=0.99
             )
             elapsed = time.perf_counter() - start_time

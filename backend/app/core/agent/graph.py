@@ -108,6 +108,8 @@ def log_event(
             mapped_event_type = "TOOL_STARTED"
         elif event_type == "ToolCompleted":
             mapped_event_type = "TOOL_COMPLETED"
+        elif event_type.startswith("MCP_"):
+            mapped_event_type = event_type
             
         client = redis.Redis(connection_pool=redis_pool, socket_connect_timeout=0.02, socket_timeout=0.02)
         stream_key = f"aegis:stream:{execution_id}"
@@ -115,7 +117,7 @@ def log_event(
         safe_meta = {}
         if metadata:
             for k, v in metadata.items():
-                if k in ("error", "reason", "confidence", "tool_id", "status", "citations_count", "chunks_count"):
+                if k in ("error", "reason", "confidence", "tool_id", "status", "citations_count", "chunks_count", "tool_name", "resource_id", "prompt_id", "server_id", "source", "trust_label"):
                     safe_meta[k] = v
                     
         client.rpush(stream_key, json.dumps({
@@ -319,6 +321,17 @@ class AegisAgentGraph:
                 except Exception as ce:
                     logger.error(f"Failed to parse critic result: {ce}")
 
+            # Map ToolExecutorAgent outputs for MCP resources and prompts
+            if agent.name == "ToolExecutorAgent" and result.status == "success":
+                try:
+                    tr_data = json.loads(result.output)
+                    if tr_data.get("metadata", {}).get("source") == "MCP_RESOURCE":
+                        state["mcp_resource_context"] = tr_data.get("output", {}).get("content", "")
+                    elif tr_data.get("metadata", {}).get("source") == "MCP_PROMPT":
+                        state["mcp_prompt_context"] = json.dumps(tr_data.get("output", {}).get("messages", []))
+                except Exception:
+                    pass
+
             final_resp = state.get("final_response")
             conf_score = state.get("confidence_score", 0.0)
             if agent.name == "ResponseGeneratorAgent" and result.output:
@@ -354,6 +367,11 @@ class AegisAgentGraph:
                 "rag_confidence": state.get("rag_confidence"),
                 "graph_context": state.get("graph_context"),
                 "research_results": state.get("research_results"),
+                "mcp_resource_context": state.get("mcp_resource_context"),
+                "mcp_prompt_context": state.get("mcp_prompt_context"),
+                "mcp_citations": state.get("mcp_citations"),
+                "mcp_pending_confirmation": state.get("mcp_pending_confirmation"),
+                "mcp_execution_results": state.get("mcp_execution_results"),
                 "critic_result": state.get("critic_result"),
                 "critic_decision": state.get("critic_decision"),
                 "quality_score": state.get("quality_score"),

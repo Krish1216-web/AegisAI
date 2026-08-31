@@ -293,6 +293,20 @@ class ResponseGeneratorAgent(BaseAgent):
                     )
                 )
 
+            # 4. MCP Citations
+            mcp_citations = state.get("mcp_citations") or []
+            for mc in mcp_citations:
+                citations.append(
+                    ResponseCitation(
+                        citation_id=f"mcp_{mc.get('resource_id', mc.get('tool_id', mc.get('prompt_id', '')))}",
+                        title=mc.get("title", mc.get("name", "MCP Source")),
+                        source_id=mc.get("resource_id", mc.get("tool_id", mc.get("prompt_id", ""))),
+                        source_type=mc.get("source_type", "mcp_resource"),
+                        url=mc.get("uri"),
+                        reference_text=mc.get("snippet", mc.get("uri"))
+                    )
+                )
+
             # Synthesize mock response
             content_parts = []
             if memory_context:
@@ -304,7 +318,26 @@ class ResponseGeneratorAgent(BaseAgent):
 
             if rag_context:
                 content_parts.append(f"**Document Knowledge**:\n{rag_context.strip()}\n")
+
+            mcp_res_context = state.get("mcp_resource_context") or ""
+            if mcp_res_context:
+                content_parts.append(f"**MCP Resource Evidence**:\n{mcp_res_context.strip()}\n")
+
+            mcp_pr_context = state.get("mcp_prompt_context") or ""
+            if mcp_pr_context:
+                content_parts.append(f"**MCP Prompt Context**:\n{mcp_pr_context.strip()}\n")
             
+            for tr in tool_results:
+                if tr.get("metadata", {}).get("source") == "MCP":
+                    tool_name = tr.get("metadata", {}).get("tool_name", tr.get("tool_id"))
+                    content_parts.append(f"[MCP Tool: {tool_name}]: {json.dumps(tr.get('output'))}\n")
+                elif tr.get("metadata", {}).get("source") == "MCP_RESOURCE":
+                    res_title = tr.get("metadata", {}).get("title", "resource")
+                    content_parts.append(f"[MCP Resource: {res_title}]: {json.dumps(tr.get('output'))}\n")
+                elif tr.get("metadata", {}).get("source") == "MCP_PROMPT":
+                    pr_name = tr.get("metadata", {}).get("name", "prompt")
+                    content_parts.append(f"[MCP Prompt: {pr_name}]: {json.dumps(tr.get('output'))}\n")
+
             if calc_val:
                 content_parts.append(f"**Calculation**: {calc_val}\n")
                 

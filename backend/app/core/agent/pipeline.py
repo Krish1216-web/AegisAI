@@ -102,7 +102,7 @@ class AegisAIPipeline:
                     return self.rag.name
                 if plan.requires_research and self.research.name not in agent_outputs:
                     return self.research.name
-                if plan.requires_tools and self.executor.name not in agent_outputs:
+                if (plan.requires_tools or getattr(plan, "requires_mcp", False)) and self.executor.name not in agent_outputs:
                     return self.executor.name
             except Exception:
                 pass
@@ -271,6 +271,11 @@ class AegisAIPipeline:
             "mcp_servers": None,
             "mcp_capabilities": None,
             "mcp_tools_available": None,
+            "mcp_execution_results": [],
+            "mcp_resource_context": None,
+            "mcp_prompt_context": None,
+            "mcp_citations": [],
+            "mcp_pending_confirmation": None,
             "research_results": None,
             "critic_result": None,
             "critic_decision": None,
