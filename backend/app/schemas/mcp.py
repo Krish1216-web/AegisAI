@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field, ConfigDict, field_validator
 
 from app.models.mcp import MCPTransport, MCPServerStatus, MCPCapabilityType, MCPAuthenticationType
 from app.core.mcp.security import CredentialStore
+from app.core.mcp.policy import ToolRiskLevel, ToolPolicyDecision
 
 class MCPServerBase(BaseModel):
     name: str = Field(..., min_length=1, max_length=100, description="Unique human-readable server name")
@@ -119,3 +120,49 @@ class MCPHealthCheckResponse(BaseModel):
     server_version: Optional[str] = None
     protocol_version: Optional[str] = None
     error: Optional[str] = None
+
+# ==========================================
+# Phase 6.3 Tool Catalog Schemas
+# ==========================================
+
+class MCPToolResponse(BaseModel):
+    id: uuid.UUID
+    server_id: uuid.UUID
+    server_name: str
+    server_transport: str
+    server_status: str
+    server_enabled: bool
+    name: str
+    description: Optional[str] = None
+    input_schema: Optional[Dict[str, Any]] = None
+    metadata: Optional[Dict[str, Any]] = None
+    enabled: bool
+    is_stale: bool = False
+    stale_at: Optional[datetime.datetime] = None
+    definition_hash: Optional[str] = None
+    version: int = 1
+    risk_level: str
+    policy_decision: str
+    risk_reasons: List[str] = Field(default_factory=list)
+    available_for_execution: bool
+    first_discovered_at: Optional[datetime.datetime] = None
+    last_discovered_at: Optional[datetime.datetime] = None
+    created_at: datetime.datetime
+    updated_at: datetime.datetime
+
+class MCPToolListResponse(BaseModel):
+    tools: List[MCPToolResponse]
+    total: int
+
+class MCPToolSearchRequest(BaseModel):
+    query: str = Field(..., max_length=200, description="Search query matching tool name or description")
+    server_id: Optional[uuid.UUID] = Field(None, description="Optional server ID filter")
+    risk_level: Optional[ToolRiskLevel] = Field(None, description="Filter by risk category: safe, restricted, invalid")
+    enabled_only: bool = Field(True, description="Filter for enabled tools")
+    include_stale: bool = Field(False, description="Whether to include stale tools")
+    limit: int = Field(20, ge=1, le=100, description="Maximum number of results")
+
+class MCPToolSearchResponse(BaseModel):
+    results: List[MCPToolResponse]
+    total: int
+    query: str

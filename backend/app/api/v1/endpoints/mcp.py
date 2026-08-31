@@ -9,6 +9,7 @@ from app.database.redis import get_redis
 from app.api.dependencies import get_current_user, check_rate_limit
 from app.models.user import User
 from app.models.mcp import MCPServerStatus, MCPCapabilityType, MCPTransport, MCPAuthenticationType
+from app.core.mcp.policy import ToolRiskLevel
 from app.schemas.mcp import (
     MCPServerCreate,
     MCPServerUpdate,
@@ -17,14 +18,23 @@ from app.schemas.mcp import (
     MCPCapabilityResponse,
     MCPCapabilityListResponse,
     MCPDiscoveryResponse,
-    MCPHealthCheckResponse
+    MCPHealthCheckResponse,
+    MCPToolResponse,
+    MCPToolListResponse,
+    MCPToolSearchRequest,
+    MCPToolSearchResponse
 )
 from app.services.mcp.mcp_registry import MCPRegistryService
 from app.services.mcp.mcp_discovery import MCPDiscoveryService
+from app.services.mcp.mcp_tool_catalog import MCPToolCatalogService
 from app.core.mcp.base import MCPValidationError, MCPClientError
 from app.api.v1.endpoints.documents import resolve_workspace_id
 
 router = APIRouter(prefix="/mcp", tags=["Model Context Protocol (MCP)"])
+
+# ==========================================
+# 1. MCP Server Registry Endpoints
+# ==========================================
 
 @router.post("/servers", response_model=MCPServerResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(check_rate_limit)])
 async def register_mcp_server(
@@ -384,3 +394,119 @@ async def disable_mcp_server(
     resp = MCPServerResponse.model_validate(server)
     resp.capabilities_count = len([c for c in server.capabilities if not c.is_stale]) if server.capabilities else 0
     return resp
+
+# ==========================================
+# 2. Phase 6.3 Tool Catalog Endpoints
+# ==========================================
+
+@router.get("/tools", response_model=MCPToolListResponse, dependencies=[Depends(check_rate_limit)])
+async def list_workspace_tools(
+    server_id: Optional[uuid.UUID] = Query(None),
+    enabled_only: bool = Query(False),
+    include_stale: bool = Query(True),
+    risk_level: Optional[ToolRiskLevel] = Query(None),
+    transport: Optional[MCPTransport] = Query(None),
+    search: Optional[str] = Query(None),
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Lists all MCP tools discovered across the workspace with risk assessment and execution readiness flags.
+    """
+    workspace_id = resolve_workspace_id(current_user, db)
+    catalog = MCPToolCatalogService(db)
+
+    tools, total = catalog.list_tools(
+        user_id=current_user.id,
+        workspace_id=workspace_id,
+        server_id=server_id,
+        enabled_only=enabled_only,
+        include_stale=include_stale,
+        risk_level=risk_level,
+        transport=transport,
+        search=search,
+        limit=limit,
+        offset=offset
+    )
+    return MCPToolListResponse(tools=[MCPToolResponse(**t) for t in tools], total=total)
+
+@router.post("/tools/search", response_model=MCPToolSearchResponse, dependencies=[Depends(check_rate_limit)])
+async def search_workspace_tools(
+    payload: MCPToolSearchRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Performs deterministic multi-tiered ranked search across all discovered tools in the current workspace.
+    """
+    workspace_id = resolve_workspace_id(current_user, db)
+    catalog = MCPToolCatalogService(db)
+
+    results = catalog.search_tools(
+        user_id=current_user.id,
+        workspace_id=workspace_id,
+        query=payload.query,
+        server_id=payload.server_id,
+        risk_level=payload.risk_level,
+        enabled_only=payload.enabled_only,
+        include_stale=payload.include_stale,
+        limit=payload.limit
+    )
+    return MCPToolSearchResponse(
+        results=[MCPToolResponse(**t) for t in results],
+        total=len(results),
+        query=payload.query
+    )
+
+@router.get("/tools/{tool_id}", response_model=MCPToolResponse, dependencies=[Depends(check_rate_limit)])
+async def get_tool_details(
+    tool_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Retrieves full metadata, JSON schema, risk classification, and availability state for an MCP tool.
+    """
+    workspace_id = resolve_workspace_id(current_user, db)
+    catalog = MCPToolCatalogService(db)
+
+    tool = catalog.get_tool(user_id=current_user.id, workspace_id=workspace_id, tool_id=tool_id)
+    if not tool:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="MCP tool not found or access denied.")
+    return MCPToolResponse(**tool)
+
+@router.post("/tools/{tool_id}/enable", response_model=MCPToolResponse, dependencies=[Depends(check_rate_limit)])
+async def enable_mcp_tool(
+    tool_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Enables a specific tool capability without modifying other server tools.
+    """
+    workspace_id = resolve_workspace_id(current_user, db)
+    catalog = MCPToolCatalogService(db)
+
+    tool = catalog.toggle_tool(user_id=current_user.id, workspace_id=workspace_id, tool_id=tool_id, enabled=True)
+    if not tool:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="MCP tool not found or access denied.")
+    return MCPToolResponse(**tool)
+
+@router.post("/tools/{tool_id}/disable", response_model=MCPToolResponse, dependencies=[Depends(check_rate_limit)])
+async def disable_mcp_tool(
+    tool_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Disables a specific tool capability without deleting it.
+    """
+    workspace_id = resolve_workspace_id(current_user, db)
+    catalog = MCPToolCatalogService(db)
+
+    tool = catalog.toggle_tool(user_id=current_user.id, workspace_id=workspace_id, tool_id=tool_id, enabled=False)
+    if not tool:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="MCP tool not found or access denied.")
+    return MCPToolResponse(**tool)

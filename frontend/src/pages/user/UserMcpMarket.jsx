@@ -5,38 +5,45 @@ import {
   RefreshCw, 
   Plus, 
   Trash2, 
-  Play, 
   CheckCircle, 
   AlertCircle, 
-  Sliders, 
   Wrench, 
   FileCode, 
   MessageSquare, 
   X, 
   Power, 
-  ExternalLink,
-  ShieldCheck,
-  ChevronRight,
-  Code,
-  Activity,
-  GitCommit,
-  Tag,
-  AlertTriangle
+  ChevronRight, 
+  Code, 
+  Activity, 
+  Tag, 
+  AlertTriangle,
+  Shield,
+  Layers,
+  CheckCircle2,
+  XCircle,
+  HelpCircle
 } from 'lucide-react';
 import {
   listMCPServers,
   registerMCPServer,
-  updateMCPServer,
   deleteMCPServer,
-  discoverServerCapabilities,
   refreshServerDiscovery,
   checkServerHealth,
   listServerCapabilities,
   enableMCPServer,
-  disableMCPServer
+  disableMCPServer,
+  listWorkspaceTools,
+  searchWorkspaceTools,
+  getToolDetails,
+  enableMCPTool,
+  disableMCPTool
 } from '../../api/mcp';
 
 export default function UserMcpMarket({ triggerNotification }) {
+  // Top Level Mode: 'servers' | 'tools'
+  const [activeMode, setActiveMode] = useState('servers');
+
+  // Servers State
   const [servers, setServers] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -63,6 +70,14 @@ export default function UserMcpMarket({ triggerNotification }) {
   // Discovery Summary Modal
   const [discoverySummary, setDiscoverySummary] = useState(null);
 
+  // Tool Catalog Mode State
+  const [tools, setTools] = useState([]);
+  const [isLoadingTools, setIsLoadingTools] = useState(false);
+  const [toolSearchQuery, setToolSearchQuery] = useState('');
+  const [selectedRiskFilter, setSelectedRiskFilter] = useState('all');
+  const [selectedTool, setSelectedTool] = useState(null);
+  const [showToolModal, setShowToolModal] = useState(false);
+
   // In-flight state trackers
   const [discoveringIds, setDiscoveringIds] = useState(new Set());
   const [healthCheckingIds, setHealthCheckingIds] = useState(new Set());
@@ -81,9 +96,46 @@ export default function UserMcpMarket({ triggerNotification }) {
     }
   };
 
+  const fetchTools = async () => {
+    setIsLoadingTools(true);
+    try {
+      if (toolSearchQuery.trim()) {
+        const data = await searchWorkspaceTools({
+          query: toolSearchQuery.trim(),
+          risk_level: selectedRiskFilter !== 'all' ? selectedRiskFilter : undefined,
+          enabled_only: false,
+          include_stale: true,
+          limit: 50
+        });
+        setTools(data.results || []);
+      } else {
+        const data = await listWorkspaceTools({
+          risk_level: selectedRiskFilter !== 'all' ? selectedRiskFilter : undefined,
+          include_stale: true,
+          limit: 100
+        });
+        setTools(data.tools || []);
+      }
+    } catch (err) {
+      console.error('Failed to load tool catalog:', err);
+      triggerNotification?.('Error', 'Failed to load tools catalog.');
+    } finally {
+      setIsLoadingTools(false);
+    }
+  };
+
   useEffect(() => {
     fetchServers();
   }, []);
+
+  useEffect(() => {
+    if (activeMode === 'tools') {
+      const timer = setTimeout(() => {
+        fetchTools();
+      }, 250);
+      return () => clearTimeout(timer);
+    }
+  }, [activeMode, toolSearchQuery, selectedRiskFilter]);
 
   const handleRegister = async (e) => {
     e.preventDefault();
@@ -127,6 +179,24 @@ export default function UserMcpMarket({ triggerNotification }) {
       fetchServers();
     } catch (err) {
       triggerNotification?.('Error', err.message || 'Failed to toggle server state.');
+    }
+  };
+
+  const handleToggleToolEnable = async (tool) => {
+    try {
+      if (tool.enabled) {
+        await disableMCPTool(tool.id);
+        triggerNotification?.('Tool Disabled', `Disabled '${tool.name}'`);
+      } else {
+        await enableMCPTool(tool.id);
+        triggerNotification?.('Tool Enabled', `Enabled '${tool.name}'`);
+      }
+      fetchTools();
+      if (selectedTool && selectedTool.id === tool.id) {
+        setSelectedTool(prev => ({ ...prev, enabled: !prev.enabled }));
+      }
+    } catch (err) {
+      triggerNotification?.('Error', err.message || 'Failed to toggle tool state.');
     }
   };
 
@@ -201,7 +271,7 @@ export default function UserMcpMarket({ triggerNotification }) {
     }
   };
 
-  const filtered = servers.filter(item => 
+  const filteredServers = servers.filter(item => 
     item.name.toLowerCase().includes(search.toLowerCase()) || 
     item.server_url.toLowerCase().includes(search.toLowerCase()) ||
     item.transport.toLowerCase().includes(search.toLowerCase())
@@ -220,192 +290,505 @@ export default function UserMcpMarket({ triggerNotification }) {
   return (
     <div className="flex flex-col gap-6 animate-fade-in p-2">
       
-      {/* Top Header & Actions */}
+      {/* Top Header & Navigation Switcher */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <h2 className="text-xl font-bold text-white tracking-wide flex items-center gap-2">
             <Server className="w-5 h-5 text-indigo-400" />
-            Model Context Protocol (MCP) Server Registry
+            Model Context Protocol (MCP) Subsystem
           </h2>
-          <p className="text-xs text-slate-400 mt-1">Register external tool servers, discover dynamic capabilities with version tracking, and monitor connection health.</p>
+          <p className="text-xs text-slate-400 mt-1">
+            Manage external tool server connections, discover dynamic tools, inspect JSON Schemas, and review risk policies.
+          </p>
         </div>
 
-        <div className="flex items-center gap-3 w-full md:w-auto">
-          <div className="relative flex-1 md:w-64">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search MCP servers..."
-              className="bg-slate-900 border border-slate-800 rounded-xl py-2 pl-9 pr-4 text-xs text-slate-300 w-full outline-none focus:border-indigo-500 transition-all"
-            />
-          </div>
-
+        {/* Mode Switcher Tabs */}
+        <div className="flex items-center bg-slate-900 border border-slate-800 p-1 rounded-xl">
           <button
-            onClick={() => setShowRegisterModal(true)}
-            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-xl flex items-center gap-1.5 transition shadow-sm shrink-0"
+            onClick={() => setActiveMode('servers')}
+            className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition ${
+              activeMode === 'servers'
+                ? 'bg-indigo-600 text-white shadow-sm'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+            }`}
           >
-            <Plus className="w-4 h-4" />
-            <span>Add MCP Server</span>
+            <Server className="w-3.5 h-3.5" />
+            <span>Servers ({servers.length})</span>
+          </button>
+          <button
+            onClick={() => { setActiveMode('tools'); }}
+            className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition ${
+              activeMode === 'tools'
+                ? 'bg-indigo-600 text-white shadow-sm'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+            }`}
+          >
+            <Wrench className="w-3.5 h-3.5" />
+            <span>Tool Catalog</span>
           </button>
         </div>
       </div>
 
-      {/* Stats Overview */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        {[
-          { label: 'Registered Servers', value: servers.length.toString(), color: 'text-white' },
-          { label: 'Healthy & Active', value: servers.filter(s => s.status === 'active' && s.enabled).length.toString(), color: 'text-emerald-400' },
-          { label: 'SSE / HTTP Links', value: servers.filter(s => s.transport !== 'stdio').length.toString(), color: 'text-indigo-400' },
-          { label: 'Active Capabilities', value: servers.reduce((acc, s) => acc + (s.capabilities_count || 0), 0).toString(), color: 'text-purple-400' }
-        ].map((stat, idx) => (
-          <div key={idx} className="bg-slate-900/60 border border-slate-800 p-4 rounded-xl flex flex-col gap-1 backdrop-blur-sm">
-            <span className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">{stat.label}</span>
-            <span className={`text-2xl font-bold font-mono mt-1 ${stat.color}`}>{stat.value}</span>
+      {/* ========================================================================= */}
+      {/* VIEW MODE 1: SERVERS REGISTRY */}
+      {/* ========================================================================= */}
+      {activeMode === 'servers' && (
+        <>
+          {/* Action Bar */}
+          <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3">
+            <div className="relative flex-1 max-w-sm">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search registered servers..."
+                className="bg-slate-900 border border-slate-800 rounded-xl py-2 pl-9 pr-4 text-xs text-slate-300 w-full outline-none focus:border-indigo-500 transition"
+              />
+            </div>
+
+            <button
+              onClick={() => setShowRegisterModal(true)}
+              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-xl flex items-center justify-center gap-1.5 transition shadow-sm shrink-0"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Add MCP Server</span>
+            </button>
           </div>
-        ))}
-      </div>
 
-      {/* Server Cards Grid */}
-      {isLoading ? (
-        <div className="flex items-center justify-center py-16 text-slate-400 text-xs gap-2">
-          <RefreshCw className="w-4 h-4 animate-spin text-indigo-400" />
-          <span>Loading MCP server registry...</span>
-        </div>
-      ) : filtered.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-16 border border-dashed border-slate-800 rounded-2xl p-6 text-center">
-          <div className="p-3 bg-slate-900 rounded-full text-slate-500 mb-3">
-            <Server className="w-6 h-6" />
+          {/* Stats Overview */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            {[
+              { label: 'Registered Servers', value: servers.length.toString(), color: 'text-white' },
+              { label: 'Healthy & Active', value: servers.filter(s => s.status === 'active' && s.enabled).length.toString(), color: 'text-emerald-400' },
+              { label: 'SSE / HTTP Links', value: servers.filter(s => s.transport !== 'stdio').length.toString(), color: 'text-indigo-400' },
+              { label: 'Active Capabilities', value: servers.reduce((acc, s) => acc + (s.capabilities_count || 0), 0).toString(), color: 'text-purple-400' }
+            ].map((stat, idx) => (
+              <div key={idx} className="bg-slate-900/60 border border-slate-800 p-4 rounded-xl flex flex-col gap-1 backdrop-blur-sm">
+                <span className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">{stat.label}</span>
+                <span className={`text-2xl font-bold font-mono mt-1 ${stat.color}`}>{stat.value}</span>
+              </div>
+            ))}
           </div>
-          <h3 className="text-sm font-semibold text-slate-200">No MCP Servers Registered</h3>
-          <p className="text-xs text-slate-400 max-w-sm mt-1">Register an MCP server (such as GitHub, PostgreSQL, or local stdio daemons) to enable capability discovery.</p>
-          <button
-            onClick={() => setShowRegisterModal(true)}
-            className="mt-4 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-xl flex items-center gap-1.5 transition"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Register First Server</span>
-          </button>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {filtered.map((server) => {
-            const isDiscovering = discoveringIds.has(server.id);
-            const isHealthChecking = healthCheckingIds.has(server.id);
-            const health = healthMetrics[server.id];
 
-            const statusBg = 
-              server.status === 'active' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' :
-              server.status === 'error' ? 'bg-rose-500/10 text-rose-400 border-rose-500/20' :
-              server.status === 'disabled' || !server.enabled ? 'bg-slate-800 text-slate-400 border-slate-700' :
-              'bg-amber-500/10 text-amber-400 border-amber-500/20';
-
-            return (
-              <div 
-                key={server.id} 
-                className={`bg-slate-900/80 border rounded-2xl p-5 flex flex-col justify-between transition-all ${
-                  server.enabled ? 'border-slate-800 hover:border-slate-700 shadow-md' : 'border-slate-800/50 opacity-60'
-                }`}
+          {/* Server Cards Grid */}
+          {isLoading ? (
+            <div className="flex items-center justify-center py-16 text-slate-400 text-xs gap-2">
+              <RefreshCw className="w-4 h-4 animate-spin text-indigo-400" />
+              <span>Loading MCP server registry...</span>
+            </div>
+          ) : filteredServers.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16 border border-dashed border-slate-800 rounded-2xl p-6 text-center">
+              <div className="p-3 bg-slate-900 rounded-full text-slate-500 mb-3">
+                <Server className="w-6 h-6" />
+              </div>
+              <h3 className="text-sm font-semibold text-slate-200">No MCP Servers Registered</h3>
+              <p className="text-xs text-slate-400 max-w-sm mt-1">Register an MCP server to discover dynamic tools and capabilities.</p>
+              <button
+                onClick={() => setShowRegisterModal(true)}
+                className="mt-4 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-xl flex items-center gap-1.5 transition"
               >
-                <div>
-                  <div className="flex justify-between items-start">
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-9 h-9 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 shrink-0">
-                        <Server className="w-4 h-4" />
-                      </div>
-                      <div>
-                        <h4 className="text-sm font-semibold text-white tracking-wide">{server.name}</h4>
-                        <div className="flex items-center gap-2 mt-0.5">
-                          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 uppercase border border-slate-700">
-                            {server.transport}
-                          </span>
-                          <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border uppercase ${statusBg}`}>
-                            {server.enabled ? server.status : 'DISABLED'}
-                          </span>
-                          {server.server_version && (
-                            <span className="text-[9px] font-mono text-slate-400 bg-slate-950 px-1.5 py-0.5 rounded border border-slate-800">
-                              v{server.server_version}
-                            </span>
-                          )}
+                <Plus className="w-4 h-4" />
+                <span>Register First Server</span>
+              </button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+              {filteredServers.map((server) => {
+                const isDiscovering = discoveringIds.has(server.id);
+                const isHealthChecking = healthCheckingIds.has(server.id);
+                const health = healthMetrics[server.id];
+
+                const statusBg = 
+                  server.status === 'active' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' :
+                  server.status === 'error' ? 'bg-rose-500/10 text-rose-400 border-rose-500/20' :
+                  server.status === 'disabled' || !server.enabled ? 'bg-slate-800 text-slate-400 border-slate-700' :
+                  'bg-amber-500/10 text-amber-400 border-amber-500/20';
+
+                return (
+                  <div 
+                    key={server.id} 
+                    className={`bg-slate-900/80 border rounded-2xl p-5 flex flex-col justify-between transition-all ${
+                      server.enabled ? 'border-slate-800 hover:border-slate-700 shadow-md' : 'border-slate-800/50 opacity-60'
+                    }`}
+                  >
+                    <div>
+                      <div className="flex justify-between items-start">
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-9 h-9 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 shrink-0">
+                            <Server className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <h4 className="text-sm font-semibold text-white tracking-wide">{server.name}</h4>
+                            <div className="flex items-center gap-2 mt-0.5">
+                              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 uppercase border border-slate-700">
+                                {server.transport}
+                              </span>
+                              <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border uppercase ${statusBg}`}>
+                                {server.enabled ? server.status : 'DISABLED'}
+                              </span>
+                              {server.server_version && (
+                                <span className="text-[9px] font-mono text-slate-400 bg-slate-950 px-1.5 py-0.5 rounded border border-slate-800">
+                                  v{server.server_version}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-1">
+                          <button
+                            onClick={() => handleHealthCheck(server)}
+                            disabled={isHealthChecking || !server.enabled}
+                            title="Run Health Ping"
+                            className="p-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 hover:text-white hover:bg-slate-700 transition"
+                          >
+                            <Activity className={`w-3.5 h-3.5 ${isHealthChecking ? 'animate-pulse text-indigo-400' : ''}`} />
+                          </button>
+                          <button
+                            onClick={() => handleToggleEnable(server)}
+                            title={server.enabled ? 'Disable Server' : 'Enable Server'}
+                            className={`p-1.5 rounded-lg border transition ${
+                              server.enabled 
+                                ? 'bg-emerald-950/40 border-emerald-500/30 text-emerald-400 hover:bg-emerald-900/40' 
+                                : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-slate-200'
+                            }`}
+                          >
+                            <Power className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => handleDelete(server)}
+                            title="Delete Server"
+                            className="p-1.5 rounded-lg bg-slate-800/80 hover:bg-rose-950/40 border border-slate-700/60 hover:border-rose-500/40 text-slate-400 hover:text-rose-400 transition"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
                         </div>
                       </div>
+
+                      <p className="text-xs text-slate-400 mt-3 line-clamp-2 leading-relaxed">
+                        {server.description || 'No description provided.'}
+                      </p>
+
+                      <div className="mt-3 p-2 rounded-lg bg-slate-950/60 border border-slate-800/80 text-[11px] font-mono text-slate-400 truncate">
+                        {server.server_url}
+                      </div>
+
+                      {health && (
+                        <div className="mt-2 text-[10px] flex items-center justify-between text-slate-400 px-1">
+                          <span>Latency: <strong className="text-slate-200 font-mono">{health.latency_ms ? `${health.latency_ms}ms` : 'N/A'}</strong></span>
+                          <span>Health: <strong className={health.is_healthy ? 'text-emerald-400' : 'text-rose-400'}>{health.is_healthy ? 'ONLINE' : 'ERROR'}</strong></span>
+                        </div>
+                      )}
                     </div>
 
-                    <div className="flex items-center gap-1">
-                      <button
-                        onClick={() => handleHealthCheck(server)}
-                        disabled={isHealthChecking || !server.enabled}
-                        title="Run Health Ping"
-                        className="p-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 hover:text-white hover:bg-slate-700 transition"
-                      >
-                        <Activity className={`w-3.5 h-3.5 ${isHealthChecking ? 'animate-pulse text-indigo-400' : ''}`} />
-                      </button>
-                      <button
-                        onClick={() => handleToggleEnable(server)}
-                        title={server.enabled ? 'Disable Server' : 'Enable Server'}
-                        className={`p-1.5 rounded-lg border transition ${
-                          server.enabled 
-                            ? 'bg-emerald-950/40 border-emerald-500/30 text-emerald-400 hover:bg-emerald-900/40' 
-                            : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-slate-200'
-                        }`}
-                      >
-                        <Power className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        onClick={() => handleDelete(server)}
-                        title="Delete Server"
-                        className="p-1.5 rounded-lg bg-slate-800/80 hover:bg-rose-950/40 border border-slate-700/60 hover:border-rose-500/40 text-slate-400 hover:text-rose-400 transition"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                    <div className="mt-4 pt-4 border-t border-slate-800/80 flex items-center justify-between">
+                      <div className="text-[11px] text-slate-400">
+                        <span className="font-semibold text-indigo-300">{server.capabilities_count || 0}</span> active capabilities
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => handleRefreshDiscovery(server, true)}
+                          disabled={isDiscovering || !server.enabled}
+                          className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700/80 disabled:opacity-50 text-slate-200 text-xs font-medium rounded-lg flex items-center gap-1.5 transition"
+                        >
+                          <RefreshCw className={`w-3.5 h-3.5 ${isDiscovering ? 'animate-spin text-indigo-400' : ''}`} />
+                          <span>{isDiscovering ? 'Refreshing...' : 'Refresh'}</span>
+                        </button>
+                        <button
+                          onClick={() => handleViewCapabilities(server)}
+                          className="px-3 py-1.5 bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/30 text-indigo-300 text-xs font-medium rounded-lg flex items-center gap-1 transition"
+                        >
+                          <span>Capabilities</span>
+                          <ChevronRight className="w-3 h-3" />
+                        </button>
+                      </div>
                     </div>
+
                   </div>
+                );
+              })}
+            </div>
+          )}
+        </>
+      )}
 
-                  <p className="text-xs text-slate-400 mt-3 line-clamp-2 leading-relaxed">
-                    {server.description || 'No description provided.'}
-                  </p>
+      {/* ========================================================================= */}
+      {/* VIEW MODE 2: DEDICATED TOOL CATALOG (PHASE 6.3) */}
+      {/* ========================================================================= */}
+      {activeMode === 'tools' && (
+        <div className="space-y-4">
+          
+          {/* Tool Search & Risk Filters */}
+          <div className="flex flex-col md:flex-row justify-between items-stretch md:items-center gap-3">
+            <div className="relative flex-1 max-w-md">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+              <input
+                type="text"
+                value={toolSearchQuery}
+                onChange={(e) => setToolSearchQuery(e.target.value)}
+                placeholder="Search tools by name, description, or intent..."
+                className="bg-slate-900 border border-slate-800 rounded-xl py-2 pl-9 pr-4 text-xs text-slate-300 w-full outline-none focus:border-indigo-500 transition font-sans"
+              />
+            </div>
 
-                  <div className="mt-3 p-2 rounded-lg bg-slate-950/60 border border-slate-800/80 text-[11px] font-mono text-slate-400 truncate">
-                    {server.server_url}
-                  </div>
+            {/* Risk Filters */}
+            <div className="flex items-center gap-1.5 bg-slate-900/80 border border-slate-800 p-1 rounded-xl text-xs">
+              {[
+                { id: 'all', label: 'All Risks' },
+                { id: 'safe', label: 'Safe', color: 'text-emerald-400' },
+                { id: 'restricted', label: 'Restricted', color: 'text-amber-400' },
+                { id: 'invalid', label: 'Invalid', color: 'text-rose-400' }
+              ].map((filter) => (
+                <button
+                  key={filter.id}
+                  onClick={() => setSelectedRiskFilter(filter.id)}
+                  className={`px-3 py-1 rounded-lg font-medium transition ${
+                    selectedRiskFilter === filter.id
+                      ? 'bg-slate-800 text-white font-semibold'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  <span className={filter.color || ''}>{filter.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
 
-                  {/* Health Latency indicator if checked */}
-                  {health && (
-                    <div className="mt-2 text-[10px] flex items-center justify-between text-slate-400 px-1">
-                      <span>Latency: <strong className="text-slate-200 font-mono">{health.latency_ms ? `${health.latency_ms}ms` : 'N/A'}</strong></span>
-                      <span>Health: <strong className={health.is_healthy ? 'text-emerald-400' : 'text-rose-400'}>{health.is_healthy ? 'ONLINE' : 'ERROR'}</strong></span>
-                    </div>
-                  )}
-                </div>
-
-                <div className="mt-4 pt-4 border-t border-slate-800/80 flex items-center justify-between">
-                  <div className="text-[11px] text-slate-400">
-                    <span className="font-semibold text-indigo-300">{server.capabilities_count || 0}</span> active capabilities
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => handleRefreshDiscovery(server, true)}
-                      disabled={isDiscovering || !server.enabled}
-                      className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700/80 disabled:opacity-50 text-slate-200 text-xs font-medium rounded-lg flex items-center gap-1.5 transition"
-                    >
-                      <RefreshCw className={`w-3.5 h-3.5 ${isDiscovering ? 'animate-spin text-indigo-400' : ''}`} />
-                      <span>{isDiscovering ? 'Refreshing...' : 'Refresh'}</span>
-                    </button>
-                    <button
-                      onClick={() => handleViewCapabilities(server)}
-                      className="px-3 py-1.5 bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/30 text-indigo-300 text-xs font-medium rounded-lg flex items-center gap-1 transition"
-                    >
-                      <span>Capabilities</span>
-                      <ChevronRight className="w-3 h-3" />
-                    </button>
-                  </div>
-                </div>
-
+          {/* Tools Grid */}
+          {isLoadingTools ? (
+            <div className="flex items-center justify-center py-16 text-slate-400 text-xs gap-2">
+              <RefreshCw className="w-4 h-4 animate-spin text-indigo-400" />
+              <span>Scanning workspace tool catalog...</span>
+            </div>
+          ) : tools.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16 border border-dashed border-slate-800 rounded-2xl p-6 text-center">
+              <div className="p-3 bg-slate-900 rounded-full text-slate-500 mb-3">
+                <Wrench className="w-6 h-6" />
               </div>
-            );
-          })}
+              <h3 className="text-sm font-semibold text-slate-200">No Discovered Tools Found</h3>
+              <p className="text-xs text-slate-400 max-w-sm mt-1">
+                Make sure your registered MCP servers are connected and discovery has been run.
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+              {tools.map((tool) => {
+                const isSafe = tool.risk_level === 'safe';
+                const isRestricted = tool.risk_level === 'restricted';
+                
+                const riskBadge = isSafe 
+                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' 
+                  : isRestricted 
+                  ? 'bg-amber-500/10 border-amber-500/30 text-amber-400' 
+                  : 'bg-rose-500/10 border-rose-500/30 text-rose-400';
+
+                return (
+                  <div
+                    key={tool.id}
+                    className={`bg-slate-900/80 border rounded-2xl p-5 flex flex-col justify-between transition ${
+                      tool.enabled ? 'border-slate-800 hover:border-slate-700' : 'border-slate-800/40 opacity-60'
+                    }`}
+                  >
+                    <div>
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-bold text-white font-mono">{tool.name}</span>
+                            <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full border uppercase ${riskBadge}`}>
+                              {tool.risk_level}
+                            </span>
+                          </div>
+                          <span className="text-[11px] text-slate-500 font-mono block mt-0.5">
+                            via {tool.server_name} ({tool.server_transport})
+                          </span>
+                        </div>
+
+                        <button
+                          onClick={() => handleToggleToolEnable(tool)}
+                          title={tool.enabled ? 'Disable Tool' : 'Enable Tool'}
+                          className={`p-1.5 rounded-lg border transition ${
+                            tool.enabled
+                              ? 'bg-emerald-950/40 border-emerald-500/30 text-emerald-400 hover:bg-emerald-900/40'
+                              : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-slate-200'
+                          }`}
+                        >
+                          <Power className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+
+                      <p className="text-xs text-slate-400 mt-2 line-clamp-2 leading-relaxed">
+                        {tool.description || 'No tool description provided.'}
+                      </p>
+
+                      {/* Execution Readiness Badge */}
+                      <div className="mt-3 flex items-center gap-1.5 text-[11px]">
+                        {tool.available_for_execution ? (
+                          <span className="text-emerald-400 flex items-center gap-1 font-medium">
+                            <CheckCircle2 className="w-3.5 h-3.5" /> Ready for Planning
+                          </span>
+                        ) : (
+                          <span className="text-slate-500 flex items-center gap-1 font-medium">
+                            <XCircle className="w-3.5 h-3.5 text-rose-500" /> Unavailable ({!tool.server_enabled ? 'Server Disabled' : tool.is_stale ? 'Stale' : !tool.enabled ? 'Disabled' : 'Invalid'})
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="mt-4 pt-3 border-t border-slate-800/80 flex items-center justify-between">
+                      <span className="text-[10px] text-slate-500 font-mono">
+                        v{tool.version || 1} • {tool.input_schema?.properties ? Object.keys(tool.input_schema.properties).length : 0} params
+                      </span>
+
+                      <button
+                        onClick={() => {
+                          setSelectedTool(tool);
+                          setShowToolModal(true);
+                        }}
+                        className="px-3 py-1 bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/30 text-indigo-300 text-xs font-medium rounded-lg flex items-center gap-1 transition"
+                      >
+                        <Code className="w-3 h-3" />
+                        <span>Inspect Schema</span>
+                      </button>
+                    </div>
+
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* TOOL SCHEMA & POLICY INSPECTOR MODAL */}
+      {/* ========================================================================= */}
+      {showToolModal && selectedTool && (
+        <div className="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-2xl w-full p-6 space-y-4 shadow-2xl max-h-[90vh] flex flex-col">
+            
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400">
+                  <Wrench className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white font-mono">{selectedTool.name}</h3>
+                  <p className="text-xs text-slate-400">Provided by server: <strong className="text-slate-200">{selectedTool.server_name}</strong></p>
+                </div>
+              </div>
+              <button onClick={() => setShowToolModal(false)} className="text-slate-400 hover:text-white p-1">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-3.5 overflow-y-auto pr-1 text-xs">
+              <div>
+                <h4 className="text-slate-300 font-semibold mb-1">Description</h4>
+                <p className="text-slate-400 leading-relaxed bg-slate-950 p-3 rounded-xl border border-slate-800">
+                  {selectedTool.description || 'No description provided.'}
+                </p>
+              </div>
+
+              {/* Risk Policy Assessment */}
+              <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="font-semibold text-slate-300">Deterministic Safety Policy</span>
+                  <span className={`px-2 py-0.5 rounded-full border text-[10px] uppercase font-mono ${
+                    selectedTool.risk_level === 'safe' 
+                      ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' 
+                      : selectedTool.risk_level === 'restricted'
+                      ? 'bg-amber-500/10 border-amber-500/30 text-amber-400'
+                      : 'bg-rose-500/10 border-rose-500/30 text-rose-400'
+                  }`}>
+                    {selectedTool.risk_level} ({selectedTool.policy_decision})
+                  </span>
+                </div>
+                {selectedTool.risk_reasons && selectedTool.risk_reasons.length > 0 ? (
+                  <ul className="list-disc list-inside text-amber-400 text-[11px] space-y-0.5">
+                    {selectedTool.risk_reasons.map((r, i) => (
+                      <li key={i}>{r}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  <span className="text-slate-400 text-[11px]">No high-risk execution indicators detected.</span>
+                )}
+              </div>
+
+              {/* Input Schema Parameters Table */}
+              <div className="space-y-1.5">
+                <h4 className="text-slate-300 font-semibold">Parameters & Schema Properties</h4>
+                {selectedTool.input_schema?.properties && Object.keys(selectedTool.input_schema.properties).length > 0 ? (
+                  <div className="border border-slate-800 rounded-xl overflow-hidden">
+                    <table className="w-full text-left text-[11px]">
+                      <thead className="bg-slate-950 text-slate-400 font-mono border-b border-slate-800">
+                        <tr>
+                          <th className="p-2.5">Parameter</th>
+                          <th className="p-2.5">Type</th>
+                          <th className="p-2.5">Required</th>
+                          <th className="p-2.5">Description</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-800/60 bg-slate-900/40">
+                        {Object.entries(selectedTool.input_schema.properties).map(([propName, propDef]) => {
+                          const isReq = (selectedTool.input_schema.required || []).includes(propName);
+                          return (
+                            <tr key={propName}>
+                              <td className="p-2.5 font-mono text-indigo-300 font-semibold">{propName}</td>
+                              <td className="p-2.5 font-mono text-slate-400">{propDef.type || 'any'}</td>
+                              <td className="p-2.5">
+                                <span className={`px-1.5 py-0.5 rounded text-[9px] font-mono ${isReq ? 'bg-rose-500/20 text-rose-300' : 'bg-slate-800 text-slate-400'}`}>
+                                  {isReq ? 'YES' : 'OPTIONAL'}
+                                </span>
+                              </td>
+                              <td className="p-2.5 text-slate-300">{propDef.description || '—'}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 text-slate-500 text-[11px]">
+                    This tool requires no input arguments (empty properties schema).
+                  </div>
+                )}
+              </div>
+
+              {/* Raw JSON Schema */}
+              <div className="space-y-1.5">
+                <span className="text-slate-300 font-semibold">Raw JSON Schema</span>
+                <pre className="p-3 bg-slate-950 rounded-xl border border-slate-800 font-mono text-[11px] text-slate-300 overflow-x-auto max-h-48">
+                  {JSON.stringify(selectedTool.input_schema, null, 2)}
+                </pre>
+              </div>
+
+            </div>
+
+            <div className="pt-2 flex justify-between items-center border-t border-slate-800">
+              <button
+                onClick={() => handleToggleToolEnable(selectedTool)}
+                className={`px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition ${
+                  selectedTool.enabled
+                    ? 'bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 border border-rose-500/30'
+                    : 'bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30'
+                }`}
+              >
+                <Power className="w-3.5 h-3.5" />
+                <span>{selectedTool.enabled ? 'Disable Tool' : 'Enable Tool'}</span>
+              </button>
+
+              <button
+                onClick={() => setShowToolModal(false)}
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold"
+              >
+                Done
+              </button>
+            </div>
+
+          </div>
         </div>
       )}
 

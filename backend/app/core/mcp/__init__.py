@@ -24,6 +24,12 @@ from app.core.mcp.security import CredentialStore
 from app.core.mcp.factory import MCPClientFactory, MockMCPClient
 from app.core.mcp.connection import MCPConnectionManager
 from app.core.mcp.normalization import MCPNormalizer
+from app.core.mcp.policy import (
+    ToolRiskLevel,
+    ToolPolicyDecision,
+    ToolRiskPolicy,
+    PromptInjectionDetector
+)
 
 __all__ = [
     "MCPTransport",
@@ -49,4 +55,8 @@ __all__ = [
     "MockMCPClient",
     "MCPConnectionManager",
     "MCPNormalizer",
+    "ToolRiskLevel",
+    "ToolPolicyDecision",
+    "ToolRiskPolicy",
+    "PromptInjectionDetector",
 ]

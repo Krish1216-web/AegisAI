@@ -2,6 +2,8 @@ export type MCPTransport = 'sse' | 'streamable_http' | 'stdio';
 export type MCPServerStatus = 'active' | 'inactive' | 'error' | 'disabled';
 export type MCPCapabilityType = 'tool' | 'resource' | 'prompt';
 export type MCPAuthenticationType = 'none' | 'api_key' | 'bearer' | 'oauth';
+export type ToolRiskLevel = 'safe' | 'restricted' | 'invalid';
+export type ToolPolicyDecision = 'allow' | 'require_confirmation' | 'deny';
 
 export interface MCPServer {
   id: string;
@@ -42,6 +44,32 @@ export interface MCPCapability {
   first_discovered_at?: string;
   last_discovered_at?: string;
   version: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MCPTool {
+  id: string;
+  server_id: string;
+  server_name: string;
+  server_transport: string;
+  server_status: string;
+  server_enabled: boolean;
+  name: string;
+  description?: string;
+  input_schema?: Record<string, any>;
+  metadata?: Record<string, any>;
+  enabled: boolean;
+  is_stale: boolean;
+  stale_at?: string;
+  definition_hash?: string;
+  version: number;
+  risk_level: ToolRiskLevel;
+  policy_decision: ToolPolicyDecision;
+  risk_reasons: string[];
+  available_for_execution: boolean;
+  first_discovered_at?: string;
+  last_discovered_at?: string;
   created_at: string;
   updated_at: string;
 }
@@ -107,6 +135,7 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
   return response.json();
 }
 
+// Servers
 export async function listMCPServers(params?: {
   status?: MCPServerStatus;
   enabled_only?: boolean;
@@ -189,6 +218,19 @@ export async function checkServerHealth(serverId: string): Promise<MCPHealthChec
   return request(`/servers/${serverId}/health`);
 }
 
+export async function enableMCPServer(serverId: string): Promise<MCPServer> {
+  return request(`/servers/${serverId}/enable`, {
+    method: 'POST',
+  });
+}
+
+export async function disableMCPServer(serverId: string): Promise<MCPServer> {
+  return request(`/servers/${serverId}/disable`, {
+    method: 'POST',
+  });
+}
+
+// Capabilities
 export async function listServerCapabilities(
   serverId: string,
   type?: MCPCapabilityType,
@@ -207,51 +249,60 @@ export async function listServerCapabilities(
   return request(`/servers/${serverId}/capabilities?${query.toString()}`);
 }
 
-export async function listServerTools(
-  serverId: string,
-  search?: string,
-  includeStale: boolean = false
-): Promise<{ capabilities: MCPCapability[]; total: number }> {
-  const query = new URLSearchParams();
-  if (search) query.append('search', search);
-  if (includeStale) query.append('include_stale', 'true');
-  return request(`/servers/${serverId}/tools?${query.toString()}`);
-}
-
-export async function listServerResources(
-  serverId: string,
-  search?: string,
-  includeStale: boolean = false
-): Promise<{ capabilities: MCPCapability[]; total: number }> {
-  const query = new URLSearchParams();
-  if (search) query.append('search', search);
-  if (includeStale) query.append('include_stale', 'true');
-  return request(`/servers/${serverId}/resources?${query.toString()}`);
-}
-
-export async function listServerPrompts(
-  serverId: string,
-  search?: string,
-  includeStale: boolean = false
-): Promise<{ capabilities: MCPCapability[]; total: number }> {
-  const query = new URLSearchParams();
-  if (search) query.append('search', search);
-  if (includeStale) query.append('include_stale', 'true');
-  return request(`/servers/${serverId}/prompts?${query.toString()}`);
-}
-
 export async function getCapabilityDetails(capabilityId: string): Promise<MCPCapability> {
   return request(`/capabilities/${capabilityId}`);
 }
 
-export async function enableMCPServer(serverId: string): Promise<MCPServer> {
-  return request(`/servers/${serverId}/enable`, {
+// Tool Catalog (Phase 6.3)
+export async function listWorkspaceTools(params?: {
+  server_id?: string;
+  enabled_only?: boolean;
+  include_stale?: boolean;
+  risk_level?: ToolRiskLevel;
+  transport?: MCPTransport;
+  search?: string;
+  limit?: number;
+  offset?: number;
+}): Promise<{ tools: MCPTool[]; total: number }> {
+  const query = new URLSearchParams();
+  if (params?.server_id) query.append('server_id', params.server_id);
+  if (params?.enabled_only) query.append('enabled_only', 'true');
+  if (params?.include_stale !== undefined) query.append('include_stale', params.include_stale.toString());
+  if (params?.risk_level) query.append('risk_level', params.risk_level);
+  if (params?.transport) query.append('transport', params.transport);
+  if (params?.search) query.append('search', params.search);
+  if (params?.limit) query.append('limit', params.limit.toString());
+  if (params?.offset) query.append('offset', params.offset.toString());
+
+  return request(`/tools?${query.toString()}`);
+}
+
+export async function searchWorkspaceTools(payload: {
+  query: string;
+  server_id?: string;
+  risk_level?: ToolRiskLevel;
+  enabled_only?: boolean;
+  include_stale?: boolean;
+  limit?: number;
+}): Promise<{ results: MCPTool[]; total: number; query: string }> {
+  return request('/tools/search', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function getToolDetails(toolId: string): Promise<MCPTool> {
+  return request(`/tools/${toolId}`);
+}
+
+export async function enableMCPTool(toolId: string): Promise<MCPTool> {
+  return request(`/tools/${toolId}/enable`, {
     method: 'POST',
   });
 }
 
-export async function disableMCPServer(serverId: string): Promise<MCPServer> {
-  return request(`/servers/${serverId}/disable`, {
+export async function disableMCPTool(toolId: string): Promise<MCPTool> {
+  return request(`/tools/${toolId}/disable`, {
     method: 'POST',
   });
 }
