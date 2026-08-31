@@ -65,7 +65,7 @@ class ProviderFactory:
         if provider_lower == "openai":
             key = getattr(settings, "OPENAI_API_KEY", None)
             if not key or key == "":
-                if settings.ENVIRONMENT == "dev":
+                if settings.ENVIRONMENT != "prod":
                     return MockProvider()
                 raise InvalidAPIKeyException("OpenAI API key is not configured in settings.")
             return OpenAIProvider(api_key=key)
@@ -73,7 +73,7 @@ class ProviderFactory:
         elif provider_lower == "anthropic":
             key = getattr(settings, "ANTHROPIC_API_KEY", None)
             if not key or key == "":
-                if settings.ENVIRONMENT == "dev":
+                if settings.ENVIRONMENT != "prod":
                     return MockProvider()
                 raise InvalidAPIKeyException("Anthropic API key is not configured in settings.")
             return AnthropicProvider(api_key=key)
@@ -81,7 +81,7 @@ class ProviderFactory:
         elif provider_lower == "gemini":
             key = getattr(settings, "GEMINI_API_KEY", None)
             if not key or key == "":
-                if settings.ENVIRONMENT == "dev":
+                if settings.ENVIRONMENT != "prod":
                     return MockProvider()
                 raise InvalidAPIKeyException("Google Gemini API key is not configured in settings.")
             return GeminiProvider(api_key=key)

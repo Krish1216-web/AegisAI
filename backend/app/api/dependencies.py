@@ -84,3 +84,34 @@ def get_workspace_member(
             detail="User does not have access permissions for this workspace."
         )
     return member
+
+import time
+from app.database.redis import get_redis
+from app.core.config import settings
+from typing import Any
+
+def check_rate_limit(
+    current_user: User = Depends(get_current_user),
+    redis_client: Any = Depends(get_redis)
+) -> None:
+    user_id = str(current_user.id)
+    minute_timestamp = int(time.time() // 60)
+    key = f"aegis:ratelimit:{user_id}:{minute_timestamp}"
+    
+    try:
+        count = redis_client.incr(key)
+        if count == 1:
+            redis_client.expire(key, 60)
+        
+        limit = settings.RATE_LIMIT_RPM
+        if count > limit:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Rate limit exceeded. Try again in a minute."
+            )
+    except HTTPException:
+        raise
+    except Exception as e:
+        from loguru import logger
+        logger.error(f"Redis rate limiting error: {e}")
+

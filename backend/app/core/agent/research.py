@@ -103,6 +103,131 @@ class MockResearchProvider(BaseResearchProvider):
     async def health_check(self) -> bool:
         return True
 
+import asyncio
+import httpx
+from urllib.parse import urlparse
+from app.core.config import settings
+
+class TavilyResearchProvider(BaseResearchProvider):
+    """
+    Tavily Search implementation of the Research provider interface.
+    """
+    def __init__(self, api_key: str, timeout: float = 15.0):
+        self.api_key = api_key
+        self.timeout = timeout
+        self.url = "https://api.tavily.com/search"
+
+    async def search(self, query: str, max_results: int = 5) -> List[ResearchSource]:
+        headers = {"Content-Type": "application/json"}
+        payload = {
+            "api_key": self.api_key,
+            "query": query,
+            "max_results": max_results,
+            "search_depth": "advanced",
+            "include_answer": False,
+            "include_raw_content": False
+        }
+        
+        retries = 3
+        backoff = 1.0
+        
+        for attempt in range(retries):
+            try:
+                async with httpx.AsyncClient(timeout=self.timeout) as client:
+                    response = await client.post(self.url, json=payload, headers=headers)
+                    
+                    if response.status_code == 401:
+                        logger.error("Tavily Search authentication failure: Invalid API Key.")
+                        return []
+                    elif response.status_code == 429:
+                        logger.warning(f"Tavily Search rate limited (attempt {attempt + 1}/{retries}).")
+                        if attempt == retries - 1:
+                            return []
+                        await asyncio.sleep(backoff)
+                        backoff *= 2
+                        continue
+                    elif response.status_code >= 500:
+                        logger.warning(f"Tavily Search transient server failure {response.status_code} (attempt {attempt + 1}/{retries}).")
+                        if attempt == retries - 1:
+                            return []
+                        await asyncio.sleep(backoff)
+                        backoff *= 2
+                        continue
+                    elif response.status_code != 200:
+                        logger.error(f"Tavily Search failed with status {response.status_code}: {response.text}")
+                        return []
+                        
+                    data = response.json()
+                    results = data.get("results", [])
+                    if not results:
+                        return []
+                        
+                    sources = []
+                    retrieved_time = time.strftime("%Y-%m-%dT%H:%M:%SZ")
+                    for i, r in enumerate(results):
+                        url = r.get("url") or ""
+                        domain = "web"
+                        if url:
+                            try:
+                                parsed = urlparse(url)
+                                domain = parsed.netloc or "web"
+                            except Exception:
+                                pass
+                                
+                        score = r.get("score", 0.7)
+                        sources.append(ResearchSource(
+                            source_id=f"src_{i+1}",
+                            title=r.get("title") or "Search Result",
+                            url=url or None,
+                            source_type="web",
+                            publisher=domain,
+                            published_at=None,
+                            retrieved_at=retrieved_time,
+                            relevance_score=float(score),
+                            content_reference=r.get("content") or "",
+                            metadata={}
+                        ))
+                    return sources
+            except httpx.TimeoutException:
+                logger.warning(f"Tavily Search request timed out (attempt {attempt + 1}/{retries}).")
+                if attempt == retries - 1:
+                    raise ResearchTimeout("Tavily research provider search request timed out.")
+                await asyncio.sleep(backoff)
+                backoff *= 2
+            except Exception as e:
+                logger.error(f"Tavily Search encountered unexpected error: {e}")
+                if attempt == retries - 1:
+                    return []
+                await asyncio.sleep(backoff)
+                backoff *= 2
+        return []
+
+    async def retrieve(self, source_id: str) -> str:
+        return ""
+
+    async def health_check(self) -> bool:
+        if not self.api_key:
+            return False
+        return True
+
+class ResearchProviderFactory:
+    @staticmethod
+    def get_provider() -> BaseResearchProvider:
+        provider_name = settings.RESEARCH_PROVIDER.lower()
+        if provider_name == "tavily":
+            key = getattr(settings, "TAVILY_API_KEY", None)
+            if not key or key == "":
+                if settings.ENVIRONMENT != "prod":
+                    return MockResearchProvider()
+                raise ValueError("Tavily API Key is missing in production environment.")
+            return TavilyResearchProvider(api_key=key)
+        elif provider_name == "mock":
+            return MockResearchProvider()
+        else:
+            if settings.ENVIRONMENT != "prod":
+                return MockResearchProvider()
+            raise ValueError(f"Unsupported research provider: {provider_name}")
+
 # Configurable limits
 MAX_SOURCES = 10
 MAX_QUERY_LENGTH = 100

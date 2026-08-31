@@ -35,6 +35,11 @@ class ResponseCitation(BaseModel):
     citation_id: str
     title: str
     source_id: str
+    source_type: str = "research" # document | research | knowledge_graph
+    document_id: Optional[str] = None
+    chunk_id: Optional[str] = None
+    page_number: Optional[int] = None
+    section_title: Optional[str] = None
     url: Optional[str] = None
     publisher: Optional[str] = None
     published_at: Optional[str] = None
@@ -53,7 +58,7 @@ class ResponseGenerationResult(BaseModel):
 
 # Configurable Limits
 MAX_RESPONSE_LENGTH = 2048
-MAX_CITATIONS_LIMIT = 5
+MAX_CITATIONS_LIMIT = 10
 
 def detect_prompt_injection(content: str) -> bool:
     """
@@ -64,15 +69,38 @@ def detect_prompt_injection(content: str) -> bool:
         "ignore all previous instructions",
         "reveal the api key",
         "reveal api key",
+        "reveal api keys",
         "ignore system prompt",
         "reveal password"
     ]
     lowered = content.lower()
     return any(ind in lowered for ind in indicators)
 
+def sanitize_sensitive_data(content: str) -> str:
+    # 1. Scrub common API Key signatures
+    from app.core.agent.memory import scrub_sensitive_data
+    content = scrub_sensitive_data(content)
+    
+    # 2. Scrub database connection strings
+    db_pattern = r"(?i)(postgresql|postgres|sqlite|mysql|mongodb|redis|amqp|smtp):\/\/([^@\n]+)@([^\n/]+)"
+    content = re.sub(db_pattern, r"\1://[REDACTED_CREDENTIALS]@\3", content)
+    
+    # 3. Scrub internal stack traces
+    stack_pattern = r"(?i)traceback\s+\(most\s+recent\s+call\s+last\):.*"
+    content = re.sub(stack_pattern, "[Internal Stack Trace Redacted]", content, flags=re.DOTALL)
+    
+    # 4. Scrub redis keys
+    content = re.sub(r"(aegis:(?:execution|cancel|ratelimit|lock):[a-zA-Z0-9_\-:]+)", "[REDACTED_REDIS_KEY]", content)
+    
+    # 5. Scrub internal security tokens
+    content = re.sub(r"(?i)(eyJhbGciOi[a-zA-Z0-9_\-\.]+)", "[REDACTED_SECURITY_TOKEN]", content)
+    
+    return content
+
 class ResponseGeneratorAgent(BaseAgent):
     """
-    ResponseGeneratorAgent shapes final outputs after passing Critic verification gates.
+    ResponseGeneratorAgent shapes final outputs after passing Critic verification gates,
+    synthesizing Memory, RAG document knowledge, Web Research, and Tools into a coherent response.
     """
     def __init__(self, ai_service: AIService):
         self.ai_service = ai_service
@@ -83,10 +111,9 @@ class ResponseGeneratorAgent(BaseAgent):
 
     @property
     def description(self) -> str:
-        return "Formats validated agent outputs into structured Markdown, Plain Text, or Code outputs."
+        return "Formats validated agent outputs into structured Markdown, Plain Text, or Code outputs with verified citations."
 
     def validate_input(self, state: AgentState) -> bool:
-        # Requires Critic outputs to run
         agent_outputs = state.get("agent_outputs", {})
         if "CriticAgent" not in agent_outputs:
             return False
@@ -107,6 +134,9 @@ class ResponseGeneratorAgent(BaseAgent):
         prompt = state.get("original_prompt", "")
         execution_id = context.request_id or "exec-default"
         
+        if "metadata" not in state or state["metadata"] is None:
+            state["metadata"] = {}
+        
         # 1. Inspect Critic Gate
         critic_data = state["agent_outputs"]["CriticAgent"]["output"]
         try:
@@ -118,8 +148,9 @@ class ResponseGeneratorAgent(BaseAgent):
         # Prompt injection defense check on retrieved data
         research_results = state.get("research_results") or ""
         memory_context = state.get("memory_context") or ""
+        rag_context = state.get("rag_context") or ""
         
-        if detect_prompt_injection(research_results) or detect_prompt_injection(memory_context) or detect_prompt_injection(prompt):
+        if detect_prompt_injection(research_results) or detect_prompt_injection(memory_context) or detect_prompt_injection(rag_context) or detect_prompt_injection(prompt):
             logger.warning("Prompt injection signature matched! Blocking final generation.")
             raise UnsafeResponse("Prompt injection attempt blocked.")
 
@@ -135,6 +166,10 @@ class ResponseGeneratorAgent(BaseAgent):
                 completed=False,
                 metadata={"response_status": ResponseStatus.FAILED}
             )
+            state["final_response"] = res.content
+            state["metadata"]["response_format"] = res.format.value
+            state["metadata"]["response_confidence"] = res.confidence
+            state["metadata"]["response_status"] = ResponseStatus.FAILED.value
             return AgentResult(
                 agent_name=self.name, status="failed", output=res.model_dump_json(),
                 confidence=0.0, execution_time=elapsed, token_usage={}
@@ -150,6 +185,10 @@ class ResponseGeneratorAgent(BaseAgent):
                 completed=False,
                 metadata={"response_status": ResponseStatus.CLARIFICATION_REQUIRED}
             )
+            state["final_response"] = res.content
+            state["metadata"]["response_format"] = res.format.value
+            state["metadata"]["response_confidence"] = res.confidence
+            state["metadata"]["response_status"] = ResponseStatus.CLARIFICATION_REQUIRED.value
             return AgentResult(
                 agent_name=self.name, status="clarification_required", output=res.model_dump_json(),
                 confidence=0.5, execution_time=elapsed, token_usage={}
@@ -165,6 +204,10 @@ class ResponseGeneratorAgent(BaseAgent):
                 completed=False,
                 metadata={"response_status": ResponseStatus.RESEARCH_REQUIRED}
             )
+            state["final_response"] = res.content
+            state["metadata"]["response_format"] = res.format.value
+            state["metadata"]["response_confidence"] = res.confidence
+            state["metadata"]["response_status"] = ResponseStatus.RESEARCH_REQUIRED.value
             return AgentResult(
                 agent_name=self.name, status="research_required", output=res.model_dump_json(),
                 confidence=0.6, execution_time=elapsed, token_usage={}
@@ -180,6 +223,10 @@ class ResponseGeneratorAgent(BaseAgent):
                 completed=False,
                 metadata={"response_status": ResponseStatus.TOOL_EXECUTION_REQUIRED}
             )
+            state["final_response"] = res.content
+            state["metadata"]["response_format"] = res.format.value
+            state["metadata"]["response_confidence"] = res.confidence
+            state["metadata"]["response_status"] = ResponseStatus.TOOL_EXECUTION_REQUIRED.value
             return AgentResult(
                 agent_name=self.name, status="tool_required", output=res.model_dump_json(),
                 confidence=0.6, execution_time=elapsed, token_usage={}
@@ -189,7 +236,6 @@ class ResponseGeneratorAgent(BaseAgent):
         if context.provider == "mock" or "mock" in prompt.lower():
             logger.info("Executing Response Generator in Mock mode.")
             
-            # Resolve mock tool output
             tool_results = state.get("tool_results", [])
             calc_val = ""
             for tr in tool_results:
@@ -197,8 +243,26 @@ class ResponseGeneratorAgent(BaseAgent):
                     val = tr.get("output", {}).get("result", 3000)
                     calc_val = f"250 x 12 = **{val:,}**."
 
-            # Construct mock citations if research was used
-            citations = []
+            citations: List[ResponseCitation] = []
+            
+            # 1. RAG Document Citations
+            rag_citations = state.get("rag_citations", [])
+            for c in rag_citations:
+                citations.append(
+                    ResponseCitation(
+                        citation_id=c.get("citation_id", f"chunk_{c.get('chunk_id')}"),
+                        title=c.get("document_name", "Document"),
+                        source_id=c.get("document_id", ""),
+                        source_type="document",
+                        document_id=c.get("document_id"),
+                        chunk_id=c.get("chunk_id"),
+                        page_number=c.get("page_number"),
+                        section_title=c.get("section_title"),
+                        reference_text=c.get("snippet")
+                    )
+                )
+
+            # 2. Research Web Citations
             if research_results:
                 try:
                     res_data = json.loads(research_results)
@@ -207,55 +271,91 @@ class ResponseGeneratorAgent(BaseAgent):
                             citation_id=f"cite_{src.get('source_id')}",
                             title=src.get("title", ""),
                             source_id=src.get("source_id", ""),
-                            url=src.get("url")
+                            source_type="research",
+                            url=src.get("url"),
+                            publisher=src.get("publisher"),
+                            published_at=src.get("published_at"),
+                            reference_text=src.get("content_reference")
                         ))
                 except Exception:
-                    # In mock integration test, research results might be a string
-                    if "mock_src_1" in research_results:
-                        citations.append(ResponseCitation(
-                            citation_id="cite_mock_src_1",
-                            title="Mock Research Paper",
-                            source_id="mock_src_1"
-                        ))
+                    pass
 
-            content = "Mock response output formulated."
+            # 3. Knowledge Graph Citations
+            graph_citations = state.get("graph_citations") or []
+            for gc in graph_citations:
+                citations.append(
+                    ResponseCitation(
+                        citation_id=f"graph_{gc.get('node_id', gc.get('edge_id', ''))}",
+                        title=gc.get("node_name", "Knowledge Graph Entity"),
+                        source_id=gc.get("node_id", gc.get("edge_id", "")),
+                        source_type="knowledge_graph",
+                        reference_text=f"{gc.get('node_type', '')}: {gc.get('node_name', '')}" if gc.get("node_name") else f"Relationship: {gc.get('relationship_type', '')}"
+                    )
+                )
+
+            # Synthesize mock response
+            content_parts = []
+            if memory_context:
+                content_parts.append(f"Based on your profile preference:\n> {memory_context.strip()}\n")
+            
+            graph_context = state.get("graph_context") or ""
+            if graph_context:
+                content_parts.append(f"**Knowledge Graph Topology**:\n{graph_context.strip()}\n")
+
+            if rag_context:
+                content_parts.append(f"**Document Knowledge**:\n{rag_context.strip()}\n")
+            
             if calc_val:
-                content = calc_val
+                content_parts.append(f"**Calculation**: {calc_val}\n")
+                
+            if not content_parts:
+                content_parts.append("Mock processed response completed.")
 
+            content = "\n".join(content_parts)
+            content = sanitize_sensitive_data(content)
+
+            elapsed = time.perf_counter() - start_time
             res = ResponseGenerationResult(
                 execution_id=execution_id,
                 content=content,
                 format=ResponseFormat.MARKDOWN,
-                summary="Completed task calculations and summaries successfully.",
-                citations=citations,
+                summary="Mock synthesized output.",
+                citations=citations[:MAX_CITATIONS_LIMIT],
                 confidence=0.99,
+                limitations=[],
+                completed=True,
                 metadata={"response_status": ResponseStatus.SUCCESS}
             )
-            elapsed = time.perf_counter() - start_time
+
+            state["final_response"] = res.content
+            state["metadata"]["response_format"] = res.format.value
+            state["metadata"]["response_confidence"] = res.confidence
+            state["metadata"]["response_status"] = ResponseStatus.SUCCESS.value
+            state["execution_status"] = ExecutionStatus.COMPLETED
+
             return AgentResult(
                 agent_name=self.name,
                 status="success",
                 output=res.model_dump_json(),
                 confidence=0.99,
                 execution_time=elapsed,
-                token_usage={"prompt_tokens": 10, "completion_tokens": 10, "total_tokens": 20}
+                token_usage={"prompt_tokens": 15, "completion_tokens": 20, "total_tokens": 35}
             )
 
-        # Normal run via AIService
-        # Package validated evidence
-        tool_results = state.get("tool_results", [])
-        
-        sources_payload = {
+        # Normal execution through active AI Service
+        context_payload = {
             "prompt": prompt,
-            "tool_results": tool_results,
-            "research_results": research_results,
             "memory_context": memory_context,
-            "critic_result": critic_result
+            "rag_context": rag_context,
+            "rag_citations": state.get("rag_citations", []),
+            "graph_context": state.get("graph_context"),
+            "research_results": research_results,
+            "tool_results": state.get("tool_results", [])
         }
-        
+
         messages = [
             ChatMessage(role="system", content=RESPONSE_GENERATOR_SYSTEM_PROMPT),
-            ChatMessage(role="user", content=f"Evidence data:\n{json.dumps(sources_payload)}")
+            ChatMessage(role="user", content=f"Synthesize final grounded response using context:\n{json.dumps(context_payload)}")
         ]
 
         try:
@@ -273,39 +373,38 @@ class ResponseGeneratorAgent(BaseAgent):
                 raw_text = raw_text.rsplit("```", 1)[0]
             raw_text = raw_text.strip()
 
-            res = ResponseGenerationResult.model_validate_json(raw_text)
-            
-            # Enforce limits checks
-            if len(res.content) > MAX_RESPONSE_LENGTH:
-                raise ResponseTooLong()
+            res_obj = ResponseGenerationResult.model_validate_json(raw_text)
 
-            # Enforce strict citation validation checks
-            # Parse retrieved research source IDs
-            valid_src_ids = []
-            if research_results:
+            # Validate research citation authenticity
+            if research_results and res_obj.citations:
                 try:
                     res_data = json.loads(research_results)
-                    valid_src_ids = [s.get("source_id") for s in res_data.get("sources", [])]
-                except Exception:
+                    valid_source_ids = {s.get("source_id") for s in res_data.get("sources", [])}
+                    for c in res_obj.citations:
+                        if c.source_type == "research" and c.source_id not in valid_source_ids:
+                            raise InvalidCitation(f"Invalid citation source_id: {c.source_id}")
+                except json.JSONDecodeError:
                     pass
 
-            for cite in res.citations:
-                if cite.source_id not in valid_src_ids:
-                    raise InvalidCitation(f"Cites unauthorized source ID: {cite.source_id}")
+            # Scrub sensitive data
+            res_obj.content = sanitize_sensitive_data(res_obj.content)
+
+            # Length limit validation
+            if len(res_obj.content) > MAX_RESPONSE_LENGTH:
+                res_obj.content = res_obj.content[:MAX_RESPONSE_LENGTH] + "... [Truncated]"
 
             elapsed = time.perf_counter() - start_time
-            
-            # Save results in agent state
-            state["final_response"] = res.content
-            state["metadata"]["response_format"] = res.format.value
-            state["metadata"]["response_confidence"] = res.confidence
+            state["final_response"] = res_obj.content
+            state["metadata"]["response_format"] = res_obj.format.value
+            state["metadata"]["response_confidence"] = res_obj.confidence
             state["metadata"]["response_status"] = ResponseStatus.SUCCESS.value
+            state["execution_status"] = ExecutionStatus.COMPLETED
 
             return AgentResult(
                 agent_name=self.name,
                 status="success",
-                output=res.model_dump_json(),
-                confidence=res.confidence,
+                output=res_obj.model_dump_json(),
+                confidence=res_obj.confidence,
                 execution_time=elapsed,
                 token_usage={
                     "prompt_tokens": response.usage.prompt_tokens,
@@ -313,6 +412,8 @@ class ResponseGeneratorAgent(BaseAgent):
                     "total_tokens": response.usage.total_tokens
                 }
             )
+        except InvalidCitation:
+            raise
         except Exception as e:
-            logger.error(f"Response formulation failed: {e}")
-            raise e
+            logger.error(f"Response Generator model failure: {e}")
+            raise ResponseGenerationError(f"Failed to generate structured user response: {e}")

@@ -5,6 +5,14 @@ from enum import Enum
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, Field, field_validator
 from loguru import logger
+from sqlalchemy.orm import Session
+from app.models.memory import AgentMemory
+
+try:
+    from pgvector.sqlalchemy import Vector
+    HAS_PGVECTOR = True
+except ImportError:
+    HAS_PGVECTOR = False
 
 from app.core.agent.base import BaseAgent, AgentResult, ExecutionContext
 from app.core.agent.state import AgentState, ExecutionStatus
@@ -179,6 +187,206 @@ class MockMemoryProvider(BaseMemoryProvider):
 
     async def health_check(self) -> bool:
         return True
+
+import json
+import math
+import sqlalchemy as sa
+from app.core.config import settings
+
+def cosine_similarity(v1: List[float], v2: List[float]) -> float:
+    dot_product = sum(x * y for x, y in zip(v1, v2))
+    norm_v1 = math.sqrt(sum(x * x for x in v1))
+    norm_v2 = math.sqrt(sum(x * x for x in v2))
+    if norm_v1 == 0 or norm_v2 == 0:
+        return 0.0
+    return dot_product / (norm_v1 * norm_v2)
+
+class PostgresVectorMemoryProvider(BaseMemoryProvider):
+    """
+    Production PostgreSQL memory provider with pgvector semantic search
+    and user/workspace tenant-isolation enforcement.
+    """
+    def __init__(self, db: Session, ai_service: Any = None):
+        self.db = db
+        self.ai_service = ai_service
+
+    async def _resolve_embedding(self, content: str) -> List[float]:
+        if not self.ai_service:
+            return [0.1] * settings.EMBEDDING_DIMENSION
+        return await self.ai_service.generate_embeddings(content)
+
+    async def search(self, query: MemoryQuery) -> List[MemoryRecord]:
+        import uuid
+        if not query.user_id or not query.workspace_id:
+            raise MemoryPermissionError("Missing tenant identifiers in query.")
+            
+        user_uuid = uuid.UUID(query.user_id)
+        workspace_uuid = uuid.UUID(query.workspace_id)
+        
+        bind = self.db.get_bind()
+        is_postgres = bind.dialect.name == "postgresql"
+        
+        if settings.ENVIRONMENT == "prod":
+            if not is_postgres:
+                raise MemoryProviderUnavailable("PostgreSQL dialect required in production.")
+            if not HAS_PGVECTOR:
+                raise MemoryProviderUnavailable("pgvector library is missing in production environment.")
+            try:
+                res = self.db.execute(sa.text("SELECT extname FROM pg_extension WHERE extname = 'vector'")).first()
+                if not res:
+                    raise MemoryProviderUnavailable("pgvector extension is not active/installed in PostgreSQL database.")
+            except Exception as e:
+                raise MemoryProviderUnavailable(f"Failed to check pgvector extension: {e}")
+
+        query_filter = [
+            AgentMemory.user_id == user_uuid,
+            AgentMemory.workspace_id == workspace_uuid
+        ]
+        if query.memory_types:
+            types_str = [t.value if hasattr(t, "value") else t for t in query.memory_types]
+            query_filter.append(AgentMemory.memory_type.in_(types_str))
+
+        if query.query == "*":
+            db_records = self.db.query(AgentMemory).filter(*query_filter).order_by(AgentMemory.importance.desc()).limit(query.max_results).all()
+            return [self._map_db_record(rec) for rec in db_records]
+
+        query_embedding = await self._resolve_embedding(query.query)
+
+        if HAS_PGVECTOR and is_postgres:
+            db_records = self.db.query(AgentMemory).filter(*query_filter).order_by(
+                AgentMemory.embedding.cosine_distance(query_embedding)
+            ).limit(query.max_results).all()
+        else:
+            all_records = self.db.query(AgentMemory).filter(*query_filter).all()
+            ranked = []
+            for rec in all_records:
+                if rec.embedding:
+                    emb = rec.embedding
+                    if isinstance(emb, str):
+                        emb = json.loads(emb)
+                    sim = cosine_similarity(query_embedding, emb)
+                    if sim >= query.min_relevance:
+                        ranked.append((rec, sim))
+            ranked.sort(key=lambda x: x[1], reverse=True)
+            db_records = [item[0] for item in ranked[:query.max_results]]
+
+        return [self._map_db_record(rec) for rec in db_records]
+
+    async def store(self, record: MemoryRecord) -> None:
+        import uuid
+        scrubbed = scrub_sensitive_data(record.content)
+        
+        embedding_vector = record.metadata.get("embedding") if record.metadata else None
+        if not embedding_vector:
+            embedding_vector = await self._resolve_embedding(scrubbed)
+
+        db_record = AgentMemory(
+            id=uuid.UUID(record.memory_id) if isinstance(record.memory_id, str) else record.memory_id,
+            user_id=uuid.UUID(record.user_id),
+            workspace_id=uuid.UUID(record.workspace_id),
+            memory_type=record.memory_type.value if hasattr(record.memory_type, "value") else record.memory_type,
+            content=scrubbed,
+            source=record.source,
+            importance=record.importance,
+            confidence=record.confidence,
+            tags=record.tags,
+            meta_data=record.metadata,
+            embedding=embedding_vector
+        )
+        self.db.add(db_record)
+        self.db.commit()
+
+    async def update(self, record: MemoryRecord) -> None:
+        import uuid
+        db_id = uuid.UUID(record.memory_id) if isinstance(record.memory_id, str) else record.memory_id
+        db_record = self.db.query(AgentMemory).filter(AgentMemory.id == db_id).first()
+        if not db_record:
+            raise MemoryNotFound("Memory record not found.")
+
+        if db_record.user_id != uuid.UUID(record.user_id) or db_record.workspace_id != uuid.UUID(record.workspace_id):
+            raise MemoryPermissionError("Tenant isolation mismatch: update denied.")
+
+        scrubbed = scrub_sensitive_data(record.content)
+        
+        embedding_vector = db_record.embedding
+        if db_record.content != scrubbed or not embedding_vector:
+            embedding_vector = record.metadata.get("embedding") if record.metadata else None
+            if not embedding_vector:
+                embedding_vector = await self._resolve_embedding(scrubbed)
+
+        db_record.content = scrubbed
+        db_record.memory_type = record.memory_type.value if hasattr(record.memory_type, "value") else record.memory_type
+        db_record.importance = record.importance
+        db_record.confidence = record.confidence
+        db_record.source = record.source
+        db_record.tags = record.tags
+        db_record.meta_data = record.metadata
+        db_record.embedding = embedding_vector
+        self.db.commit()
+
+    async def delete(self, memory_id: str, user_id: str, workspace_id: str) -> None:
+        import uuid
+        db_id = uuid.UUID(memory_id) if isinstance(memory_id, str) else memory_id
+        db_record = self.db.query(AgentMemory).filter(AgentMemory.id == db_id).first()
+        if not db_record:
+            raise MemoryNotFound("Memory record not found.")
+
+        if db_record.user_id != uuid.UUID(user_id) or db_record.workspace_id != uuid.UUID(workspace_id):
+            raise MemoryPermissionError("Tenant isolation mismatch: deletion denied.")
+
+        self.db.delete(db_record)
+        self.db.commit()
+
+    async def get(self, memory_id: str, user_id: str, workspace_id: str) -> Optional[MemoryRecord]:
+        import uuid
+        db_id = uuid.UUID(memory_id) if isinstance(memory_id, str) else memory_id
+        db_record = self.db.query(AgentMemory).filter(AgentMemory.id == db_id).first()
+        if not db_record:
+            return None
+
+        if db_record.user_id != uuid.UUID(user_id) or db_record.workspace_id != uuid.UUID(workspace_id):
+            raise MemoryPermissionError("Tenant isolation mismatch: retrieval denied.")
+
+        return self._map_db_record(db_record)
+
+    async def health_check(self) -> bool:
+        try:
+            self.db.execute(sa.text("SELECT 1"))
+            return True
+        except Exception:
+            return False
+
+    def _map_db_record(self, rec: AgentMemory) -> MemoryRecord:
+        return MemoryRecord(
+            memory_id=str(rec.id),
+            user_id=str(rec.user_id),
+            workspace_id=str(rec.workspace_id),
+            memory_type=MemoryType(rec.memory_type),
+            content=rec.content,
+            source=rec.source,
+            importance=rec.importance,
+            confidence=rec.confidence,
+            created_at=rec.created_at.isoformat() if hasattr(rec.created_at, "isoformat") else str(rec.created_at),
+            updated_at=rec.updated_at.isoformat() if hasattr(rec.updated_at, "isoformat") else str(rec.updated_at),
+            tags=rec.tags or [],
+            metadata=rec.meta_data or {}
+        )
+
+class MemoryProviderFactory:
+    @staticmethod
+    def get_provider(db: Session, ai_service: Any = None) -> BaseMemoryProvider:
+        provider_name = settings.MEMORY_PROVIDER.lower()
+        if provider_name == "postgres":
+            if settings.ENVIRONMENT == "prod":
+                if not HAS_PGVECTOR:
+                    raise MemoryProviderUnavailable("pgvector library is missing in production environment.")
+            return PostgresVectorMemoryProvider(db, ai_service)
+        elif provider_name == "mock":
+            return MockMemoryProvider()
+        else:
+            if settings.ENVIRONMENT != "prod":
+                return MockMemoryProvider()
+            raise MemoryProviderUnavailable(f"Unsupported memory provider: {provider_name}")
 
 # Configurable limits
 MAX_MEMORY_RESULTS = 10

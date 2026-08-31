@@ -53,6 +53,10 @@ class AIService:
         error_msg: Optional[str] = None
     ):
         try:
+            from app.core.config import calculate_model_cost
+            costs = calculate_model_cost(provider, model, usage.prompt_tokens, usage.completion_tokens)
+            estimated_cost = costs["total_cost"] or 0.0
+            
             log = AIRequestLog(
                 user_id=user_id,
                 provider=provider,
@@ -60,7 +64,7 @@ class AIService:
                 prompt_tokens=usage.prompt_tokens,
                 completion_tokens=usage.completion_tokens,
                 total_tokens=usage.total_tokens,
-                cost=usage.estimated_cost,
+                cost=estimated_cost,
                 latency_ms=latency,
                 success=success,
                 error_message=error_msg
@@ -183,3 +187,30 @@ class AIService:
         except Exception as e:
             logger.error(f"Streaming failed for provider {active_provider}. Error: {e}")
             raise e
+
+    async def generate_embeddings(
+        self,
+        text: str,
+        provider: Optional[str] = None,
+        model: Optional[str] = None
+    ) -> List[float]:
+        active_provider = provider or settings.EMBEDDING_PROVIDER
+        active_model = model or settings.EMBEDDING_MODEL
+        
+        try:
+            provider_client = ProviderFactory.get_provider(active_provider)
+            response = await provider_client.generate_embeddings(text, active_model)
+            
+            # Validate embedding dimension compatibility
+            expected_dim = settings.EMBEDDING_DIMENSION
+            actual_dim = len(response.embedding)
+            if actual_dim != expected_dim:
+                raise ValueError(
+                    f"Embedding dimension mismatch. "
+                    f"Expected: {expected_dim}, Got: {actual_dim} from model: {active_model}."
+                )
+            return response.embedding
+        except Exception as e:
+            logger.error(f"Embedding generation failed for provider {active_provider}. Error: {e}")
+            raise e
+
