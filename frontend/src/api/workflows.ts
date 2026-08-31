@@ -244,3 +244,69 @@ export const approveWorkflowExecution = async (
     body: JSON.stringify({ approved, comments })
   });
 };
+
+export interface WorkflowApproval {
+  id: string;
+  execution_id: string;
+  workflow_id: string;
+  workflow_node_id?: string | null;
+  workspace_id: string;
+  node_key: string;
+  requested_by: string;
+  assigned_roles: string[];
+  assigned_users: string[];
+  status: string;
+  policy: string;
+  required_count: number;
+  requester_can_approve: boolean;
+  title: string;
+  message?: string | null;
+  timeout_seconds: number;
+  expires_at?: string | null;
+  decided_by?: string | null;
+  decided_at?: string | null;
+  decision?: string | null;
+  reason?: string | null;
+  decision_history: any[];
+  created_at: string;
+  updated_at: string;
+}
+
+export const getWorkflowApprovals = async (params?: {
+  status?: string;
+  limit?: number;
+  offset?: number;
+}): Promise<{ approvals: WorkflowApproval[]; total: number }> => {
+  const query = new URLSearchParams();
+  if (params?.status) query.set('status', params.status);
+  if (params?.limit) query.set('limit', String(params.limit));
+  if (params?.offset) query.set('offset', String(params.offset));
+  const qStr = query.toString();
+  return request<{ approvals: WorkflowApproval[]; total: number }>(`/workflows/approvals${qStr ? `?${qStr}` : ''}`, {
+    method: 'GET'
+  });
+};
+
+export const getWorkflowApproval = async (approvalId: string): Promise<WorkflowApproval> => {
+  return request<WorkflowApproval>(`/workflows/approvals/${approvalId}`, { method: 'GET' });
+};
+
+export const approveWorkflowApproval = async (
+  approvalId: string,
+  reason?: string
+): Promise<WorkflowApproval> => {
+  return request<WorkflowApproval>(`/workflows/approvals/${approvalId}/approve`, {
+    method: 'POST',
+    body: JSON.stringify({ decision: 'approved', reason })
+  });
+};
+
+export const rejectWorkflowApproval = async (
+  approvalId: string,
+  reason?: string
+): Promise<WorkflowApproval> => {
+  return request<WorkflowApproval>(`/workflows/approvals/${approvalId}/reject`, {
+    method: 'POST',
+    body: JSON.stringify({ decision: 'rejected', reason })
+  });
+};

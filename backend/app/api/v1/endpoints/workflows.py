@@ -29,7 +29,10 @@ from app.schemas.workflow import (
     WorkflowExecutionNodeResponse,
     WorkflowDefinitionUpdate,
     WorkflowCloneRequest,
-    WorkflowApproveRequest
+    WorkflowApproveRequest,
+    WorkflowApprovalDecisionRequest,
+    WorkflowApprovalResponse,
+    WorkflowApprovalListResponse
 )
 from app.services.workflow import (
     WorkflowService,
@@ -37,6 +40,7 @@ from app.services.workflow import (
     WorkflowArchivedError
 )
 from app.services.workflow_execution import WorkflowExecutionService
+from app.services.workflow_approval import WorkflowApprovalService
 
 router = APIRouter(prefix="/workflows", tags=["Workflows Engine"])
 
@@ -420,6 +424,99 @@ async def approve_workflow_execution(
             approved=payload.approved
         )
         return execution
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+
+# ---------------------------------------------------------
+# Approval Governance Endpoints
+# ---------------------------------------------------------
+
+@router.get("/approvals", response_model=WorkflowApprovalListResponse, dependencies=[Depends(check_rate_limit)])
+async def list_workflow_approvals(
+    status: Optional[str] = Query(None, description="Filter by approval status: pending, approved, rejected, expired, cancelled"),
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Lists approval requests within the active workspace.
+    """
+    workspace_id = resolve_workspace_id(current_user, db)
+    service = WorkflowApprovalService(db)
+    approvals, total = service.list_approvals(workspace_id, status=status, limit=limit, offset=offset)
+    return WorkflowApprovalListResponse(approvals=approvals, total=total, limit=limit, offset=offset)
+
+@router.get("/approvals/{approval_id}", response_model=WorkflowApprovalResponse, dependencies=[Depends(check_rate_limit)])
+async def get_workflow_approval(
+    approval_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Retrieves details for a specific workflow approval request under tenant isolation.
+    """
+    workspace_id = resolve_workspace_id(current_user, db)
+    service = WorkflowApprovalService(db)
+    approval = service.get_approval(approval_id, workspace_id)
+    if not approval:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Approval request '{approval_id}' not found."
+        )
+    return approval
+
+@router.post("/approvals/{approval_id}/approve", response_model=WorkflowApprovalResponse, dependencies=[Depends(check_rate_limit)])
+async def approve_workflow_approval(
+    approval_id: uuid.UUID,
+    payload: Optional[WorkflowApprovalDecisionRequest] = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Records an authorized human approval decision and resumes workflow execution.
+    """
+    workspace_id = resolve_workspace_id(current_user, db)
+    service = WorkflowApprovalService(db)
+    reason = payload.reason if payload else None
+    try:
+        approval = service.approve(approval_id, workspace_id, current_user, reason=reason)
+        return approval
+    except PermissionError as e:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(e)
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+
+@router.post("/approvals/{approval_id}/reject", response_model=WorkflowApprovalResponse, dependencies=[Depends(check_rate_limit)])
+async def reject_workflow_approval(
+    approval_id: uuid.UUID,
+    payload: Optional[WorkflowApprovalDecisionRequest] = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Records an authorized human rejection decision and terminates workflow execution.
+    """
+    workspace_id = resolve_workspace_id(current_user, db)
+    service = WorkflowApprovalService(db)
+    reason = payload.reason if payload else None
+    try:
+        approval = service.reject(approval_id, workspace_id, current_user, reason=reason)
+        return approval
+    except PermissionError as e:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(e)
+        )
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

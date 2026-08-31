@@ -76,11 +76,16 @@ class ConditionNodeConfig(BaseNodeConfig):
     false_target: Optional[str] = None
 
 class HumanApprovalNodeConfig(BaseNodeConfig):
+    title: Optional[str] = "Approval Request"
     prompt: Optional[str] = "Please review and approve this step."
     approval_message: Optional[str] = None
     timeout_seconds: int = 86400
     timeout: Optional[int] = 86400
     approver_roles: Optional[List[str]] = Field(default_factory=lambda: ["admin"])
+    approver_users: Optional[List[str]] = Field(default_factory=list)
+    policy: Optional[str] = "single_approver"
+    required_count: Optional[int] = 1
+    requester_can_approve: Optional[bool] = False
 
 class TransformNodeConfig(BaseNodeConfig):
     mapping: Optional[Dict[str, Any]] = Field(default_factory=dict)
@@ -301,3 +306,43 @@ class WorkflowCloneRequest(BaseModel):
 class WorkflowApproveRequest(BaseModel):
     approved: bool = True
     comments: Optional[str] = None
+    reason: Optional[str] = None
+
+class WorkflowApprovalDecisionRequest(BaseModel):
+    decision: str = "approved"  # "approved" or "rejected"
+    reason: Optional[str] = None
+
+class WorkflowApprovalResponse(BaseModel):
+    id: uuid.UUID
+    execution_id: uuid.UUID
+    workflow_id: uuid.UUID
+    workflow_node_id: Optional[uuid.UUID] = None
+    workspace_id: uuid.UUID
+    node_key: str
+    requested_by: uuid.UUID
+    assigned_roles: List[str] = Field(default_factory=list)
+    assigned_users: List[str] = Field(default_factory=list)
+    status: str
+    policy: str
+    required_count: int
+    requester_can_approve: bool
+    title: str
+    message: Optional[str] = None
+    timeout_seconds: int
+    expires_at: Optional[datetime.datetime] = None
+    decided_by: Optional[uuid.UUID] = None
+    decided_at: Optional[datetime.datetime] = None
+    decision: Optional[str] = None
+    reason: Optional[str] = None
+    decision_history: List[Dict[str, Any]] = Field(default_factory=list)
+    created_at: datetime.datetime
+    updated_at: datetime.datetime
+
+    class Config:
+        from_attributes = True
+
+class WorkflowApprovalListResponse(BaseModel):
+    approvals: List[WorkflowApprovalResponse]
+    total: int
+    limit: int
+    offset: int

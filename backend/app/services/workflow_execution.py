@@ -791,6 +791,15 @@ class WorkflowExecutionService:
                 )
 
                 if node_out.get("status") == "waiting_approval":
+                    from app.services.workflow_approval import WorkflowApprovalService
+                    approval_svc = WorkflowApprovalService(self.db)
+                    approval_req = approval_svc.create_approval_request(
+                        execution=execution,
+                        node_def=node_def,
+                        requested_by_id=user_id
+                    )
+
+                    node_out["approval_id"] = str(approval_req.id)
                     exec_node.status = WorkflowNodeStatus.WAITING
                     exec_node.output_data = node_out
                     context.node_statuses[node_key] = "waiting"
@@ -798,7 +807,12 @@ class WorkflowExecutionService:
                     self.db.flush()
 
                     execution.status = WorkflowExecutionStatus.WAITING
-                    execution.output_data = {"waiting_for_node": node_key, "approval_id": node_out.get("approval_id")}
+                    execution.output_data = {
+                        "waiting_for_node": node_key,
+                        "approval_id": str(approval_req.id),
+                        "approval_title": approval_req.title,
+                        "expires_at": approval_req.expires_at.isoformat() if approval_req.expires_at else None
+                    }
                     self.db.commit()
                     is_waiting_approval = True
                     break
@@ -942,6 +956,12 @@ class WorkflowExecutionService:
         if execution.status in [WorkflowExecutionStatus.RUNNING, WorkflowExecutionStatus.PENDING, WorkflowExecutionStatus.WAITING]:
             execution.status = WorkflowExecutionStatus.CANCELLED
             execution.completed_at = datetime.datetime.now(datetime.timezone.utc)
+
+            # Cancel pending approvals
+            from app.services.workflow_approval import WorkflowApprovalService
+            approval_svc = WorkflowApprovalService(self.db)
+            approval_svc.cancel_by_execution(execution.id, workspace_id)
+
             self.db.commit()
             self.db.refresh(execution)
 

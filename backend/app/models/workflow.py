@@ -154,6 +154,7 @@ class WorkflowExecution(Base, AuditMixin):
     # Relationships
     workflow = relationship("Workflow", back_populates="executions")
     execution_nodes = relationship("WorkflowExecutionNode", back_populates="execution", cascade="all, delete-orphan", order_by="WorkflowExecutionNode.created_at")
+    approval_requests = relationship("WorkflowApprovalRequest", back_populates="execution", cascade="all, delete-orphan", order_by="WorkflowApprovalRequest.created_at")
 
 class WorkflowExecutionNode(Base, AuditMixin):
     __tablename__ = "workflow_execution_nodes"
@@ -180,3 +181,68 @@ class WorkflowExecutionNode(Base, AuditMixin):
 
 # Compatibility alias for legacy schema lookups
 WorkflowLog = WorkflowExecutionNode
+
+
+class WorkflowApprovalStatus(str, enum.Enum):
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    EXPIRED = "expired"
+    CANCELLED = "cancelled"
+
+
+class WorkflowApprovalPolicy(str, enum.Enum):
+    SINGLE_APPROVER = "single_approver"
+    ANY_APPROVER = "any_approver"
+    ALL_APPROVERS = "all_approvers"
+
+
+class WorkflowApprovalRequest(Base, AuditMixin):
+    __tablename__ = "workflow_approval_requests"
+
+    execution_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workflow_executions.id", ondelete="CASCADE"), nullable=False, index=True)
+    workflow_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workflows.id", ondelete="CASCADE"), nullable=False, index=True)
+    workflow_node_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("workflow_nodes.id", ondelete="SET NULL"), nullable=True, index=True)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False, index=True)
+    node_key: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+
+    requested_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    assigned_roles: Mapped[List[str]] = mapped_column(JSON, default=list, nullable=False)
+    assigned_users: Mapped[List[str]] = mapped_column(JSON, default=list, nullable=False)
+
+    status: Mapped[WorkflowApprovalStatus] = mapped_column(
+        Enum(WorkflowApprovalStatus, native_enum=False, values_callable=lambda x: [e.value for e in x]),
+        default=WorkflowApprovalStatus.PENDING,
+        nullable=False,
+        index=True
+    )
+    policy: Mapped[WorkflowApprovalPolicy] = mapped_column(
+        Enum(WorkflowApprovalPolicy, native_enum=False, values_callable=lambda x: [e.value for e in x]),
+        default=WorkflowApprovalPolicy.SINGLE_APPROVER,
+        nullable=False
+    )
+    required_count: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    requester_can_approve: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+    title: Mapped[str] = mapped_column(String(200), default="Approval Request", nullable=False)
+    message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    timeout_seconds: Mapped[int] = mapped_column(Integer, default=86400, nullable=False)
+    expires_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # Decision outcome
+    decided_by: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    decided_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    decision: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # Decision Audit trail
+    decision_history: Mapped[List[Dict[str, Any]]] = mapped_column(JSON, default=list, nullable=False)
+    metadata_payload: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+
+    # Relationships
+    execution = relationship("WorkflowExecution", foreign_keys=[execution_id], back_populates="approval_requests")
+    workflow = relationship("Workflow", foreign_keys=[workflow_id])
+    node = relationship("WorkflowNode", foreign_keys=[workflow_node_id])
+    requester = relationship("User", foreign_keys=[requested_by])
+    decider = relationship("User", foreign_keys=[decided_by])
+

@@ -38,9 +38,11 @@ import {
   getWorkflowExecutions,
   cloneWorkflow
 } from '../../api/workflows';
+import UserWorkflowApprovals from './UserWorkflowApprovals';
 
 export default function UserWorkflows({ addLog, triggerNotification }) {
   const navigate = useNavigate();
+  const [activeTab, setActiveTab] = useState('workflows'); // 'workflows' | 'approvals'
   const [workflows, setWorkflows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedWorkflow, setSelectedWorkflow] = useState(null);
@@ -258,25 +260,57 @@ export default function UserWorkflows({ addLog, triggerNotification }) {
         </div>
 
         <div className="flex items-center gap-3">
-          <button
-            onClick={fetchWorkflows}
-            className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm font-medium border border-slate-700 transition"
-          >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-            Refresh
-          </button>
-          <button
-            onClick={() => setShowCreateModal(true)}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium shadow-lg shadow-indigo-600/20 transition"
-          >
-            <Plus className="w-4 h-4" />
-            New Workflow
-          </button>
+          <div className="flex bg-slate-950/80 p-1 rounded-xl border border-slate-800 text-xs">
+            <button
+              onClick={() => setActiveTab('workflows')}
+              className={`px-3.5 py-1.5 rounded-lg font-semibold transition ${
+                activeTab === 'workflows'
+                  ? 'bg-indigo-600 text-white shadow'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              Workflows
+            </button>
+            <button
+              onClick={() => setActiveTab('approvals')}
+              className={`px-3.5 py-1.5 rounded-lg font-semibold transition ${
+                activeTab === 'approvals'
+                  ? 'bg-indigo-600 text-white shadow'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              Approval Center
+            </button>
+          </div>
+
+          {activeTab === 'workflows' && (
+            <>
+              <button
+                onClick={fetchWorkflows}
+                className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm font-medium border border-slate-700 transition"
+              >
+                <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+                Refresh
+              </button>
+              <button
+                onClick={() => setShowCreateModal(true)}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium shadow-lg shadow-indigo-600/20 transition"
+              >
+                <Plus className="w-4 h-4" />
+                New Workflow
+              </button>
+            </>
+          )}
         </div>
       </div>
 
-      {/* Validation Banner if active */}
-      {validationResult && (
+      {/* RENDER ACTIVE TAB */}
+      {activeTab === 'approvals' ? (
+        <UserWorkflowApprovals addLog={addLog} triggerNotification={triggerNotification} />
+      ) : (
+        <>
+          {/* Validation Banner if active */}
+          {validationResult && (
         <div className={`p-4 rounded-xl border ${validationResult.valid ? 'bg-emerald-950/30 border-emerald-800/40 text-emerald-300' : 'bg-rose-950/30 border-rose-800/40 text-rose-300'}`}>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -443,6 +477,8 @@ export default function UserWorkflows({ addLog, triggerNotification }) {
             </div>
           ))}
         </div>
+      )}
+      </>
       )}
 
       {/* Create Modal */}
