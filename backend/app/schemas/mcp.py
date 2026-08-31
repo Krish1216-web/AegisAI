@@ -304,3 +304,39 @@ class MCPPromptRenderResponse(BaseModel):
     messages: List[MCPPromptMessageSchema] = Field(default_factory=list)
     untrusted: bool = True
 
+# ==========================================
+# Phase 6.6 Security & Permission Schemas
+# ==========================================
+
+class MCPSecurityStatusResponse(BaseModel):
+    workspace_id: str
+    user_id: str
+    user_role: str
+    policy_engine_active: bool
+    trust_label_policy: str
+    active_permissions: List[str]
+    total_servers: int
+    total_tools: int
+    total_resources: int
+    total_prompts: int
+    confirmation_gate_active: bool
+    ssrf_defense_active: bool
+
+class MCPSecurityAuditEventSchema(BaseModel):
+    id: str
+    event_type: str
+    user_id: str
+    workspace_id: str
+    server_id: Optional[str] = None
+    capability_id: Optional[str] = None
+    operation: str
+    decision: str
+    reason_code: str
+    timestamp: str
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
+class MCPSecurityAuditLogResponse(BaseModel):
+    events: List[MCPSecurityAuditEventSchema]
+    total: int
+
+

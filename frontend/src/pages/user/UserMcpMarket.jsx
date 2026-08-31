@@ -48,12 +48,19 @@ import {
   searchMCPPrompts,
   renderMCPPrompt,
   enableMCPPrompt,
-  disableMCPPrompt
+  disableMCPPrompt,
+  getMCPSecurityStatus,
+  getMCPSecurityAuditLog
 } from '../../api/mcp';
 
 export default function UserMcpMarket({ triggerNotification }) {
-  // Top Level Mode: 'servers' | 'tools'
+  // Top Level Mode: 'servers' | 'tools' | 'resources' | 'prompts' | 'security'
   const [activeMode, setActiveMode] = useState('servers');
+
+  // Security & Audit State (Phase 6.6)
+  const [securityStatus, setSecurityStatus] = useState(null);
+  const [auditLogs, setAuditLogs] = useState([]);
+  const [isLoadingSecurity, setIsLoadingSecurity] = useState(false);
 
   // Servers State
   const [servers, setServers] = useState([]);
@@ -215,6 +222,23 @@ export default function UserMcpMarket({ triggerNotification }) {
     }
   };
 
+  const fetchSecurityData = async () => {
+    setIsLoadingSecurity(true);
+    try {
+      const [statusRes, auditRes] = await Promise.all([
+        getMCPSecurityStatus(),
+        getMCPSecurityAuditLog(50)
+      ]);
+      setSecurityStatus(statusRes);
+      setAuditLogs(auditRes.events || []);
+    } catch (err) {
+      console.error('Failed to load MCP security data:', err);
+      triggerNotification?.('Error', 'Failed to load MCP security status.');
+    } finally {
+      setIsLoadingSecurity(false);
+    }
+  };
+
   useEffect(() => {
     fetchServers();
   }, []);
@@ -235,6 +259,8 @@ export default function UserMcpMarket({ triggerNotification }) {
         fetchPrompts();
       }, 250);
       return () => clearTimeout(timer);
+    } else if (activeMode === 'security') {
+      fetchSecurityData();
     }
   }, [activeMode, toolSearchQuery, selectedRiskFilter, resourceSearchQuery, promptSearchQuery]);
 
@@ -525,6 +551,17 @@ export default function UserMcpMarket({ triggerNotification }) {
           >
             <MessageSquare className="w-3.5 h-3.5" />
             <span>Prompts</span>
+          </button>
+          <button
+            onClick={() => setActiveMode('security')}
+            className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition ${
+              activeMode === 'security'
+                ? 'bg-indigo-600 text-white shadow-sm'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+            }`}
+          >
+            <Shield className="w-3.5 h-3.5" />
+            <span>Security & Audit</span>
           </button>
         </div>
       </div>
@@ -1054,6 +1091,166 @@ export default function UserMcpMarket({ triggerNotification }) {
                 </div>
               ))}
             </div>
+          )}
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* VIEW MODE 5: SECURITY & AUDIT CONTROL PLANE (PHASE 6.6) */}
+      {/* ========================================================================= */}
+      {activeMode === 'security' && (
+        <div className="space-y-6">
+          {/* Header Action */}
+          <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3">
+            <div>
+              <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                <Shield className="w-4 h-4 text-emerald-400" />
+                Security, RBAC & Audit Control Plane
+              </h3>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Deterministic security policy evaluation, capability-level permissions, content trust boundaries, and real-time audit event logging.
+              </p>
+            </div>
+            <button
+              onClick={fetchSecurityData}
+              disabled={isLoadingSecurity}
+              className="px-3.5 py-2 bg-slate-900 border border-slate-800 hover:bg-slate-800 text-slate-300 text-xs font-semibold rounded-xl flex items-center justify-center gap-1.5 transition"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isLoadingSecurity ? 'animate-spin text-indigo-400' : ''}`} />
+              <span>Refresh Security Status</span>
+            </button>
+          </div>
+
+          {isLoadingSecurity ? (
+            <div className="flex items-center justify-center py-16 text-slate-400 text-xs gap-2">
+              <RefreshCw className="w-4 h-4 animate-spin text-indigo-400" />
+              <span>Querying security status and audit records...</span>
+            </div>
+          ) : (
+            <>
+              {/* Security Metrics Overview Cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="p-4 rounded-2xl bg-slate-900/80 border border-slate-800 space-y-1">
+                  <span className="text-[10px] text-slate-400 uppercase font-semibold">Policy Engine</span>
+                  <div className="flex items-center justify-between">
+                    <strong className="text-sm text-emerald-400 flex items-center gap-1.5">
+                      <CheckCircle2 className="w-3.5 h-3.5" /> Active (Precedence Mode)
+                    </strong>
+                  </div>
+                  <p className="text-[11px] text-slate-500">Enforces Auth &rarr; Tenant &rarr; RBAC &rarr; Risk</p>
+                </div>
+
+                <div className="p-4 rounded-2xl bg-slate-900/80 border border-slate-800 space-y-1">
+                  <span className="text-[10px] text-slate-400 uppercase font-semibold">Content Trust Boundary</span>
+                  <div className="flex items-center justify-between">
+                    <strong className="text-sm text-purple-300 font-mono">UNTRUSTED_MCP</strong>
+                  </div>
+                  <p className="text-[11px] text-slate-500">External prompt & tool injection defense</p>
+                </div>
+
+                <div className="p-4 rounded-2xl bg-slate-900/80 border border-slate-800 space-y-1">
+                  <span className="text-[10px] text-slate-400 uppercase font-semibold">Restricted Tool Gate</span>
+                  <div className="flex items-center justify-between">
+                    <strong className="text-sm text-amber-400 flex items-center gap-1.5">
+                      <Shield className="w-3.5 h-3.5" /> Single-Use Confirmation
+                    </strong>
+                  </div>
+                  <p className="text-[11px] text-slate-500">Cryptographically bound token replay defense</p>
+                </div>
+
+                <div className="p-4 rounded-2xl bg-slate-900/80 border border-slate-800 space-y-1">
+                  <span className="text-[10px] text-slate-400 uppercase font-semibold">Network & SSRF Guard</span>
+                  <div className="flex items-center justify-between">
+                    <strong className="text-sm text-emerald-400 flex items-center gap-1.5">
+                      <CheckCircle2 className="w-3.5 h-3.5" /> Hardened
+                    </strong>
+                  </div>
+                  <p className="text-[11px] text-slate-500">Blocks 127.0.0.1, 169.254.169.254, file://</p>
+                </div>
+              </div>
+
+              {/* Active RBAC Permissions */}
+              {securityStatus && (
+                <div className="p-5 rounded-2xl bg-slate-900/80 border border-slate-800 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Layers className="w-4 h-4 text-indigo-400" />
+                      <h4 className="text-xs font-bold text-white uppercase tracking-wider">Active Workspace Permissions</h4>
+                    </div>
+                    <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 uppercase">
+                      Role: {securityStatus.user_role}
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    {(securityStatus.active_permissions || []).map((perm) => (
+                      <span
+                        key={perm}
+                        className="px-2.5 py-1 rounded-lg text-xs font-mono bg-slate-950 border border-slate-800 text-slate-300 flex items-center gap-1.5"
+                      >
+                        <CheckCircle className="w-3 h-3 text-emerald-400" />
+                        <span>{perm}</span>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Real-time Security Audit Log */}
+              <div className="p-5 rounded-2xl bg-slate-900/80 border border-slate-800 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Clock className="w-4 h-4 text-indigo-400" />
+                    <h4 className="text-xs font-bold text-white uppercase tracking-wider">Recent MCP Security Audit Events</h4>
+                  </div>
+                  <span className="text-[10px] text-slate-400 font-mono">{auditLogs.length} events recorded</span>
+                </div>
+
+                {auditLogs.length === 0 ? (
+                  <div className="p-6 rounded-xl bg-slate-950 border border-slate-800 text-center text-xs text-slate-400">
+                    No MCP security audit events recorded yet for this workspace.
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs text-slate-300">
+                      <thead>
+                        <tr className="border-b border-slate-800 text-[10px] uppercase font-semibold text-slate-500">
+                          <th className="p-2.5">Decision</th>
+                          <th className="p-2.5">Event</th>
+                          <th className="p-2.5">Reason Code</th>
+                          <th className="p-2.5">Capability / Target</th>
+                          <th className="p-2.5">Timestamp</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-800/60 font-mono text-[11px]">
+                        {auditLogs.map((ev) => (
+                          <tr key={ev.id} className="hover:bg-slate-800/30 transition">
+                            <td className="p-2.5">
+                              <span
+                                className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                  ev.decision === 'ALLOW'
+                                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                                    : ev.decision === 'REQUIRE_CONFIRMATION'
+                                    ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                                    : 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                                }`}
+                              >
+                                {ev.decision}
+                              </span>
+                            </td>
+                            <td className="p-2.5 font-bold text-white">{ev.event_type}</td>
+                            <td className="p-2.5 text-slate-400">{ev.reason_code}</td>
+                            <td className="p-2.5 text-indigo-300 truncate max-w-[150px]">
+                              {ev.capability_id ? `Cap: ${ev.capability_id.slice(0, 8)}...` : ev.server_id ? `Server: ${ev.server_id.slice(0, 8)}...` : '—'}
+                            </td>
+                            <td className="p-2.5 text-slate-500">{new Date(ev.timestamp).toLocaleTimeString()}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </>
           )}
         </div>
       )}

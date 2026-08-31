@@ -205,16 +205,14 @@ class MCPResourceService:
         resource_id: uuid.UUID,
         timeout: float = 15.0
     ) -> MCPResourceContent:
-        cap, server = self._get_resource_and_server(user_id, workspace_id, resource_id)
+        # Central Security Layer Check
+        from app.services.mcp.mcp_security import MCPSecurityService, MCPSecurityDecisionEnum
+        sec_service = MCPSecurityService(self.db, self.redis)
+        decision = sec_service.evaluate_resource_read(user_id, workspace_id, resource_id)
+        if decision.decision != MCPSecurityDecisionEnum.ALLOW:
+            raise MCPValidationError(f"Cannot read resource: {decision.reason}")
 
-        if not server.enabled:
-            raise MCPValidationError(f"Cannot read resource: MCP server '{server.name}' is disabled.")
-        if server.status != MCPServerStatus.ACTIVE:
-            raise MCPValidationError(f"Cannot read resource: MCP server '{server.name}' status is {server.status.value}.")
-        if not cap.enabled:
-            raise MCPValidationError(f"Cannot read resource: Resource '{cap.name}' is disabled.")
-        if cap.is_stale:
-            raise MCPValidationError(f"Cannot read resource: Resource '{cap.name}' is stale / deleted.")
+        cap, server = self._get_resource_and_server(user_id, workspace_id, resource_id)
 
         # Extract and validate URI
         formatted = self._format_resource(cap, server)

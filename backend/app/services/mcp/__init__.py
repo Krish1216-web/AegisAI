@@ -8,6 +8,13 @@ from app.services.mcp.mcp_tool_executor import (
 )
 from app.services.mcp.mcp_resource_service import MCPResourceService
 from app.services.mcp.mcp_prompt_service import MCPPromptService
+from app.services.mcp.mcp_security import (
+    MCPSecurityService,
+    MCPSecurityDecisionEnum,
+    MCPSecurityReasonCode,
+    MCPSecurityDecision,
+    MCPTrustLabel
+)
 
 __all__ = [
     "MCPRegistryService",
@@ -18,4 +25,9 @@ __all__ = [
     "verify_and_consume_confirmation_token",
     "MCPResourceService",
     "MCPPromptService",
+    "MCPSecurityService",
+    "MCPSecurityDecisionEnum",
+    "MCPSecurityReasonCode",
+    "MCPSecurityDecision",
+    "MCPTrustLabel",
 ]

@@ -67,10 +67,11 @@ def verify_and_consume_confirmation_token(
     if not token or token not in _CONFIRMATION_TOKENS:
         return False
 
-    entry = _CONFIRMATION_TOKENS.pop(token) # Single-use consumption
+    entry = _CONFIRMATION_TOKENS[token]
     now = datetime.datetime.now(datetime.timezone.utc)
 
     if now > entry["expires_at"]:
+        _CONFIRMATION_TOKENS.pop(token, None)
         logger.warning("MCP tool confirmation token expired.")
         return False
 
@@ -85,6 +86,8 @@ def verify_and_consume_confirmation_token(
         logger.warning("MCP tool confirmation token binding mismatch.")
         return False
 
+    # Valid match -> consume token for single use
+    _CONFIRMATION_TOKENS.pop(token, None)
     return True
 
 
@@ -191,40 +194,31 @@ class MCPToolExecutionService:
         start_time = time.perf_counter()
         execution_id = str(uuid.uuid4())
 
-        # 1. Validate Tool and Server Tenant Existence
-        cap, server = self.validate_tool_and_server(user_id, workspace_id, tool_id)
-
-        # 2. Validate Arguments Schema
-        valid_args = self.validate_arguments(arguments, cap.input_schema)
-
-        # 3. Assess Safety & Risk Policy
-        risk = ToolRiskPolicy.assess_tool(
-            name=cap.name,
-            description=cap.description,
-            input_schema=cap.input_schema,
-            meta_data=cap.meta_data
+        # 1. Central MCP Security Layer Evaluation (Tenant, RBAC, Risk, Confirmation)
+        from app.services.mcp.mcp_security import MCPSecurityService, MCPSecurityDecisionEnum
+        sec_service = MCPSecurityService(self.db, self.redis)
+        decision = sec_service.evaluate_tool_execution(
+            user_id=user_id,
+            workspace_id=workspace_id,
+            tool_id=tool_id,
+            arguments=arguments,
+            confirmation_token=confirmation_token
         )
 
-        if risk["risk_level"] == ToolRiskLevel.INVALID.value:
-            raise MCPValidationError(f"Tool execution denied: Tool is classified as INVALID. Reasons: {', '.join(risk['risk_reasons'])}")
-
-        if risk["risk_level"] == ToolRiskLevel.RESTRICTED.value:
-            if not confirmation_token:
-                raise MCPToolConfirmationRequired(
-                    message=f"Human confirmation required to execute RESTRICTED tool '{cap.name}'.",
-                    tool_id=str(cap.id),
-                    risk_reasons=risk["risk_reasons"]
-                )
-
-            valid_conf = verify_and_consume_confirmation_token(
-                token=confirmation_token,
-                user_id=user_id,
-                workspace_id=workspace_id,
-                tool_id=tool_id,
-                arguments=valid_args
+        if decision.decision == MCPSecurityDecisionEnum.REQUIRE_CONFIRMATION:
+            raise MCPToolConfirmationRequired(
+                message=decision.reason,
+                tool_id=str(tool_id),
+                risk_reasons=decision.risk_reasons
             )
-            if not valid_conf:
-                raise MCPValidationError("Invalid or expired tool execution confirmation token.")
+        elif decision.decision == MCPSecurityDecisionEnum.DENY:
+            raise MCPValidationError(f"Tool execution denied: {decision.reason}")
+
+        # 2. Retrieve capability and server
+        cap, server = self.validate_tool_and_server(user_id, workspace_id, tool_id)
+
+        # 3. Validate Arguments Schema
+        valid_args = self.validate_arguments(arguments, cap.input_schema)
 
         # 4. Acquire Concurrency Lock
         lock_key = f"aegis:mcp:exec:{tool_id}:{user_id}"

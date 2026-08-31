@@ -202,16 +202,14 @@ class MCPPromptService:
         arguments: Dict[str, Any],
         timeout: float = 15.0
     ) -> MCPPromptRenderResult:
-        cap, server = self._get_prompt_and_server(user_id, workspace_id, prompt_id)
+        # Central Security Layer Check
+        from app.services.mcp.mcp_security import MCPSecurityService, MCPSecurityDecisionEnum
+        sec_service = MCPSecurityService(self.db, self.redis)
+        decision = sec_service.evaluate_prompt_render(user_id, workspace_id, prompt_id, arguments)
+        if decision.decision != MCPSecurityDecisionEnum.ALLOW:
+            raise MCPValidationError(f"Cannot render prompt: {decision.reason}")
 
-        if not server.enabled:
-            raise MCPValidationError(f"Cannot render prompt: MCP server '{server.name}' is disabled.")
-        if server.status != MCPServerStatus.ACTIVE:
-            raise MCPValidationError(f"Cannot render prompt: MCP server '{server.name}' status is {server.status.value}.")
-        if not cap.enabled:
-            raise MCPValidationError(f"Cannot render prompt: Prompt template '{cap.name}' is disabled.")
-        if cap.is_stale:
-            raise MCPValidationError(f"Cannot render prompt: Prompt template '{cap.name}' is stale / deleted.")
+        cap, server = self._get_prompt_and_server(user_id, workspace_id, prompt_id)
 
         # Validate arguments against prompt definition
         formatted = self._format_prompt(cap, server)

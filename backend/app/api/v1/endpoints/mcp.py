@@ -37,7 +37,10 @@ from app.schemas.mcp import (
     MCPPromptSearchRequest,
     MCPPromptSearchResponse,
     MCPPromptRenderRequest,
-    MCPPromptRenderResponse
+    MCPPromptRenderResponse,
+    MCPSecurityStatusResponse,
+    MCPSecurityAuditLogResponse,
+    MCPSecurityAuditEventSchema
 )
 from app.services.mcp.mcp_registry import MCPRegistryService
 from app.services.mcp.mcp_discovery import MCPDiscoveryService
@@ -48,6 +51,7 @@ from app.services.mcp.mcp_tool_executor import (
 )
 from app.services.mcp.mcp_resource_service import MCPResourceService
 from app.services.mcp.mcp_prompt_service import MCPPromptService
+from app.services.mcp.mcp_security import MCPSecurityService
 from app.core.mcp.base import MCPValidationError, MCPClientError, MCPToolConfirmationRequired
 from app.api.v1.endpoints.documents import resolve_workspace_id
 
@@ -913,5 +917,40 @@ def disable_mcp_prompt(
     if not res:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="MCP prompt not found.")
     return MCPPromptResponse(**res)
+
+# ==========================================
+# 4. Phase 6.6 Security & Permission Endpoints
+# ==========================================
+
+@router.get("/security/status", response_model=MCPSecurityStatusResponse, dependencies=[Depends(check_rate_limit)])
+def get_mcp_security_status(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Returns real-time workspace security policy status, active RBAC permissions, and risk metrics.
+    """
+    workspace_id = resolve_workspace_id(current_user, db)
+    sec_service = MCPSecurityService(db)
+    status_data = sec_service.get_security_status(current_user.id, workspace_id)
+    return MCPSecurityStatusResponse(**status_data)
+
+@router.get("/security/audit-log", response_model=MCPSecurityAuditLogResponse, dependencies=[Depends(check_rate_limit)])
+def get_mcp_security_audit_log(
+    limit: int = Query(50, ge=1, le=100),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Retrieves recent security audit events for the active workspace.
+    """
+    workspace_id = resolve_workspace_id(current_user, db)
+    sec_service = MCPSecurityService(db)
+    events = sec_service.get_workspace_audit_log(current_user.id, workspace_id, limit=limit)
+    return MCPSecurityAuditLogResponse(
+        events=[MCPSecurityAuditEventSchema(**e) for e in events],
+        total=len(events)
+    )
+
 
 

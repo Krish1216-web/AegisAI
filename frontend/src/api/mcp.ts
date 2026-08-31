@@ -538,4 +538,46 @@ export async function disableMCPPrompt(promptId: string): Promise<MCPPrompt> {
   });
 }
 
+// ==========================================
+// Phase 6.6 Security & Permission APIs
+// ==========================================
+
+export interface MCPSecurityStatus {
+  workspace_id: string;
+  user_id: string;
+  user_role: string;
+  policy_engine_active: boolean;
+  trust_label_policy: string;
+  active_permissions: string[];
+  total_servers: number;
+  total_tools: number;
+  total_resources: number;
+  total_prompts: number;
+  confirmation_gate_active: boolean;
+  ssrf_defense_active: boolean;
+}
+
+export interface MCPSecurityAuditEvent {
+  id: string;
+  event_type: string;
+  user_id: string;
+  workspace_id: string;
+  server_id?: string;
+  capability_id?: string;
+  operation: string;
+  decision: string;
+  reason_code: string;
+  timestamp: string;
+  metadata: Record<string, any>;
+}
+
+export async function getMCPSecurityStatus(): Promise<MCPSecurityStatus> {
+  return request('/security/status');
+}
+
+export async function getMCPSecurityAuditLog(limit: number = 50): Promise<{ events: MCPSecurityAuditEvent[]; total: number }> {
+  return request(`/security/audit-log?limit=${limit}`);
+}
+
+
 
