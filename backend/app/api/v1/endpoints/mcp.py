@@ -40,7 +40,15 @@ from app.schemas.mcp import (
     MCPPromptRenderResponse,
     MCPSecurityStatusResponse,
     MCPSecurityAuditLogResponse,
-    MCPSecurityAuditEventSchema
+    MCPSecurityAuditEventSchema,
+    MCPOverviewMetricsResponse,
+    MCPServerMetricsSchema,
+    MCPCapabilityMetricsSchema,
+    MCPSecurityMetricsSchema,
+    MCPExecutionMetricsSchema,
+    MCPHealthMetricsSchema,
+    MCPExecutionHistoryResponse,
+    MCPExecutionHistoryItem
 )
 from app.services.mcp.mcp_registry import MCPRegistryService
 from app.services.mcp.mcp_discovery import MCPDiscoveryService
@@ -950,6 +958,170 @@ def get_mcp_security_audit_log(
     return MCPSecurityAuditLogResponse(
         events=[MCPSecurityAuditEventSchema(**e) for e in events],
         total=len(events)
+    )
+
+# ==========================================
+# 5. Phase 6.8 MCP Control Center Overview & History
+# ==========================================
+
+@router.get("/overview", response_model=MCPOverviewMetricsResponse, dependencies=[Depends(check_rate_limit)])
+def get_mcp_overview_metrics(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Aggregates real-time live metrics across servers, capabilities, security decisions, health, and execution history.
+    """
+    workspace_id = resolve_workspace_id(current_user, db)
+    from app.models.mcp import MCPServer, MCPCapability, MCPServerStatus, MCPCapabilityType
+    from app.models.ai import ToolExecution, Execution
+
+    # 1. Servers Metrics
+    servers_q = db.query(MCPServer).filter(MCPServer.workspace_id == workspace_id)
+    total_servers = servers_q.count()
+    active_servers = servers_q.filter(MCPServer.status == MCPServerStatus.ACTIVE, MCPServer.enabled == True).count()
+    inactive_servers = servers_q.filter(MCPServer.status == MCPServerStatus.INACTIVE).count()
+    error_servers = servers_q.filter(MCPServer.status == MCPServerStatus.ERROR).count()
+    disabled_servers = servers_q.filter(MCPServer.enabled == False).count()
+
+    # 2. Capabilities Metrics
+    caps_q = db.query(MCPCapability).join(MCPServer, MCPCapability.server_id == MCPServer.id).filter(MCPServer.workspace_id == workspace_id)
+    total_tools = caps_q.filter(MCPCapability.capability_type == MCPCapabilityType.TOOL).count()
+    total_resources = caps_q.filter(MCPCapability.capability_type == MCPCapabilityType.RESOURCE).count()
+    total_prompts = caps_q.filter(MCPCapability.capability_type == MCPCapabilityType.PROMPT).count()
+    enabled_caps = caps_q.filter(MCPCapability.enabled == True, MCPCapability.is_stale == False).count()
+    stale_caps = caps_q.filter(MCPCapability.is_stale == True).count()
+
+    # 3. Security Metrics
+    sec_service = MCPSecurityService(db)
+    audit_events = sec_service.get_workspace_audit_log(current_user.id, workspace_id, limit=200)
+    allowed_ops = sum(1 for e in audit_events if e.get("decision") == "ALLOW")
+    conf_ops = sum(1 for e in audit_events if e.get("decision") == "REQUIRE_CONFIRMATION")
+    denied_ops = sum(1 for e in audit_events if e.get("decision") == "DENY")
+
+    # 4. Execution Metrics
+    exec_q = db.query(ToolExecution).join(Execution, ToolExecution.execution_id == Execution.id).filter(Execution.workspace_id == workspace_id)
+    total_execs = exec_q.count()
+    success_execs = exec_q.filter(ToolExecution.status == "COMPLETED").count()
+    failed_execs = exec_q.filter(ToolExecution.status == "FAILED").count()
+    req_conf_execs = exec_q.filter(ToolExecution.status == "REQUIRES_CONFIRMATION").count()
+
+    # 5. Health Metrics
+    healthy_servers = active_servers
+    unhealthy_servers = total_servers - healthy_servers
+    latest_server = servers_q.order_by(MCPServer.last_discovery_at.desc().nullslast()).first()
+    latest_health = servers_q.order_by(MCPServer.last_health_check_at.desc().nullslast()).first()
+
+    return MCPOverviewMetricsResponse(
+        servers=MCPServerMetricsSchema(
+            total=total_servers,
+            active=active_servers,
+            inactive=inactive_servers,
+            error=error_servers,
+            disabled=disabled_servers
+        ),
+        capabilities=MCPCapabilityMetricsSchema(
+            total_tools=total_tools,
+            total_resources=total_resources,
+            total_prompts=total_prompts,
+            enabled_capabilities=enabled_caps,
+            stale_capabilities=stale_caps
+        ),
+        security=MCPSecurityMetricsSchema(
+            allowed_operations=allowed_ops,
+            confirmation_required_operations=conf_ops,
+            denied_operations=denied_ops,
+            recent_events_count=len(audit_events)
+        ),
+        execution=MCPExecutionMetricsSchema(
+            total=total_execs,
+            successful=success_execs,
+            failed=failed_execs,
+            requires_confirmation=req_conf_execs
+        ),
+        health=MCPHealthMetricsSchema(
+            healthy_servers=healthy_servers,
+            unhealthy_servers=unhealthy_servers,
+            last_discovery_at=latest_server.last_discovery_at.isoformat() if latest_server and latest_server.last_discovery_at else None,
+            last_health_check_at=latest_health.last_health_check_at.isoformat() if latest_health and latest_health.last_health_check_at else None
+        )
+    )
+
+@router.get("/executions", response_model=MCPExecutionHistoryResponse, dependencies=[Depends(check_rate_limit)])
+def get_mcp_execution_history(
+    status_filter: Optional[str] = Query(None, alias="status"),
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Retrieves tenant-isolated execution history records for tools run within the workspace.
+    """
+    workspace_id = resolve_workspace_id(current_user, db)
+    from app.models.ai import ToolExecution, Execution
+    from app.models.mcp import MCPCapability
+
+    query = db.query(ToolExecution, Execution).join(Execution, ToolExecution.execution_id == Execution.id).filter(Execution.workspace_id == workspace_id)
+    if status_filter:
+        query = query.filter(ToolExecution.status == status_filter)
+
+    total = query.count()
+    rows = query.order_by(ToolExecution.started_at.desc()).offset(offset).limit(limit).all()
+
+    # Pre-fetch capabilities to map human-readable names
+    cap_ids = []
+    for te, _ in rows:
+        try:
+            cap_ids.append(uuid.UUID(te.tool_id))
+        except Exception:
+            pass
+    
+    cap_map = {}
+    if cap_ids:
+        caps = db.query(MCPCapability).filter(MCPCapability.id.in_(cap_ids)).all()
+        cap_map = {str(c.id): c.name for c in caps}
+
+    history_items = []
+    for te, ex in rows:
+        duration_ms = None
+        if te.completed_at and te.started_at:
+            duration_ms = max(0.0, (te.completed_at - te.started_at).total_seconds() * 1000.0)
+
+        # Sanitize result preview (redacting sensitive keys)
+        res_preview = None
+        if te.result:
+            try:
+                import json
+                from app.core.mcp.security import CredentialStore
+                res_obj = json.loads(te.result)
+                if isinstance(res_obj, dict):
+                    redacted = CredentialStore.redact_sensitive_dict(res_obj)
+                    res_preview = json.dumps(redacted)
+                else:
+                    res_preview = str(te.result)[:200]
+            except Exception:
+                res_preview = str(te.result)[:200]
+
+        history_items.append(
+            MCPExecutionHistoryItem(
+                id=str(te.id),
+                execution_id=str(te.execution_id),
+                tool_id=te.tool_id,
+                tool_name=cap_map.get(te.tool_id, te.tool_id),
+                status=te.status,
+                started_at=te.started_at.isoformat() if te.started_at else "",
+                completed_at=te.completed_at.isoformat() if te.completed_at else None,
+                duration_ms=duration_ms,
+                retry_count=te.retry_count,
+                error=te.error,
+                result_preview=res_preview
+            )
+        )
+
+    return MCPExecutionHistoryResponse(
+        executions=history_items,
+        total=total
     )
 
 

@@ -579,5 +579,75 @@ export async function getMCPSecurityAuditLog(limit: number = 50): Promise<{ even
   return request(`/security/audit-log?limit=${limit}`);
 }
 
+// ==========================================
+// Phase 6.8 MCP Control Center & History APIs
+// ==========================================
+
+export interface MCPOverviewMetrics {
+  servers: {
+    total: number;
+    active: number;
+    inactive: number;
+    error: number;
+    disabled: number;
+  };
+  capabilities: {
+    total_tools: number;
+    total_resources: number;
+    total_prompts: number;
+    enabled_capabilities: number;
+    stale_capabilities: number;
+  };
+  security: {
+    allowed_operations: number;
+    confirmation_required_operations: number;
+    denied_operations: number;
+    recent_events_count: number;
+  };
+  execution: {
+    total: number;
+    successful: number;
+    failed: number;
+    requires_confirmation: number;
+  };
+  health: {
+    healthy_servers: number;
+    unhealthy_servers: number;
+    last_discovery_at?: string;
+    last_health_check_at?: string;
+  };
+}
+
+export interface MCPExecutionRecord {
+  id: string;
+  execution_id: string;
+  tool_id: string;
+  tool_name?: string;
+  status: string;
+  started_at: string;
+  completed_at?: string;
+  duration_ms?: number;
+  retry_count: number;
+  error?: string;
+  result_preview?: string;
+}
+
+export async function getMCPOverviewMetrics(): Promise<MCPOverviewMetrics> {
+  return request('/overview');
+}
+
+export async function getMCPExecutionHistory(params?: {
+  status?: string;
+  limit?: number;
+  offset?: number;
+}): Promise<{ executions: MCPExecutionRecord[]; total: number }> {
+  const query = new URLSearchParams();
+  if (params?.status) query.append('status', params.status);
+  if (params?.limit) query.append('limit', params.limit.toString());
+  if (params?.offset) query.append('offset', params.offset.toString());
+  const qs = query.toString();
+  return request(`/executions${qs ? `?${qs}` : ''}`);
+}
+
 
 

@@ -339,4 +339,64 @@ class MCPSecurityAuditLogResponse(BaseModel):
     events: List[MCPSecurityAuditEventSchema]
     total: int
 
+# ==========================================
+# Phase 6.8 MCP Control Center / Tool Hub Schemas
+# ==========================================
+
+class MCPServerMetricsSchema(BaseModel):
+    total: int = 0
+    active: int = 0
+    inactive: int = 0
+    error: int = 0
+    disabled: int = 0
+
+class MCPCapabilityMetricsSchema(BaseModel):
+    total_tools: int = 0
+    total_resources: int = 0
+    total_prompts: int = 0
+    enabled_capabilities: int = 0
+    stale_capabilities: int = 0
+
+class MCPSecurityMetricsSchema(BaseModel):
+    allowed_operations: int = 0
+    confirmation_required_operations: int = 0
+    denied_operations: int = 0
+    recent_events_count: int = 0
+
+class MCPExecutionMetricsSchema(BaseModel):
+    total: int = 0
+    successful: int = 0
+    failed: int = 0
+    requires_confirmation: int = 0
+
+class MCPHealthMetricsSchema(BaseModel):
+    healthy_servers: int = 0
+    unhealthy_servers: int = 0
+    last_discovery_at: Optional[str] = None
+    last_health_check_at: Optional[str] = None
+
+class MCPOverviewMetricsResponse(BaseModel):
+    servers: MCPServerMetricsSchema
+    capabilities: MCPCapabilityMetricsSchema
+    security: MCPSecurityMetricsSchema
+    execution: MCPExecutionMetricsSchema
+    health: MCPHealthMetricsSchema
+
+class MCPExecutionHistoryItem(BaseModel):
+    id: str
+    execution_id: str
+    tool_id: str
+    tool_name: Optional[str] = None
+    status: str
+    started_at: str
+    completed_at: Optional[str] = None
+    duration_ms: Optional[float] = None
+    retry_count: int = 0
+    error: Optional[str] = None
+    result_preview: Optional[str] = None
+
+class MCPExecutionHistoryResponse(BaseModel):
+    executions: List[MCPExecutionHistoryItem]
+    total: int
+
 

@@ -76,16 +76,37 @@ export default function UserChat({ logs, addLog, triggerNotification }) {
         setCurrentStep(2);
         addLog('Research', 'Crawling Tavily search engine and indexing resources...', 'running');
         break;
+      case 'MCP_TOOL_STARTED':
       case 'TOOL_STARTED':
         setCurrentStep(3);
         const tId = metadata?.tool_id || 'unnamed tool';
         setActiveToolName(tId);
-        addLog('Tool Executor', `Invoking tool: ${tId}...`, 'running');
+        addLog('Tool Executor', `Invoking MCP tool: ${tId}...`, 'running');
         break;
+      case 'MCP_TOOL_COMPLETED':
       case 'TOOL_COMPLETED':
         setCurrentStep(3);
         const compId = metadata?.tool_id || 'unnamed tool';
-        addLog('Tool Executor', `Tool execution completed: ${compId}`, 'success');
+        addLog('Tool Executor', `MCP Tool execution completed: ${compId}`, 'success');
+        break;
+      case 'MCP_RESOURCE_STARTED':
+        setCurrentStep(3);
+        addLog('MCP Resource', `Reading authorized workspace resource: ${metadata?.resource_id || ''}...`, 'running');
+        break;
+      case 'MCP_RESOURCE_COMPLETED':
+        setCurrentStep(3);
+        addLog('MCP Resource', 'Resource reading and sanitization completed.', 'success');
+        break;
+      case 'MCP_PROMPT_STARTED':
+        setCurrentStep(3);
+        addLog('MCP Prompt', `Rendering prompt template: ${metadata?.prompt_id || ''}...`, 'running');
+        break;
+      case 'MCP_PROMPT_COMPLETED':
+        setCurrentStep(3);
+        addLog('MCP Prompt', 'Prompt template rendered into untrusted context.', 'success');
+        break;
+      case 'MCP_SECURITY_DENIED':
+        addLog('MCP Security', `Security boundary rejected MCP operation: ${metadata?.reason || 'Forbidden'}`, 'error');
         break;
       case 'MEMORY_STARTED':
         setCurrentStep(4);
@@ -108,6 +129,7 @@ export default function UserChat({ logs, addLog, triggerNotification }) {
         }
         break;
       case 'ExecutionFailed':
+      case 'MCP_TOOL_FAILED':
         setCurrentStep(0);
         setIsRunning(false);
         const errMsg = eventData.error || 'The execution could not be completed.';
@@ -132,12 +154,13 @@ export default function UserChat({ logs, addLog, triggerNotification }) {
           executionId: execution_id
         }]);
         break;
+      case 'MCP_TOOL_CONFIRMATION_REQUIRED':
       case 'WAITING_FOR_CONFIRMATION':
         setIsRunning(false);
         setConfirmationToken(metadata?.confirmation_token);
-        setConfirmationTool(metadata?.tool_id || 'High-Risk Operation');
+        setConfirmationTool(metadata?.tool_id || 'High-Risk MCP Operation');
         setShowConfirmation(true);
-        addLog('SYS', `High-risk operation requires human confirmation token: ${metadata?.tool_id}`, 'warning');
+        addLog('SYS', `High-risk MCP operation requires human confirmation: ${metadata?.tool_id}`, 'warning');
         break;
       default:
         break;

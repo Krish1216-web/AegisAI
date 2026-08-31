@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Server, 
   Search, 
@@ -23,7 +23,16 @@ import {
   XCircle,
   Play,
   Copy,
-  Clock
+  Clock,
+  Star,
+  History,
+  BarChart3,
+  ExternalLink,
+  Lock,
+  Check,
+  Filter,
+  Eye,
+  Sliders
 } from 'lucide-react';
 import {
   listMCPServers,
@@ -39,6 +48,8 @@ import {
   getToolDetails,
   executeMCPTool,
   generateToolConfirmationToken,
+  enableMCPTool,
+  disableMCPTool,
   listMCPResources,
   searchMCPResources,
   readMCPResource,
@@ -50,22 +61,71 @@ import {
   enableMCPPrompt,
   disableMCPPrompt,
   getMCPSecurityStatus,
-  getMCPSecurityAuditLog
+  getMCPSecurityAuditLog,
+  getMCPOverviewMetrics,
+  getMCPExecutionHistory
 } from '../../api/mcp';
 
 export default function UserMcpMarket({ triggerNotification }) {
-  // Top Level Mode: 'servers' | 'tools' | 'resources' | 'prompts' | 'security'
-  const [activeMode, setActiveMode] = useState('servers');
+  // Top Level Navigation: 'overview' | 'servers' | 'tools' | 'resources' | 'prompts' | 'security' | 'history' | 'audit'
+  const [activeMode, setActiveMode] = useState('overview');
 
-  // Security & Audit State (Phase 6.6)
+  // Favorites / Pinning state persisted to localStorage
+  const [pinnedTools, setPinnedTools] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('aegis_pinned_mcp_tools') || '[]');
+    } catch {
+      return [];
+    }
+  });
+  const [pinnedServers, setPinnedServers] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('aegis_pinned_mcp_servers') || '[]');
+    } catch {
+      return [];
+    }
+  });
+
+  const togglePinTool = (id) => {
+    setPinnedTools((prev) => {
+      const next = prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id];
+      localStorage.setItem('aegis_pinned_mcp_tools', JSON.stringify(next));
+      return next;
+    });
+  };
+
+  const togglePinServer = (id) => {
+    setPinnedServers((prev) => {
+      const next = prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id];
+      localStorage.setItem('aegis_pinned_mcp_servers', JSON.stringify(next));
+      return next;
+    });
+  };
+
+  // Overview Dashboard State
+  const [overviewMetrics, setOverviewMetrics] = useState(null);
+  const [isLoadingOverview, setIsLoadingOverview] = useState(false);
+
+  // Security & Audit State
   const [securityStatus, setSecurityStatus] = useState(null);
   const [auditLogs, setAuditLogs] = useState([]);
   const [isLoadingSecurity, setIsLoadingSecurity] = useState(false);
+  const [auditDecisionFilter, setAuditDecisionFilter] = useState('all');
+  const [auditSearchQuery, setAuditSearchQuery] = useState('');
+
+  // Execution History State
+  const [executionHistory, setExecutionHistory] = useState([]);
+  const [historyTotal, setHistoryTotal] = useState(0);
+  const [historyStatusFilter, setHistoryStatusFilter] = useState('all');
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [selectedExecution, setSelectedExecution] = useState(null);
+  const [showExecutionDetailModal, setShowExecutionDetailModal] = useState(false);
 
   // Servers State
   const [servers, setServers] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [search, setSearch] = useState('');
+  const [isLoadingServers, setIsLoadingServers] = useState(true);
+  const [serverSearch, setServerSearch] = useState('');
+  const [serverFilterPinned, setServerFilterPinned] = useState(false);
   
   // Registration Modal State
   const [showRegisterModal, setShowRegisterModal] = useState(false);
@@ -81,7 +141,7 @@ export default function UserMcpMarket({ triggerNotification }) {
   const [showCapabilitiesModal, setShowCapabilitiesModal] = useState(false);
   const [selectedServer, setSelectedServer] = useState(null);
   const [capabilities, setCapabilities] = useState([]);
-  const [activeTab, setActiveTab] = useState('tool');
+  const [activeCapTab, setActiveCapTab] = useState('tool');
   const [capSearch, setCapSearch] = useState('');
   const [isLoadingCaps, setIsLoadingCaps] = useState(false);
   const [selectedCap, setSelectedCap] = useState(null);
@@ -89,11 +149,12 @@ export default function UserMcpMarket({ triggerNotification }) {
   // Discovery Summary Modal
   const [discoverySummary, setDiscoverySummary] = useState(null);
 
-  // Tool Catalog & Execution State (Phase 6.3 & 6.4)
+  // Tool Catalog & Execution State
   const [tools, setTools] = useState([]);
   const [isLoadingTools, setIsLoadingTools] = useState(false);
   const [toolSearchQuery, setToolSearchQuery] = useState('');
   const [selectedRiskFilter, setSelectedRiskFilter] = useState('all');
+  const [toolFilterPinned, setToolFilterPinned] = useState(false);
   const [selectedTool, setSelectedTool] = useState(null);
   const [showToolModal, setShowToolModal] = useState(false);
   const [toolModalTab, setToolModalTab] = useState('schema'); // 'schema' | 'execute'
@@ -102,13 +163,14 @@ export default function UserMcpMarket({ triggerNotification }) {
   const [executionResult, setExecutionResult] = useState(null);
   const [executionError, setExecutionError] = useState(null);
   const [restrictedConfirmed, setRestrictedConfirmed] = useState(false);
+  const [copiedResult, setCopiedResult] = useState(false);
 
   // In-flight state trackers
   const [discoveringIds, setDiscoveringIds] = useState(new Set());
   const [healthCheckingIds, setHealthCheckingIds] = useState(new Set());
   const [healthMetrics, setHealthMetrics] = useState({});
 
-  // Resources State (Phase 6.5)
+  // Resources State
   const [resources, setResources] = useState([]);
   const [isLoadingResources, setIsLoadingResources] = useState(false);
   const [resourceSearchQuery, setResourceSearchQuery] = useState('');
@@ -118,7 +180,7 @@ export default function UserMcpMarket({ triggerNotification }) {
   const [resourceContent, setResourceContent] = useState(null);
   const [resourceReadError, setResourceReadError] = useState(null);
 
-  // Prompts State (Phase 6.5)
+  // Prompts State
   const [prompts, setPrompts] = useState([]);
   const [isLoadingPrompts, setIsLoadingPrompts] = useState(false);
   const [promptSearchQuery, setPromptSearchQuery] = useState('');
@@ -129,19 +191,34 @@ export default function UserMcpMarket({ triggerNotification }) {
   const [renderedPrompt, setRenderedPrompt] = useState(null);
   const [promptRenderError, setPromptRenderError] = useState(null);
 
+  // Fetch Overview Metrics
+  const fetchOverviewMetrics = async () => {
+    setIsLoadingOverview(true);
+    try {
+      const data = await getMCPOverviewMetrics();
+      setOverviewMetrics(data);
+    } catch (err) {
+      console.error('Failed to load overview metrics:', err);
+    } finally {
+      setIsLoadingOverview(false);
+    }
+  };
+
+  // Fetch Servers
   const fetchServers = async () => {
-    setIsLoading(true);
+    setIsLoadingServers(true);
     try {
       const data = await listMCPServers();
       setServers(data.servers || []);
     } catch (err) {
       console.error('Failed to load MCP servers:', err);
-      triggerNotification?.('Error', 'Failed to load MCP servers from server.');
+      triggerNotification?.('Error', 'Failed to load MCP servers.');
     } finally {
-      setIsLoading(false);
+      setIsLoadingServers(false);
     }
   };
 
+  // Fetch Tools
   const fetchTools = async () => {
     setIsLoadingTools(true);
     try {
@@ -151,7 +228,7 @@ export default function UserMcpMarket({ triggerNotification }) {
           risk_level: selectedRiskFilter !== 'all' ? selectedRiskFilter : undefined,
           enabled_only: false,
           include_stale: true,
-          limit: 50
+          limit: 100
         });
         setTools(data.results || []);
       } else {
@@ -163,13 +240,14 @@ export default function UserMcpMarket({ triggerNotification }) {
         setTools(data.tools || []);
       }
     } catch (err) {
-      console.error('Failed to load tool catalog:', err);
-      triggerNotification?.('Error', 'Failed to load tools catalog.');
+      console.error('Failed to load tools:', err);
+      triggerNotification?.('Error', 'Failed to load MCP tools catalog.');
     } finally {
       setIsLoadingTools(false);
     }
   };
 
+  // Fetch Resources
   const fetchResources = async () => {
     setIsLoadingResources(true);
     try {
@@ -196,6 +274,7 @@ export default function UserMcpMarket({ triggerNotification }) {
     }
   };
 
+  // Fetch Prompts
   const fetchPrompts = async () => {
     setIsLoadingPrompts(true);
     try {
@@ -222,12 +301,13 @@ export default function UserMcpMarket({ triggerNotification }) {
     }
   };
 
+  // Fetch Security Data
   const fetchSecurityData = async () => {
     setIsLoadingSecurity(true);
     try {
       const [statusRes, auditRes] = await Promise.all([
         getMCPSecurityStatus(),
-        getMCPSecurityAuditLog(50)
+        getMCPSecurityAuditLog(100)
       ]);
       setSecurityStatus(statusRes);
       setAuditLogs(auditRes.events || []);
@@ -239,31 +319,51 @@ export default function UserMcpMarket({ triggerNotification }) {
     }
   };
 
+  // Fetch Execution History
+  const fetchExecutionHistory = async () => {
+    setIsLoadingHistory(true);
+    try {
+      const data = await getMCPExecutionHistory({
+        status: historyStatusFilter !== 'all' ? historyStatusFilter : undefined,
+        limit: 100
+      });
+      setExecutionHistory(data.executions || []);
+      setHistoryTotal(data.total || 0);
+    } catch (err) {
+      console.error('Failed to load execution history:', err);
+    } finally {
+      setIsLoadingHistory(false);
+    }
+  };
+
+  // Initial loads and mode transitions
   useEffect(() => {
+    fetchOverviewMetrics();
     fetchServers();
   }, []);
 
   useEffect(() => {
-    if (activeMode === 'tools') {
-      const timer = setTimeout(() => {
-        fetchTools();
-      }, 250);
+    if (activeMode === 'overview') {
+      fetchOverviewMetrics();
+    } else if (activeMode === 'servers') {
+      fetchServers();
+    } else if (activeMode === 'tools') {
+      const timer = setTimeout(() => fetchTools(), 200);
       return () => clearTimeout(timer);
     } else if (activeMode === 'resources') {
-      const timer = setTimeout(() => {
-        fetchResources();
-      }, 250);
+      const timer = setTimeout(() => fetchResources(), 200);
       return () => clearTimeout(timer);
     } else if (activeMode === 'prompts') {
-      const timer = setTimeout(() => {
-        fetchPrompts();
-      }, 250);
+      const timer = setTimeout(() => fetchPrompts(), 200);
       return () => clearTimeout(timer);
-    } else if (activeMode === 'security') {
+    } else if (activeMode === 'security' || activeMode === 'audit') {
       fetchSecurityData();
+    } else if (activeMode === 'history') {
+      fetchExecutionHistory();
     }
-  }, [activeMode, toolSearchQuery, selectedRiskFilter, resourceSearchQuery, promptSearchQuery]);
+  }, [activeMode, toolSearchQuery, selectedRiskFilter, resourceSearchQuery, promptSearchQuery, historyStatusFilter]);
 
+  // Server Handlers
   const handleRegister = async (e) => {
     e.preventDefault();
     setFormError('');
@@ -287,6 +387,7 @@ export default function UserMcpMarket({ triggerNotification }) {
       setServerUrl('');
       setDescription('');
       fetchServers();
+      fetchOverviewMetrics();
     } catch (err) {
       setFormError(err.message || 'Failed to register server.');
     } finally {
@@ -304,11 +405,87 @@ export default function UserMcpMarket({ triggerNotification }) {
         triggerNotification?.('Server Enabled', `Enabled '${server.name}'`);
       }
       fetchServers();
+      fetchOverviewMetrics();
     } catch (err) {
       triggerNotification?.('Error', err.message || 'Failed to toggle server state.');
     }
   };
 
+  const handleDelete = async (server) => {
+    if (!window.confirm(`Are you sure you want to delete MCP server '${server.name}'?`)) return;
+    try {
+      await deleteMCPServer(server.id);
+      triggerNotification?.('Deleted', `Removed MCP server '${server.name}'`);
+      fetchServers();
+      fetchOverviewMetrics();
+    } catch (err) {
+      triggerNotification?.('Error', err.message || 'Failed to delete server.');
+    }
+  };
+
+  const handleHealthCheck = async (server) => {
+    setHealthCheckingIds(prev => new Set(prev).add(server.id));
+    try {
+      const res = await checkServerHealth(server.id);
+      setHealthMetrics(prev => ({ ...prev, [server.id]: res }));
+      triggerNotification?.(
+        res.is_healthy ? 'Health Check Passed' : 'Health Check Failed',
+        res.is_healthy 
+          ? `Server '${server.name}' is healthy (${res.latency_ms}ms latency)` 
+          : `Server '${server.name}' returned error: ${res.error}`
+      );
+      fetchServers();
+      fetchOverviewMetrics();
+    } catch (err) {
+      triggerNotification?.('Health Check Error', err.message || 'Failed to execute health check');
+    } finally {
+      setHealthCheckingIds(prev => {
+        const next = new Set(prev);
+        next.delete(server.id);
+        return next;
+      });
+    }
+  };
+
+  const handleRefreshDiscovery = async (server) => {
+    setDiscoveringIds(prev => new Set(prev).add(server.id));
+    try {
+      const res = await refreshServerDiscovery(server.id, true);
+      setDiscoverySummary(res);
+      triggerNotification?.(
+        'Discovery Refreshed',
+        `Discovered ${res.total_tools} tools, ${res.total_resources} resources, ${res.total_prompts} prompts.`
+      );
+      fetchServers();
+      fetchOverviewMetrics();
+    } catch (err) {
+      triggerNotification?.('Discovery Error', err.message || 'Failed to run discovery refresh');
+    } finally {
+      setDiscoveringIds(prev => {
+        const next = new Set(prev);
+        next.delete(server.id);
+        return next;
+      });
+    }
+  };
+
+  const handleOpenCapabilities = async (server) => {
+    setSelectedServer(server);
+    setSelectedCap(null);
+    setShowCapabilitiesModal(true);
+    setIsLoadingCaps(true);
+    try {
+      const data = await listServerCapabilities(server.id, undefined, undefined, true, 200, 0);
+      setCapabilities(data.capabilities || []);
+    } catch (err) {
+      console.error('Failed to load server capabilities:', err);
+      triggerNotification?.('Error', 'Failed to retrieve server capabilities.');
+    } finally {
+      setIsLoadingCaps(false);
+    }
+  };
+
+  // Tool Handlers
   const handleToggleToolEnable = async (tool) => {
     try {
       if (tool.enabled) {
@@ -327,135 +504,106 @@ export default function UserMcpMarket({ triggerNotification }) {
     }
   };
 
-  const handleDelete = async (server) => {
-    if (!window.confirm(`Are you sure you want to delete MCP server '${server.name}'?`)) return;
-    try {
-      await deleteMCPServer(server.id);
-      triggerNotification?.('Deleted', `Removed MCP server '${server.name}'`);
-      fetchServers();
-    } catch (err) {
-      triggerNotification?.('Error', err.message || 'Failed to delete server.');
-    }
+  const handleOpenToolModal = (tool) => {
+    setSelectedTool(tool);
+    setToolModalTab('schema');
+    setExecutionResult(null);
+    setExecutionError(null);
+    setRestrictedConfirmed(false);
+    setCopiedResult(false);
+    
+    // Initialize default execution arguments from input schema
+    const initialArgs = {};
+    const props = tool.input_schema?.properties || {};
+    Object.keys(props).forEach((key) => {
+      const prop = props[key];
+      if (prop.default !== undefined) {
+        initialArgs[key] = prop.default;
+      } else if (prop.type === 'number' || prop.type === 'integer') {
+        initialArgs[key] = 0;
+      } else if (prop.type === 'boolean') {
+        initialArgs[key] = false;
+      } else if (prop.type === 'array') {
+        initialArgs[key] = [];
+      } else if (prop.type === 'object') {
+        initialArgs[key] = {};
+      } else {
+        initialArgs[key] = '';
+      }
+    });
+    setExecutionArgs(initialArgs);
+    setShowToolModal(true);
   };
 
-  const handleHealthCheck = async (server) => {
-    setHealthCheckingIds(prev => new Set(prev).add(server.id));
-    try {
-      const res = await checkServerHealth(server.id);
-      setHealthMetrics(prev => ({ ...prev, [server.id]: res }));
-      triggerNotification?.(
-        res.is_healthy ? 'Health Check Passed' : 'Health Check Failed',
-        res.is_healthy 
-          ? `Server '${server.name}' is healthy (${res.latency_ms}ms latency)` 
-          : `Server '${server.name}' returned error: ${res.error}`
-      );
-      fetchServers();
-    } catch (err) {
-      triggerNotification?.('Health Check Error', err.message || 'Failed to complete health check.');
-    } finally {
-      setHealthCheckingIds(prev => {
-        const next = new Set(prev);
-        next.delete(server.id);
-        return next;
-      });
-    }
-  };
-
-  const handleRefreshDiscovery = async (server, force = true) => {
-    setDiscoveringIds(prev => new Set(prev).add(server.id));
-    try {
-      const res = await refreshServerDiscovery(server.id, force);
-      setDiscoverySummary(res);
-      triggerNotification?.(
-        'Discovery Refreshed', 
-        `Synchronized ${res.total_tools} tools (+${res.tools_added}, ~${res.tools_changed}), ${res.total_resources} resources, ${res.total_prompts} prompts.`
-      );
-      fetchServers();
-    } catch (err) {
-      triggerNotification?.('Discovery Failed', err.message || 'Failed to discover capabilities.');
-    } finally {
-      setDiscoveringIds(prev => {
-        const next = new Set(prev);
-        next.delete(server.id);
-        return next;
-      });
-    }
-  };
-
-  const handleViewCapabilities = async (server) => {
-    setSelectedServer(server);
-    setShowCapabilitiesModal(true);
-    setIsLoadingCaps(true);
-    setSelectedCap(null);
-    setCapSearch('');
-    try {
-      const res = await listServerCapabilities(server.id, undefined, undefined, true);
-      setCapabilities(res.capabilities || []);
-    } catch (err) {
-      triggerNotification?.('Error', err.message || 'Failed to load capabilities.');
-    } finally {
-      setIsLoadingCaps(false);
-    }
-  };
-
-  // Phase 6.4: Tool Execution Handler
-  const handleExecute = async () => {
+  const handleExecuteTool = async () => {
     if (!selectedTool) return;
     setIsExecuting(true);
     setExecutionError(null);
     setExecutionResult(null);
+    setCopiedResult(false);
 
     try {
-      let confirmationToken = undefined;
-      if (selectedTool.risk_level === 'restricted') {
+      let confToken = undefined;
+      // Handle confirmation for restricted tools
+      if (selectedTool.risk_level === 'restricted' || selectedTool.policy_decision === 'require_confirmation') {
+        if (!restrictedConfirmed) {
+          throw new Error('Please confirm the risk warning checkbox before executing this restricted operation.');
+        }
         const confRes = await generateToolConfirmationToken(selectedTool.id, executionArgs);
-        confirmationToken = confRes.token;
+        confToken = confRes.token;
       }
 
       const res = await executeMCPTool(selectedTool.id, {
         arguments: executionArgs,
-        confirmation_token: confirmationToken,
-        timeout: 20.0
+        confirmation_token: confToken,
+        timeout: 20
       });
+
       setExecutionResult(res);
-      triggerNotification?.('Tool Executed', `Executed '${selectedTool.name}' in ${res.duration_ms}ms`);
+      triggerNotification?.('Execution Succeeded', `Tool '${selectedTool.name}' ran in ${res.duration_ms}ms`);
+      fetchExecutionHistory();
+      fetchOverviewMetrics();
     } catch (err) {
-      setExecutionError(err.message || 'Tool execution failed');
-      triggerNotification?.('Execution Failed', err.message || 'Tool execution failed');
+      console.error('Tool execution error:', err);
+      setExecutionError(err.message || 'Execution failed.');
+      triggerNotification?.('Execution Error', err.message || 'Failed to execute tool.');
     } finally {
       setIsExecuting(false);
     }
   };
 
-  const handleReadResource = async (resource) => {
+  // Resource Handlers
+  const handleOpenResource = async (resource) => {
     setSelectedResource(resource);
     setShowResourceModal(true);
     setIsReadingResource(true);
-    setResourceReadError(null);
     setResourceContent(null);
+    setResourceReadError(null);
 
     try {
-      const res = await readMCPResource(resource.id);
+      const res = await readMCPResource(resource.id, 20);
       setResourceContent(res);
-      triggerNotification?.('Resource Loaded', `Successfully read '${resource.name}'`);
     } catch (err) {
-      setResourceReadError(err.message || 'Failed to read resource content');
-      triggerNotification?.('Read Failed', err.message || 'Failed to read resource');
+      console.error('Resource read error:', err);
+      setResourceReadError(err.message || 'Failed to read resource content.');
     } finally {
       setIsReadingResource(false);
     }
   };
 
+  // Prompt Handlers
   const handleOpenPrompt = (prompt) => {
     setSelectedPrompt(prompt);
     setShowPromptModal(true);
-    setPromptRenderError(null);
     setRenderedPrompt(null);
-    const initial = {};
+    setPromptRenderError(null);
+
+    // Initialize prompt arguments
+    const initArgs = {};
     (prompt.arguments || []).forEach(arg => {
-      initial[arg.name] = '';
+      initArgs[arg.name] = '';
     });
-    setPromptArgs(initial);
+    setPromptArgs(initArgs);
   };
 
   const handleRenderPrompt = async () => {
@@ -465,123 +613,342 @@ export default function UserMcpMarket({ triggerNotification }) {
     setRenderedPrompt(null);
 
     try {
-      const res = await renderMCPPrompt(selectedPrompt.id, promptArgs);
+      const res = await renderMCPPrompt(selectedPrompt.id, promptArgs, 20);
       setRenderedPrompt(res);
-      triggerNotification?.('Prompt Rendered', `Rendered '${selectedPrompt.name}' template.`);
+      triggerNotification?.('Prompt Rendered', `Template '${selectedPrompt.name}' rendered ${res.messages.length} messages.`);
     } catch (err) {
-      setPromptRenderError(err.message || 'Failed to render prompt template');
-      triggerNotification?.('Render Failed', err.message || 'Failed to render prompt');
+      console.error('Prompt render error:', err);
+      setPromptRenderError(err.message || 'Failed to render prompt template.');
     } finally {
       setIsRenderingPrompt(false);
     }
   };
 
-  const filteredServers = servers.filter(item => 
-    item.name.toLowerCase().includes(search.toLowerCase()) || 
-    item.server_url.toLowerCase().includes(search.toLowerCase()) ||
-    item.transport.toLowerCase().includes(search.toLowerCase())
-  );
+  // Filtered Lists
+  const filteredServers = useMemo(() => {
+    let list = servers.filter(s => 
+      s.name.toLowerCase().includes(serverSearch.toLowerCase()) ||
+      s.server_url.toLowerCase().includes(serverSearch.toLowerCase()) ||
+      (s.description && s.description.toLowerCase().includes(serverSearch.toLowerCase()))
+    );
+    if (serverFilterPinned) {
+      list = list.filter(s => pinnedServers.includes(s.id));
+    }
+    return list;
+  }, [servers, serverSearch, serverFilterPinned, pinnedServers]);
 
-  const filterCapabilities = (list) => {
-    if (!capSearch.trim()) return list;
-    const term = capSearch.toLowerCase();
-    return list.filter(c => c.name.toLowerCase().includes(term) || (c.description && c.description.toLowerCase().includes(term)));
-  };
+  const filteredTools = useMemo(() => {
+    let list = tools;
+    if (toolFilterPinned) {
+      list = list.filter(t => pinnedTools.includes(t.id));
+    }
+    return list;
+  }, [tools, toolFilterPinned, pinnedTools]);
 
-  const toolsList = filterCapabilities(capabilities.filter(c => c.capability_type === 'tool'));
-  const resourcesList = filterCapabilities(capabilities.filter(c => c.capability_type === 'resource'));
-  const promptsList = filterCapabilities(capabilities.filter(c => c.capability_type === 'prompt'));
+  const filteredAuditLogs = useMemo(() => {
+    let list = auditLogs;
+    if (auditDecisionFilter !== 'all') {
+      list = list.filter(e => e.decision === auditDecisionFilter);
+    }
+    if (auditSearchQuery.trim()) {
+      const q = auditSearchQuery.toLowerCase();
+      list = list.filter(e => 
+        e.operation.toLowerCase().includes(q) ||
+        (e.capability_id && e.capability_id.toLowerCase().includes(q)) ||
+        (e.reason_code && e.reason_code.toLowerCase().includes(q))
+      );
+    }
+    return list;
+  }, [auditLogs, auditDecisionFilter, auditSearchQuery]);
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto pb-12">
-      {/* Header Section */}
+    <div className="flex flex-col gap-6 text-slate-300 animate-fade-in max-w-7xl mx-auto pb-12">
+      
+      {/* Top Header & Breadcrumb */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-5">
         <div>
-          <h2 className="text-xl font-bold text-white tracking-tight flex items-center gap-2.5">
-            <Server className="w-5 h-5 text-indigo-400" />
-            Model Context Protocol (MCP) Ecosystem
+          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-indigo-400 mb-1">
+            <Layers className="w-3.5 h-3.5" />
+            <span>AegisAI Cognitive Engine &bull; Extensible Platform</span>
+          </div>
+          <h2 className="text-2xl font-bold text-white tracking-tight flex items-center gap-2.5">
+            <Server className="w-6 h-6 text-indigo-400" />
+            MCP Control Center &amp; Tool Hub
           </h2>
           <p className="text-xs text-slate-400 mt-1">
-            Manage external tool server connections, discover dynamic tools, inspect JSON Schemas, read secure resources, and render prompt templates.
+            Centrally manage Model Context Protocol servers, execute verified tools, preview workspace resources, test prompt templates, and inspect security audit policies.
           </p>
         </div>
 
-        {/* Mode Switcher Tabs */}
-        <div className="flex items-center bg-slate-900 border border-slate-800 p-1 rounded-xl">
+        {/* Global Refresh Button */}
+        <div className="flex items-center gap-2">
           <button
-            onClick={() => setActiveMode('servers')}
-            className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition ${
-              activeMode === 'servers'
-                ? 'bg-indigo-600 text-white shadow-sm'
-                : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
-            }`}
+            onClick={() => {
+              if (activeMode === 'overview') fetchOverviewMetrics();
+              else if (activeMode === 'servers') fetchServers();
+              else if (activeMode === 'tools') fetchTools();
+              else if (activeMode === 'resources') fetchResources();
+              else if (activeMode === 'prompts') fetchPrompts();
+              else if (activeMode === 'security' || activeMode === 'audit') fetchSecurityData();
+              else if (activeMode === 'history') fetchExecutionHistory();
+            }}
+            className="p-2 bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 hover:text-white rounded-xl text-xs flex items-center gap-1.5 transition"
+            title="Refresh current view data"
           >
-            <Server className="w-3.5 h-3.5" />
-            <span>Servers ({servers.length})</span>
-          </button>
-          <button
-            onClick={() => setActiveMode('tools')}
-            className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition ${
-              activeMode === 'tools'
-                ? 'bg-indigo-600 text-white shadow-sm'
-                : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
-            }`}
-          >
-            <Wrench className="w-3.5 h-3.5" />
-            <span>Tools</span>
-          </button>
-          <button
-            onClick={() => setActiveMode('resources')}
-            className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition ${
-              activeMode === 'resources'
-                ? 'bg-indigo-600 text-white shadow-sm'
-                : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
-            }`}
-          >
-            <FileCode className="w-3.5 h-3.5" />
-            <span>Resources</span>
-          </button>
-          <button
-            onClick={() => setActiveMode('prompts')}
-            className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition ${
-              activeMode === 'prompts'
-                ? 'bg-indigo-600 text-white shadow-sm'
-                : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
-            }`}
-          >
-            <MessageSquare className="w-3.5 h-3.5" />
-            <span>Prompts</span>
-          </button>
-          <button
-            onClick={() => setActiveMode('security')}
-            className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition ${
-              activeMode === 'security'
-                ? 'bg-indigo-600 text-white shadow-sm'
-                : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
-            }`}
-          >
-            <Shield className="w-3.5 h-3.5" />
-            <span>Security & Audit</span>
+            <RefreshCw className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Refresh</span>
           </button>
         </div>
       </div>
 
+      {/* Navigation Tabs */}
+      <div className="flex items-center bg-slate-900/90 border border-slate-800 p-1.5 rounded-2xl overflow-x-auto gap-1 shadow-inner scrollbar-none">
+        {[
+          { id: 'overview', label: 'Overview', icon: BarChart3 },
+          { id: 'servers', label: `Servers (${servers.length})`, icon: Server },
+          { id: 'tools', label: 'Tool Catalog', icon: Wrench },
+          { id: 'resources', label: 'Resources', icon: FileCode },
+          { id: 'prompts', label: 'Prompts', icon: MessageSquare },
+          { id: 'security', label: 'Security & RBAC', icon: Shield },
+          { id: 'history', label: `Execution History (${historyTotal})`, icon: History },
+          { id: 'audit', label: `Audit Log (${auditLogs.length})`, icon: Clock }
+        ].map((tab) => {
+          const Icon = tab.icon;
+          const isActive = activeMode === tab.id;
+          return (
+            <button
+              key={tab.id}
+              onClick={() => setActiveMode(tab.id)}
+              className={`px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 transition shrink-0 ${
+                isActive
+                  ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+              }`}
+            >
+              <Icon className="w-3.5 h-3.5" />
+              <span>{tab.label}</span>
+            </button>
+          );
+        })}
+      </div>
+
       {/* ========================================================================= */}
-      {/* VIEW MODE 1: SERVERS REGISTRY */}
+      {/* 1. OVERVIEW DASHBOARD */}
+      {/* ========================================================================= */}
+      {activeMode === 'overview' && (
+        <div className="space-y-6 animate-fade-in">
+          {/* Live Status Banner */}
+          <div className="p-5 rounded-2xl bg-gradient-to-r from-indigo-950/40 via-slate-900 to-purple-950/40 border border-indigo-500/20 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-xl">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 shrink-0">
+                <Activity className="w-5 h-5 animate-pulse" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-white flex items-center gap-2">
+                  <span>MCP Gateway &amp; Cognitive Subsystem</span>
+                  <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                    OPERATIONAL
+                  </span>
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Real-time synchronization with active LangGraph Multi-Agent cognitive pipeline and tenant policy enforcement.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-4 text-xs font-mono text-slate-400 bg-slate-950/60 px-4 py-2 rounded-xl border border-slate-800">
+              <div>
+                <span className="text-[10px] text-slate-500 block">LAST DISCOVERY</span>
+                <span className="text-slate-200">{overviewMetrics?.health.last_discovery_at ? new Date(overviewMetrics.health.last_discovery_at).toLocaleTimeString() : 'Ready'}</span>
+              </div>
+              <div className="w-px h-6 bg-slate-800" />
+              <div>
+                <span className="text-[10px] text-slate-500 block">HEALTH PROBE</span>
+                <span className="text-slate-200">{overviewMetrics?.health.last_health_check_at ? new Date(overviewMetrics.health.last_health_check_at).toLocaleTimeString() : 'Active'}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Metric KPI Grid */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* Servers KPI */}
+            <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 shadow-sm hover:border-slate-700 transition">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">MCP Servers</span>
+                <Server className="w-4 h-4 text-indigo-400" />
+              </div>
+              <div className="flex items-baseline gap-2 mt-3">
+                <span className="text-3xl font-bold text-white font-mono">{overviewMetrics?.servers.total ?? servers.length}</span>
+                <span className="text-xs text-emerald-400 font-medium">
+                  {overviewMetrics?.servers.active ?? servers.filter(s => s.status === 'active').length} active
+                </span>
+              </div>
+              <div className="flex items-center gap-2 mt-3 pt-3 border-t border-slate-800/80 text-[11px] text-slate-400">
+                <span>{overviewMetrics?.servers.disabled ?? 0} disabled</span>
+                <span>&bull;</span>
+                <span className={overviewMetrics?.servers.error ? 'text-rose-400' : 'text-slate-500'}>
+                  {overviewMetrics?.servers.error ?? 0} error
+                </span>
+              </div>
+            </div>
+
+            {/* Discovered Capabilities KPI */}
+            <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 shadow-sm hover:border-slate-700 transition">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Discovered Capabilities</span>
+                <Layers className="w-4 h-4 text-purple-400" />
+              </div>
+              <div className="flex items-baseline gap-2 mt-3">
+                <span className="text-3xl font-bold text-white font-mono">
+                  {(overviewMetrics?.capabilities.total_tools ?? 0) + (overviewMetrics?.capabilities.total_resources ?? 0) + (overviewMetrics?.capabilities.total_prompts ?? 0)}
+                </span>
+                <span className="text-xs text-purple-400 font-medium">
+                  {overviewMetrics?.capabilities.enabled_capabilities ?? 0} enabled
+                </span>
+              </div>
+              <div className="flex items-center gap-2 mt-3 pt-3 border-t border-slate-800/80 text-[11px] text-slate-400 font-mono">
+                <span>{overviewMetrics?.capabilities.total_tools ?? 0} tools</span>
+                <span>&bull;</span>
+                <span>{overviewMetrics?.capabilities.total_resources ?? 0} res</span>
+                <span>&bull;</span>
+                <span>{overviewMetrics?.capabilities.total_prompts ?? 0} prm</span>
+              </div>
+            </div>
+
+            {/* Security Decisions KPI */}
+            <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 shadow-sm hover:border-slate-700 transition">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Security Decisions</span>
+                <Shield className="w-4 h-4 text-emerald-400" />
+              </div>
+              <div className="flex items-baseline gap-2 mt-3">
+                <span className="text-3xl font-bold text-white font-mono">
+                  {overviewMetrics?.security.recent_events_count ?? auditLogs.length}
+                </span>
+                <span className="text-xs text-emerald-400 font-medium">
+                  {overviewMetrics?.security.allowed_operations ?? 0} allowed
+                </span>
+              </div>
+              <div className="flex items-center gap-2 mt-3 pt-3 border-t border-slate-800/80 text-[11px] text-slate-400">
+                <span className="text-amber-400">{overviewMetrics?.security.confirmation_required_operations ?? 0} gated</span>
+                <span>&bull;</span>
+                <span className={overviewMetrics?.security.denied_operations ? 'text-rose-400' : 'text-slate-500'}>
+                  {overviewMetrics?.security.denied_operations ?? 0} denied
+                </span>
+              </div>
+            </div>
+
+            {/* Tool Executions KPI */}
+            <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 shadow-sm hover:border-slate-700 transition">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Tool Executions</span>
+                <History className="w-4 h-4 text-amber-400" />
+              </div>
+              <div className="flex items-baseline gap-2 mt-3">
+                <span className="text-3xl font-bold text-white font-mono">{overviewMetrics?.execution.total ?? historyTotal}</span>
+                <span className="text-xs text-emerald-400 font-medium">
+                  {overviewMetrics?.execution.successful ?? 0} ok
+                </span>
+              </div>
+              <div className="flex items-center gap-2 mt-3 pt-3 border-t border-slate-800/80 text-[11px] text-slate-400">
+                <span className={overviewMetrics?.execution.failed ? 'text-rose-400' : 'text-slate-500'}>
+                  {overviewMetrics?.execution.failed ?? 0} failed
+                </span>
+                <span>&bull;</span>
+                <span>{overviewMetrics?.execution.requires_confirmation ?? 0} confirmed</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Quick Launch Cards */}
+          <div className="space-y-3">
+            <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Subsystem Navigation &amp; Tool Hub</h4>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div 
+                onClick={() => setActiveMode('servers')}
+                className="p-5 rounded-2xl bg-slate-900 border border-slate-800 hover:border-indigo-500/40 hover:bg-slate-900/90 transition cursor-pointer flex flex-col justify-between group shadow-sm"
+              >
+                <div>
+                  <div className="w-8 h-8 rounded-xl bg-indigo-500/10 text-indigo-400 flex items-center justify-center mb-3 group-hover:scale-110 transition">
+                    <Server className="w-4 h-4" />
+                  </div>
+                  <h4 className="text-sm font-bold text-white">Server Registry</h4>
+                  <p className="text-xs text-slate-400 mt-1">Connect, monitor, and refresh discovery for stdio, SSE, and HTTP transport servers.</p>
+                </div>
+                <div className="flex items-center text-xs font-semibold text-indigo-400 mt-4 gap-1">
+                  <span>Manage Servers ({servers.length})</span>
+                  <ChevronRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition" />
+                </div>
+              </div>
+
+              <div 
+                onClick={() => setActiveMode('tools')}
+                className="p-5 rounded-2xl bg-slate-900 border border-slate-800 hover:border-purple-500/40 hover:bg-slate-900/90 transition cursor-pointer flex flex-col justify-between group shadow-sm"
+              >
+                <div>
+                  <div className="w-8 h-8 rounded-xl bg-purple-500/10 text-purple-400 flex items-center justify-center mb-3 group-hover:scale-110 transition">
+                    <Wrench className="w-4 h-4" />
+                  </div>
+                  <h4 className="text-sm font-bold text-white">Tool Catalog &amp; Runner</h4>
+                  <p className="text-xs text-slate-400 mt-1">Browse schemas, evaluate risk classifications, and execute tools with single-use confirmation tokens.</p>
+                </div>
+                <div className="flex items-center text-xs font-semibold text-purple-400 mt-4 gap-1">
+                  <span>Browse Tools</span>
+                  <ChevronRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition" />
+                </div>
+              </div>
+
+              <div 
+                onClick={() => setActiveMode('security')}
+                className="p-5 rounded-2xl bg-slate-900 border border-slate-800 hover:border-emerald-500/40 hover:bg-slate-900/90 transition cursor-pointer flex flex-col justify-between group shadow-sm"
+              >
+                <div>
+                  <div className="w-8 h-8 rounded-xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center mb-3 group-hover:scale-110 transition">
+                    <Shield className="w-4 h-4" />
+                  </div>
+                  <h4 className="text-sm font-bold text-white">Security &amp; Audit Log</h4>
+                  <p className="text-xs text-slate-400 mt-1">Audit trust boundaries (UNTRUSTED_MCP), active RBAC privileges, and security events.</p>
+                </div>
+                <div className="flex items-center text-xs font-semibold text-emerald-400 mt-4 gap-1">
+                  <span>View Security Dashboard</span>
+                  <ChevronRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition" />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* 2. SERVERS REGISTRY */}
       {/* ========================================================================= */}
       {activeMode === 'servers' && (
-        <>
+        <div className="space-y-5 animate-fade-in">
           {/* Action Bar */}
           <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3">
-            <div className="relative flex-1 max-w-sm">
-              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-              <input
-                type="text"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search registered servers..."
-                className="bg-slate-900 border border-slate-800 rounded-xl py-2 pl-9 pr-4 text-xs text-slate-300 w-full outline-none focus:border-indigo-500 transition"
-              />
+            <div className="flex items-center gap-2 flex-1 max-w-md">
+              <div className="relative flex-1">
+                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                <input
+                  type="text"
+                  value={serverSearch}
+                  onChange={(e) => setServerSearch(e.target.value)}
+                  placeholder="Search registered servers..."
+                  className="bg-slate-900 border border-slate-800 rounded-xl py-2 pl-9 pr-4 text-xs text-slate-300 w-full outline-none focus:border-indigo-500 transition"
+                />
+              </div>
+              <button
+                onClick={() => setServerFilterPinned(!serverFilterPinned)}
+                className={`px-3 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 border transition ${
+                  serverFilterPinned
+                    ? 'bg-amber-500/20 border-amber-500/40 text-amber-300'
+                    : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'
+                }`}
+                title="Filter Pinned"
+              >
+                <Star className={`w-3.5 h-3.5 ${serverFilterPinned ? 'fill-amber-400 text-amber-400' : ''}`} />
+                <span className="hidden sm:inline">Pinned</span>
+              </button>
             </div>
 
             <button
@@ -593,23 +960,8 @@ export default function UserMcpMarket({ triggerNotification }) {
             </button>
           </div>
 
-          {/* Stats Overview */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            {[
-              { label: 'Registered Servers', value: servers.length.toString(), color: 'text-white' },
-              { label: 'Healthy & Active', value: servers.filter(s => s.status === 'active' && s.enabled).length.toString(), color: 'text-emerald-400' },
-              { label: 'SSE / HTTP Links', value: servers.filter(s => s.transport !== 'stdio').length.toString(), color: 'text-indigo-400' },
-              { label: 'Active Capabilities', value: servers.reduce((acc, s) => acc + (s.capabilities_count || 0), 0).toString(), color: 'text-purple-400' }
-            ].map((stat, idx) => (
-              <div key={idx} className="bg-slate-900/60 border border-slate-800 p-4 rounded-xl flex flex-col gap-1 backdrop-blur-sm">
-                <span className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">{stat.label}</span>
-                <span className={`text-2xl font-bold font-mono mt-1 ${stat.color}`}>{stat.value}</span>
-              </div>
-            ))}
-          </div>
-
-          {/* Server Cards Grid */}
-          {isLoading ? (
+          {/* Servers Grid */}
+          {isLoadingServers ? (
             <div className="flex items-center justify-center py-16 text-slate-400 text-xs gap-2">
               <RefreshCw className="w-4 h-4 animate-spin text-indigo-400" />
               <span>Loading MCP server registry...</span>
@@ -619,14 +971,14 @@ export default function UserMcpMarket({ triggerNotification }) {
               <div className="p-3 bg-slate-900 rounded-full text-slate-500 mb-3">
                 <Server className="w-6 h-6" />
               </div>
-              <h3 className="text-sm font-semibold text-slate-200">No MCP Servers Registered</h3>
-              <p className="text-xs text-slate-400 max-w-sm mt-1">Register an MCP server to discover dynamic tools and capabilities.</p>
+              <h3 className="text-sm font-semibold text-slate-200">No MCP Servers Found</h3>
+              <p className="text-xs text-slate-400 max-w-sm mt-1">Register a server to start discovering dynamic capabilities.</p>
               <button
                 onClick={() => setShowRegisterModal(true)}
                 className="mt-4 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-xl flex items-center gap-1.5 transition"
               >
                 <Plus className="w-4 h-4" />
-                <span>Register First Server</span>
+                <span>Register Server</span>
               </button>
             </div>
           ) : (
@@ -634,7 +986,7 @@ export default function UserMcpMarket({ triggerNotification }) {
               {filteredServers.map((server) => {
                 const isDiscovering = discoveringIds.has(server.id);
                 const isHealthChecking = healthCheckingIds.has(server.id);
-                const health = healthMetrics[server.id];
+                const isPinned = pinnedServers.includes(server.id);
 
                 const statusBg = 
                   server.status === 'active' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' :
@@ -656,7 +1008,16 @@ export default function UserMcpMarket({ triggerNotification }) {
                             <Server className="w-4 h-4" />
                           </div>
                           <div>
-                            <h4 className="text-sm font-semibold text-white tracking-wide">{server.name}</h4>
+                            <div className="flex items-center gap-1.5">
+                              <h4 className="text-sm font-semibold text-white tracking-wide">{server.name}</h4>
+                              <button 
+                                onClick={() => togglePinServer(server.id)}
+                                className="text-slate-500 hover:text-amber-400 transition p-0.5"
+                                title="Pin Server"
+                              >
+                                <Star className={`w-3.5 h-3.5 ${isPinned ? 'fill-amber-400 text-amber-400' : ''}`} />
+                              </button>
+                            </div>
                             <div className="flex items-center gap-2 mt-0.5">
                               <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 uppercase border border-slate-700">
                                 {server.transport}
@@ -664,11 +1025,6 @@ export default function UserMcpMarket({ triggerNotification }) {
                               <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border uppercase ${statusBg}`}>
                                 {server.enabled ? server.status : 'DISABLED'}
                               </span>
-                              {server.server_version && (
-                                <span className="text-[9px] font-mono text-slate-400 bg-slate-950 px-1.5 py-0.5 rounded border border-slate-800">
-                                  v{server.server_version}
-                                </span>
-                              )}
                             </div>
                           </div>
                         </div>
@@ -677,7 +1033,7 @@ export default function UserMcpMarket({ triggerNotification }) {
                           <button
                             onClick={() => handleHealthCheck(server)}
                             disabled={isHealthChecking || !server.enabled}
-                            title="Run Health Ping"
+                            title="Run Health Check"
                             className="p-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 hover:text-white hover:bg-slate-700 transition"
                           >
                             <Activity className={`w-3.5 h-3.5 ${isHealthChecking ? 'animate-pulse text-indigo-400' : ''}`} />
@@ -707,87 +1063,88 @@ export default function UserMcpMarket({ triggerNotification }) {
                         {server.description || 'No description provided.'}
                       </p>
 
-                      <div className="mt-3 p-2 rounded-lg bg-slate-950/60 border border-slate-800/80 text-[11px] font-mono text-slate-400 truncate">
-                        {server.server_url}
-                      </div>
-
-                      {health && (
-                        <div className="mt-2 text-[10px] flex items-center justify-between text-slate-400 px-1">
-                          <span>Latency: <strong className="text-slate-200 font-mono">{health.latency_ms ? `${health.latency_ms}ms` : 'N/A'}</strong></span>
-                          <span>Health: <strong className={health.is_healthy ? 'text-emerald-400' : 'text-rose-400'}>{health.is_healthy ? 'ONLINE' : 'ERROR'}</strong></span>
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="mt-4 pt-4 border-t border-slate-800/80 flex items-center justify-between">
-                      <div className="text-[11px] text-slate-400">
-                        <span className="font-semibold text-indigo-300">{server.capabilities_count || 0}</span> active capabilities
-                      </div>
-
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => handleRefreshDiscovery(server, true)}
-                          disabled={isDiscovering || !server.enabled}
-                          className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700/80 disabled:opacity-50 text-slate-200 text-xs font-medium rounded-lg flex items-center gap-1.5 transition"
-                        >
-                          <RefreshCw className={`w-3.5 h-3.5 ${isDiscovering ? 'animate-spin text-indigo-400' : ''}`} />
-                          <span>{isDiscovering ? 'Refreshing...' : 'Refresh'}</span>
-                        </button>
-                        <button
-                          onClick={() => handleViewCapabilities(server)}
-                          className="px-3 py-1.5 bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/30 text-indigo-300 text-xs font-medium rounded-lg flex items-center gap-1 transition"
-                        >
-                          <span>Capabilities</span>
-                          <ChevronRight className="w-3 h-3" />
-                        </button>
+                      <div className="mt-4 p-2.5 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between text-[11px]">
+                        <span className="font-mono text-slate-400 truncate max-w-[190px]">{server.server_url}</span>
+                        <span className="text-slate-500 font-mono">auth: {server.authentication_type}</span>
                       </div>
                     </div>
 
+                    <div className="mt-4 pt-3 border-t border-slate-800/80 flex items-center justify-between gap-2">
+                      <button
+                        onClick={() => handleOpenCapabilities(server)}
+                        className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold flex items-center gap-1.5 transition"
+                      >
+                        <Layers className="w-3.5 h-3.5 text-indigo-400" />
+                        <span>Capabilities ({server.capabilities_count || 0})</span>
+                      </button>
+
+                      <button
+                        onClick={() => handleRefreshDiscovery(server)}
+                        disabled={isDiscovering || !server.enabled}
+                        className="px-3 py-1.5 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/30 text-indigo-300 text-xs font-semibold flex items-center gap-1.5 transition"
+                      >
+                        <RefreshCw className={`w-3.5 h-3.5 ${isDiscovering ? 'animate-spin' : ''}`} />
+                        <span>{isDiscovering ? 'Discovering...' : 'Discover'}</span>
+                      </button>
+                    </div>
                   </div>
                 );
               })}
             </div>
           )}
-        </>
+        </div>
       )}
 
       {/* ========================================================================= */}
-      {/* VIEW MODE 2: DEDICATED TOOL CATALOG & EXECUTION (PHASE 6.3 & 6.4) */}
+      {/* 3. TOOL CATALOG */}
       {/* ========================================================================= */}
       {activeMode === 'tools' && (
-        <div className="space-y-4">
-          
-          {/* Tool Search & Risk Filters */}
+        <div className="space-y-5 animate-fade-in">
+          {/* Action & Filter Bar */}
           <div className="flex flex-col md:flex-row justify-between items-stretch md:items-center gap-3">
-            <div className="relative flex-1 max-w-md">
-              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-              <input
-                type="text"
-                value={toolSearchQuery}
-                onChange={(e) => setToolSearchQuery(e.target.value)}
-                placeholder="Search tools by name, description, or intent..."
-                className="bg-slate-900 border border-slate-800 rounded-xl py-2 pl-9 pr-4 text-xs text-slate-300 w-full outline-none focus:border-indigo-500 transition font-sans"
-              />
+            <div className="flex items-center gap-2 flex-1 max-w-lg">
+              <div className="relative flex-1">
+                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                <input
+                  type="text"
+                  value={toolSearchQuery}
+                  onChange={(e) => setToolSearchQuery(e.target.value)}
+                  placeholder="Search discovered tools across servers..."
+                  className="bg-slate-900 border border-slate-800 rounded-xl py-2 pl-9 pr-4 text-xs text-slate-300 w-full outline-none focus:border-indigo-500 transition"
+                />
+              </div>
+              <button
+                onClick={() => setToolFilterPinned(!toolFilterPinned)}
+                className={`px-3 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 border transition ${
+                  toolFilterPinned
+                    ? 'bg-amber-500/20 border-amber-500/40 text-amber-300'
+                    : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'
+                }`}
+                title="Filter Pinned"
+              >
+                <Star className={`w-3.5 h-3.5 ${toolFilterPinned ? 'fill-amber-400 text-amber-400' : ''}`} />
+                <span className="hidden sm:inline">Pinned</span>
+              </button>
             </div>
 
             {/* Risk Filters */}
-            <div className="flex items-center gap-1.5 bg-slate-900/80 border border-slate-800 p-1 rounded-xl text-xs">
+            <div className="flex items-center bg-slate-900 border border-slate-800 p-1 rounded-xl gap-1 shrink-0 overflow-x-auto">
               {[
-                { id: 'all', label: 'All Risks' },
+                { id: 'all', label: 'All Risk' },
                 { id: 'safe', label: 'Safe', color: 'text-emerald-400' },
                 { id: 'restricted', label: 'Restricted', color: 'text-amber-400' },
                 { id: 'invalid', label: 'Invalid', color: 'text-rose-400' }
-              ].map((filter) => (
+              ].map((rf) => (
                 <button
-                  key={filter.id}
-                  onClick={() => setSelectedRiskFilter(filter.id)}
-                  className={`px-3 py-1 rounded-lg font-medium transition ${
-                    selectedRiskFilter === filter.id
-                      ? 'bg-slate-800 text-white font-semibold'
-                      : 'text-slate-400 hover:text-slate-200'
+                  key={rf.id}
+                  onClick={() => setSelectedRiskFilter(rf.id)}
+                  className={`px-3 py-1 rounded-lg text-xs font-semibold transition ${
+                    selectedRiskFilter === rf.id 
+                      ? 'bg-indigo-600 text-white' 
+                      : `text-slate-400 hover:text-white ${rf.color || ''}`
                   }`}
                 >
-                  <span className={filter.color || ''}>{filter.label}</span>
+                  {rf.label}
                 </button>
               ))}
             </div>
@@ -797,162 +1154,136 @@ export default function UserMcpMarket({ triggerNotification }) {
           {isLoadingTools ? (
             <div className="flex items-center justify-center py-16 text-slate-400 text-xs gap-2">
               <RefreshCw className="w-4 h-4 animate-spin text-indigo-400" />
-              <span>Scanning workspace tool catalog...</span>
+              <span>Loading MCP tool catalog...</span>
             </div>
-          ) : tools.length === 0 ? (
+          ) : filteredTools.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 border border-dashed border-slate-800 rounded-2xl p-6 text-center">
               <div className="p-3 bg-slate-900 rounded-full text-slate-500 mb-3">
                 <Wrench className="w-6 h-6" />
               </div>
-              <h3 className="text-sm font-semibold text-slate-200">No Discovered Tools Found</h3>
-              <p className="text-xs text-slate-400 max-w-sm mt-1">
-                Make sure your registered MCP servers are connected and discovery has been run.
-              </p>
+              <h3 className="text-sm font-semibold text-slate-200">No MCP Tools Available</h3>
+              <p className="text-xs text-slate-400 max-w-sm mt-1">Run discovery on a registered server to load tool capabilities.</p>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-              {tools.map((tool) => {
+              {filteredTools.map((tool) => {
+                const isPinned = pinnedTools.includes(tool.id);
                 const isSafe = tool.risk_level === 'safe';
                 const isRestricted = tool.risk_level === 'restricted';
-                
-                const riskBadge = isSafe 
-                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' 
-                  : isRestricted 
-                  ? 'bg-amber-500/10 border-amber-500/30 text-amber-400' 
-                  : 'bg-rose-500/10 border-rose-500/30 text-rose-400';
+                const isInvalid = tool.risk_level === 'invalid';
+
+                const riskBadge = 
+                  isSafe ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' :
+                  isRestricted ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' :
+                  'bg-rose-500/10 text-rose-400 border-rose-500/20';
 
                 return (
                   <div
                     key={tool.id}
-                    className={`bg-slate-900/80 border rounded-2xl p-5 flex flex-col justify-between transition ${
-                      tool.enabled ? 'border-slate-800 hover:border-slate-700' : 'border-slate-800/40 opacity-60'
+                    className={`bg-slate-900/80 border rounded-2xl p-5 flex flex-col justify-between transition-all ${
+                      tool.enabled && !tool.is_stale 
+                        ? 'border-slate-800 hover:border-slate-700 shadow-md' 
+                        : 'border-slate-800/40 opacity-60'
                     }`}
                   >
                     <div>
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm font-bold text-white font-mono">{tool.name}</span>
-                            <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full border uppercase ${riskBadge}`}>
-                              {tool.risk_level}
-                            </span>
+                      <div className="flex items-start justify-between">
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-9 h-9 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-400 shrink-0">
+                            <Wrench className="w-4 h-4" />
                           </div>
-                          <span className="text-[11px] text-slate-500 font-mono block mt-0.5">
-                            via {tool.server_name} ({tool.server_transport})
-                          </span>
+                          <div>
+                            <div className="flex items-center gap-1.5">
+                              <h4 className="text-sm font-bold text-white font-mono">{tool.name}</h4>
+                              <button 
+                                onClick={() => togglePinTool(tool.id)}
+                                className="text-slate-500 hover:text-amber-400 transition p-0.5"
+                                title="Pin Tool"
+                              >
+                                <Star className={`w-3.5 h-3.5 ${isPinned ? 'fill-amber-400 text-amber-400' : ''}`} />
+                              </button>
+                            </div>
+                            <span className="text-[10px] text-slate-400">Server: <strong className="text-slate-300">{tool.server_name}</strong></span>
+                          </div>
                         </div>
 
-                        <button
-                          onClick={() => handleToggleToolEnable(tool)}
-                          title={tool.enabled ? 'Disable Tool' : 'Enable Tool'}
-                          className={`p-1.5 rounded-lg border transition ${
-                            tool.enabled
-                              ? 'bg-emerald-950/40 border-emerald-500/30 text-emerald-400 hover:bg-emerald-900/40'
-                              : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-slate-200'
-                          }`}
-                        >
-                          <Power className="w-3.5 h-3.5" />
-                        </button>
+                        <div className="flex items-center gap-1">
+                          <span className={`text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full border ${riskBadge}`}>
+                            {tool.risk_level}
+                          </span>
+                        </div>
                       </div>
 
-                      <p className="text-xs text-slate-400 mt-2 line-clamp-2 leading-relaxed">
-                        {tool.description || 'No tool description provided.'}
+                      <p className="text-xs text-slate-400 mt-3 line-clamp-2 leading-relaxed">
+                        {tool.description || 'No description provided.'}
                       </p>
 
-                      {/* Execution Readiness Badge */}
-                      <div className="mt-3 flex items-center gap-1.5 text-[11px]">
-                        {tool.available_for_execution ? (
-                          <span className="text-emerald-400 flex items-center gap-1 font-medium">
-                            <CheckCircle2 className="w-3.5 h-3.5" /> Ready for Execution
+                      <div className="mt-3 flex items-center gap-2 text-[10px] font-mono text-slate-400">
+                        <span className="px-2 py-0.5 rounded bg-slate-950 border border-slate-800">
+                          {Object.keys(tool.input_schema?.properties || {}).length} params
+                        </span>
+                        {tool.is_stale && (
+                          <span className="px-2 py-0.5 rounded bg-rose-950/40 text-rose-400 border border-rose-500/30 font-bold">
+                            STALE
                           </span>
-                        ) : (
-                          <span className="text-slate-500 flex items-center gap-1 font-medium">
-                            <XCircle className="w-3.5 h-3.5 text-rose-500" /> Unavailable ({!tool.server_enabled ? 'Server Disabled' : tool.is_stale ? 'Stale' : !tool.enabled ? 'Disabled' : 'Invalid'})
+                        )}
+                        {!tool.enabled && (
+                          <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">
+                            DISABLED
                           </span>
                         )}
                       </div>
                     </div>
 
-                    <div className="mt-4 pt-3 border-t border-slate-800/80 flex items-center justify-between">
-                      <span className="text-[10px] text-slate-500 font-mono">
-                        v{tool.version || 1} • {tool.input_schema?.properties ? Object.keys(tool.input_schema.properties).length : 0} params
-                      </span>
+                    <div className="mt-4 pt-3 border-t border-slate-800/80 flex items-center justify-between gap-2">
+                      <button
+                        onClick={() => handleToggleToolEnable(tool)}
+                        className={`p-1.5 rounded-lg border transition ${
+                          tool.enabled
+                            ? 'bg-emerald-950/40 border-emerald-500/30 text-emerald-400'
+                            : 'bg-slate-800 border-slate-700 text-slate-400'
+                        }`}
+                        title={tool.enabled ? 'Disable Tool' : 'Enable Tool'}
+                      >
+                        <Power className="w-3.5 h-3.5" />
+                      </button>
 
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => {
-                            setSelectedTool(tool);
-                            setToolModalTab('schema');
-                            setShowToolModal(true);
-                            setExecutionArgs({});
-                            setExecutionResult(null);
-                            setExecutionError(null);
-                            setRestrictedConfirmed(false);
-                          }}
-                          className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 border border-slate-700/80 text-slate-300 text-xs font-medium rounded-lg flex items-center gap-1 transition"
-                        >
-                          <Code className="w-3 h-3" />
-                          <span>Schema</span>
-                        </button>
-
-                        <button
-                          onClick={() => {
-                            setSelectedTool(tool);
-                            setToolModalTab('execute');
-                            setShowToolModal(true);
-                            setExecutionArgs({});
-                            setExecutionResult(null);
-                            setExecutionError(null);
-                            setRestrictedConfirmed(false);
-                          }}
-                          disabled={!tool.available_for_execution}
-                          className="px-3 py-1 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:hover:bg-indigo-600 text-white text-xs font-medium rounded-lg flex items-center gap-1 transition"
-                        >
-                          <Play className="w-3 h-3" />
-                          <span>Execute</span>
-                        </button>
-                      </div>
+                      <button
+                        onClick={() => handleOpenToolModal(tool)}
+                        className="px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold flex items-center gap-1.5 transition shadow-sm"
+                      >
+                        <Play className="w-3.5 h-3.5" />
+                        <span>Inspect &amp; Run</span>
+                      </button>
                     </div>
-
                   </div>
                 );
               })}
             </div>
           )}
-
         </div>
       )}
 
       {/* ========================================================================= */}
-      {/* VIEW MODE 3: RESOURCES CATALOG (PHASE 6.5) */}
+      {/* 4. RESOURCES VIEWER */}
       {/* ========================================================================= */}
       {activeMode === 'resources' && (
-        <div className="space-y-4">
-          <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3">
-            <div className="relative flex-1 max-w-md">
-              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-              <input
-                type="text"
-                value={resourceSearchQuery}
-                onChange={(e) => setResourceSearchQuery(e.target.value)}
-                placeholder="Search resources by name or URI..."
-                className="bg-slate-900 border border-slate-800 rounded-xl py-2 pl-9 pr-4 text-xs text-slate-300 w-full outline-none focus:border-indigo-500 transition"
-              />
-            </div>
-            <button
-              onClick={fetchResources}
-              disabled={isLoadingResources}
-              className="px-3.5 py-2 bg-slate-900 border border-slate-800 hover:bg-slate-800 text-slate-300 text-xs font-semibold rounded-xl flex items-center justify-center gap-1.5 transition"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${isLoadingResources ? 'animate-spin text-indigo-400' : ''}`} />
-              <span>Refresh Resources</span>
-            </button>
+        <div className="space-y-5 animate-fade-in">
+          <div className="relative max-w-md">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+            <input
+              type="text"
+              value={resourceSearchQuery}
+              onChange={(e) => setResourceSearchQuery(e.target.value)}
+              placeholder="Search discovered workspace resources..."
+              className="bg-slate-900 border border-slate-800 rounded-xl py-2 pl-9 pr-4 text-xs text-slate-300 w-full outline-none focus:border-indigo-500 transition"
+            />
           </div>
 
           {isLoadingResources ? (
             <div className="flex items-center justify-center py-16 text-slate-400 text-xs gap-2">
               <RefreshCw className="w-4 h-4 animate-spin text-indigo-400" />
-              <span>Loading MCP resources catalog...</span>
+              <span>Loading MCP resources...</span>
             </div>
           ) : resources.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 border border-dashed border-slate-800 rounded-2xl p-6 text-center">
@@ -960,46 +1291,39 @@ export default function UserMcpMarket({ triggerNotification }) {
                 <FileCode className="w-6 h-6" />
               </div>
               <h3 className="text-sm font-semibold text-slate-200">No MCP Resources Discovered</h3>
-              <p className="text-xs text-slate-400 max-w-sm mt-1">Discovered resources exposed by connected MCP servers will appear here.</p>
+              <p className="text-xs text-slate-400 max-w-sm mt-1">Connect servers that expose static or dynamic read-only resources.</p>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-              {resources.map((resource) => (
-                <div
-                  key={resource.id}
-                  className={`bg-slate-900/80 border rounded-2xl p-5 flex flex-col justify-between transition-all ${
-                    resource.enabled && !resource.is_stale ? 'border-slate-800 hover:border-slate-700 shadow-md' : 'border-slate-800/40 opacity-60'
-                  }`}
-                >
-                  <div className="space-y-3">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex items-center gap-2.5">
-                        <div className="w-8 h-8 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 flex items-center justify-center shrink-0">
-                          <FileCode className="w-4 h-4" />
-                        </div>
-                        <div>
-                          <h4 className="text-sm font-bold text-white tracking-wide">{resource.name}</h4>
-                          <span className="text-[10px] text-slate-400 font-mono block truncate max-w-[200px]">{resource.uri}</span>
-                        </div>
+              {resources.map((res) => (
+                <div key={res.id} className="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 flex flex-col justify-between hover:border-slate-700 transition shadow-sm">
+                  <div>
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-9 h-9 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 shrink-0">
+                        <FileCode className="w-4 h-4" />
                       </div>
-                      <span className="px-2 py-0.5 rounded text-[9px] font-mono bg-slate-800 text-slate-300 uppercase border border-slate-700">
-                        {resource.mime_type || 'text/plain'}
-                      </span>
+                      <div className="overflow-hidden">
+                        <h4 className="text-sm font-bold text-white font-mono truncate">{res.name}</h4>
+                        <span className="text-[10px] text-slate-400">Server: {res.server_name}</span>
+                      </div>
                     </div>
 
-                    <p className="text-xs text-slate-400 line-clamp-2 leading-relaxed">
-                      {resource.description || 'No description provided.'}
+                    <p className="text-xs text-slate-400 mt-3 line-clamp-2 leading-relaxed">
+                      {res.description || 'No description provided.'}
                     </p>
+
+                    <div className="mt-3 p-2 bg-slate-950 border border-slate-800 rounded-xl text-[10px] font-mono text-indigo-400 truncate">
+                      {res.uri}
+                    </div>
                   </div>
 
-                  <div className="mt-4 pt-3 border-t border-slate-800 flex items-center justify-between">
-                    <span className="text-[11px] text-slate-400 font-mono">{resource.server_name}</span>
+                  <div className="mt-4 pt-3 border-t border-slate-800 flex justify-end">
                     <button
-                      onClick={() => handleReadResource(resource)}
-                      className="px-3 py-1.5 bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/30 text-indigo-300 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition"
+                      onClick={() => handleOpenResource(res)}
+                      className="px-3.5 py-1.5 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/30 text-indigo-300 text-xs font-semibold flex items-center gap-1.5 transition"
                     >
+                      <Eye className="w-3.5 h-3.5" />
                       <span>Read Resource</span>
-                      <ChevronRight className="w-3.5 h-3.5" />
                     </button>
                   </div>
                 </div>
@@ -1010,29 +1334,19 @@ export default function UserMcpMarket({ triggerNotification }) {
       )}
 
       {/* ========================================================================= */}
-      {/* VIEW MODE 4: PROMPTS CATALOG (PHASE 6.5) */}
+      {/* 5. PROMPTS HUB */}
       {/* ========================================================================= */}
       {activeMode === 'prompts' && (
-        <div className="space-y-4">
-          <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3">
-            <div className="relative flex-1 max-w-md">
-              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-              <input
-                type="text"
-                value={promptSearchQuery}
-                onChange={(e) => setPromptSearchQuery(e.target.value)}
-                placeholder="Search prompt templates..."
-                className="bg-slate-900 border border-slate-800 rounded-xl py-2 pl-9 pr-4 text-xs text-slate-300 w-full outline-none focus:border-indigo-500 transition"
-              />
-            </div>
-            <button
-              onClick={fetchPrompts}
-              disabled={isLoadingPrompts}
-              className="px-3.5 py-2 bg-slate-900 border border-slate-800 hover:bg-slate-800 text-slate-300 text-xs font-semibold rounded-xl flex items-center justify-center gap-1.5 transition"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${isLoadingPrompts ? 'animate-spin text-indigo-400' : ''}`} />
-              <span>Refresh Prompts</span>
-            </button>
+        <div className="space-y-5 animate-fade-in">
+          <div className="relative max-w-md">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+            <input
+              type="text"
+              value={promptSearchQuery}
+              onChange={(e) => setPromptSearchQuery(e.target.value)}
+              placeholder="Search parameterized prompt templates..."
+              className="bg-slate-900 border border-slate-800 rounded-xl py-2 pl-9 pr-4 text-xs text-slate-300 w-full outline-none focus:border-indigo-500 transition"
+            />
           </div>
 
           {isLoadingPrompts ? (
@@ -1045,47 +1359,44 @@ export default function UserMcpMarket({ triggerNotification }) {
               <div className="p-3 bg-slate-900 rounded-full text-slate-500 mb-3">
                 <MessageSquare className="w-6 h-6" />
               </div>
-              <h3 className="text-sm font-semibold text-slate-200">No Prompt Templates Discovered</h3>
-              <p className="text-xs text-slate-400 max-w-sm mt-1">Prompt templates exposed by connected MCP servers will appear here.</p>
+              <h3 className="text-sm font-semibold text-slate-200">No Prompt Templates Found</h3>
+              <p className="text-xs text-slate-400 max-w-sm mt-1">Discovered prompts can be rendered safely and inspected as untrusted context.</p>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-              {prompts.map((prompt) => (
-                <div
-                  key={prompt.id}
-                  className={`bg-slate-900/80 border rounded-2xl p-5 flex flex-col justify-between transition-all ${
-                    prompt.enabled && !prompt.is_stale ? 'border-slate-800 hover:border-slate-700 shadow-md' : 'border-slate-800/40 opacity-60'
-                  }`}
-                >
-                  <div className="space-y-3">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex items-center gap-2.5">
-                        <div className="w-8 h-8 rounded-xl bg-purple-500/10 border border-purple-500/20 text-purple-400 flex items-center justify-center shrink-0">
-                          <MessageSquare className="w-4 h-4" />
-                        </div>
-                        <div>
-                          <h4 className="text-sm font-bold text-white tracking-wide font-mono">{prompt.name}</h4>
-                          <span className="text-[10px] text-slate-400 font-mono">{prompt.server_name}</span>
-                        </div>
+              {prompts.map((p) => (
+                <div key={p.id} className="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 flex flex-col justify-between hover:border-slate-700 transition shadow-sm">
+                  <div>
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-9 h-9 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-400 shrink-0">
+                        <MessageSquare className="w-4 h-4" />
                       </div>
-                      <span className="px-2 py-0.5 rounded text-[9px] font-mono bg-purple-500/10 text-purple-300 border border-purple-500/20">
-                        {(prompt.arguments || []).length} args
-                      </span>
+                      <div>
+                        <h4 className="text-sm font-bold text-white font-mono">{p.name}</h4>
+                        <span className="text-[10px] text-slate-400">Server: {p.server_name}</span>
+                      </div>
                     </div>
 
-                    <p className="text-xs text-slate-400 line-clamp-2 leading-relaxed">
-                      {prompt.description || 'No description provided.'}
+                    <p className="text-xs text-slate-400 mt-3 line-clamp-2 leading-relaxed">
+                      {p.description || 'No description provided.'}
                     </p>
+
+                    <div className="mt-3 flex items-center gap-1.5 flex-wrap">
+                      {(p.arguments || []).map(arg => (
+                        <span key={arg.name} className="px-2 py-0.5 rounded bg-slate-950 border border-slate-800 text-[10px] font-mono text-slate-300">
+                          {arg.name}
+                        </span>
+                      ))}
+                    </div>
                   </div>
 
-                  <div className="mt-4 pt-3 border-t border-slate-800 flex items-center justify-between">
-                    <span className="text-[11px] text-slate-400 font-mono">Template</span>
+                  <div className="mt-4 pt-3 border-t border-slate-800 flex justify-end">
                     <button
-                      onClick={() => handleOpenPrompt(prompt)}
-                      className="px-3 py-1.5 bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/30 text-purple-300 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition"
+                      onClick={() => handleOpenPrompt(p)}
+                      className="px-3.5 py-1.5 rounded-xl bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/30 text-purple-300 text-xs font-semibold flex items-center gap-1.5 transition"
                     >
+                      <Sliders className="w-3.5 h-3.5" />
                       <span>Render Template</span>
-                      <ChevronRight className="w-3.5 h-3.5" />
                     </button>
                   </div>
                 </div>
@@ -1096,159 +1407,81 @@ export default function UserMcpMarket({ triggerNotification }) {
       )}
 
       {/* ========================================================================= */}
-      {/* VIEW MODE 5: SECURITY & AUDIT CONTROL PLANE (PHASE 6.6) */}
+      {/* 6. SECURITY & RBAC DASHBOARD */}
       {/* ========================================================================= */}
       {activeMode === 'security' && (
-        <div className="space-y-6">
-          {/* Header Action */}
-          <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3">
-            <div>
-              <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                <Shield className="w-4 h-4 text-emerald-400" />
-                Security, RBAC & Audit Control Plane
-              </h3>
-              <p className="text-xs text-slate-400 mt-0.5">
-                Deterministic security policy evaluation, capability-level permissions, content trust boundaries, and real-time audit event logging.
-              </p>
-            </div>
-            <button
-              onClick={fetchSecurityData}
-              disabled={isLoadingSecurity}
-              className="px-3.5 py-2 bg-slate-900 border border-slate-800 hover:bg-slate-800 text-slate-300 text-xs font-semibold rounded-xl flex items-center justify-center gap-1.5 transition"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${isLoadingSecurity ? 'animate-spin text-indigo-400' : ''}`} />
-              <span>Refresh Security Status</span>
-            </button>
-          </div>
-
+        <div className="space-y-6 animate-fade-in">
           {isLoadingSecurity ? (
             <div className="flex items-center justify-center py-16 text-slate-400 text-xs gap-2">
               <RefreshCw className="w-4 h-4 animate-spin text-indigo-400" />
-              <span>Querying security status and audit records...</span>
+              <span>Loading MCP security configuration...</span>
             </div>
           ) : (
             <>
-              {/* Security Metrics Overview Cards */}
+              {/* Security Boundary Cards */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                <div className="p-4 rounded-2xl bg-slate-900/80 border border-slate-800 space-y-1">
-                  <span className="text-[10px] text-slate-400 uppercase font-semibold">Policy Engine</span>
-                  <div className="flex items-center justify-between">
-                    <strong className="text-sm text-emerald-400 flex items-center gap-1.5">
-                      <CheckCircle2 className="w-3.5 h-3.5" /> Active (Precedence Mode)
-                    </strong>
+                <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-1">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase">Trust Boundary</span>
+                  <div className="flex items-center gap-2 mt-1">
+                    <Shield className="w-4 h-4 text-indigo-400" />
+                    <span className="font-mono text-sm font-bold text-white">{securityStatus?.trust_label_policy || 'UNTRUSTED_MCP'}</span>
                   </div>
-                  <p className="text-[11px] text-slate-500">Enforces Auth &rarr; Tenant &rarr; RBAC &rarr; Risk</p>
+                  <p className="text-[11px] text-slate-400">Strict untrusted isolation on all external MCP responses.</p>
                 </div>
 
-                <div className="p-4 rounded-2xl bg-slate-900/80 border border-slate-800 space-y-1">
-                  <span className="text-[10px] text-slate-400 uppercase font-semibold">Content Trust Boundary</span>
-                  <div className="flex items-center justify-between">
-                    <strong className="text-sm text-purple-300 font-mono">UNTRUSTED_MCP</strong>
+                <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-1">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase">Confirmation Gate</span>
+                  <div className="flex items-center gap-2 mt-1">
+                    <Lock className="w-4 h-4 text-amber-400" />
+                    <span className="font-mono text-sm font-bold text-white">ACTIVE (HMAC-SHA256)</span>
                   </div>
-                  <p className="text-[11px] text-slate-500">External prompt & tool injection defense</p>
+                  <p className="text-[11px] text-slate-400">Single-use cryptographically signed tokens for restricted operations.</p>
                 </div>
 
-                <div className="p-4 rounded-2xl bg-slate-900/80 border border-slate-800 space-y-1">
-                  <span className="text-[10px] text-slate-400 uppercase font-semibold">Restricted Tool Gate</span>
-                  <div className="flex items-center justify-between">
-                    <strong className="text-sm text-amber-400 flex items-center gap-1.5">
-                      <Shield className="w-3.5 h-3.5" /> Single-Use Confirmation
-                    </strong>
+                <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-1">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase">SSRF Defense</span>
+                  <div className="flex items-center gap-2 mt-1">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                    <span className="font-mono text-sm font-bold text-white">ENFORCED</span>
                   </div>
-                  <p className="text-[11px] text-slate-500">Cryptographically bound token replay defense</p>
+                  <p className="text-[11px] text-slate-400">Loopback, private subnet, and AWS metadata endpoint blocking.</p>
                 </div>
 
-                <div className="p-4 rounded-2xl bg-slate-900/80 border border-slate-800 space-y-1">
-                  <span className="text-[10px] text-slate-400 uppercase font-semibold">Network & SSRF Guard</span>
-                  <div className="flex items-center justify-between">
-                    <strong className="text-sm text-emerald-400 flex items-center gap-1.5">
-                      <CheckCircle2 className="w-3.5 h-3.5" /> Hardened
-                    </strong>
+                <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-1">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase">Tenant Boundary</span>
+                  <div className="flex items-center gap-2 mt-1">
+                    <Layers className="w-4 h-4 text-purple-400" />
+                    <span className="font-mono text-sm font-bold text-white">WORKSPACE ISOLATED</span>
                   </div>
-                  <p className="text-[11px] text-slate-500">Blocks 127.0.0.1, 169.254.169.254, file://</p>
+                  <p className="text-[11px] text-slate-400">Zero cross-tenant capability execution or resource leakage.</p>
                 </div>
               </div>
 
-              {/* Active RBAC Permissions */}
-              {securityStatus && (
-                <div className="p-5 rounded-2xl bg-slate-900/80 border border-slate-800 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Layers className="w-4 h-4 text-indigo-400" />
-                      <h4 className="text-xs font-bold text-white uppercase tracking-wider">Active Workspace Permissions</h4>
+              {/* Active RBAC Permissions Matrix */}
+              <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-4">
+                <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                  <div>
+                    <h3 className="text-sm font-bold text-white">Active Capability RBAC Permissions</h3>
+                    <p className="text-xs text-slate-400 mt-0.5">Permissions evaluated dynamically against the backend authority.</p>
+                  </div>
+                  <span className="px-2.5 py-1 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 text-xs font-mono font-bold">
+                    Role: {securityStatus?.user_role || 'user'}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5">
+                  {(securityStatus?.active_permissions || [
+                    'mcp:server:view', 'mcp:server:manage',
+                    'mcp:tool:view', 'mcp:tool:execute', 'mcp:tool:manage',
+                    'mcp:resource:view', 'mcp:resource:read', 'mcp:resource:manage',
+                    'mcp:prompt:view', 'mcp:prompt:render', 'mcp:prompt:manage'
+                  ]).map((perm) => (
+                    <div key={perm} className="p-2.5 rounded-xl bg-slate-950 border border-slate-800 flex items-center gap-2">
+                      <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                      <span className="text-xs font-mono text-slate-200 truncate">{perm}</span>
                     </div>
-                    <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 uppercase">
-                      Role: {securityStatus.user_role}
-                    </span>
-                  </div>
-                  <div className="flex flex-wrap gap-2 pt-1">
-                    {(securityStatus.active_permissions || []).map((perm) => (
-                      <span
-                        key={perm}
-                        className="px-2.5 py-1 rounded-lg text-xs font-mono bg-slate-950 border border-slate-800 text-slate-300 flex items-center gap-1.5"
-                      >
-                        <CheckCircle className="w-3 h-3 text-emerald-400" />
-                        <span>{perm}</span>
-                      </span>
-                    ))}
-                  </div>
+                  ))}
                 </div>
-              )}
-
-              {/* Real-time Security Audit Log */}
-              <div className="p-5 rounded-2xl bg-slate-900/80 border border-slate-800 space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Clock className="w-4 h-4 text-indigo-400" />
-                    <h4 className="text-xs font-bold text-white uppercase tracking-wider">Recent MCP Security Audit Events</h4>
-                  </div>
-                  <span className="text-[10px] text-slate-400 font-mono">{auditLogs.length} events recorded</span>
-                </div>
-
-                {auditLogs.length === 0 ? (
-                  <div className="p-6 rounded-xl bg-slate-950 border border-slate-800 text-center text-xs text-slate-400">
-                    No MCP security audit events recorded yet for this workspace.
-                  </div>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left text-xs text-slate-300">
-                      <thead>
-                        <tr className="border-b border-slate-800 text-[10px] uppercase font-semibold text-slate-500">
-                          <th className="p-2.5">Decision</th>
-                          <th className="p-2.5">Event</th>
-                          <th className="p-2.5">Reason Code</th>
-                          <th className="p-2.5">Capability / Target</th>
-                          <th className="p-2.5">Timestamp</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-800/60 font-mono text-[11px]">
-                        {auditLogs.map((ev) => (
-                          <tr key={ev.id} className="hover:bg-slate-800/30 transition">
-                            <td className="p-2.5">
-                              <span
-                                className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                                  ev.decision === 'ALLOW'
-                                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                                    : ev.decision === 'REQUIRE_CONFIRMATION'
-                                    ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                                    : 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
-                                }`}
-                              >
-                                {ev.decision}
-                              </span>
-                            </td>
-                            <td className="p-2.5 font-bold text-white">{ev.event_type}</td>
-                            <td className="p-2.5 text-slate-400">{ev.reason_code}</td>
-                            <td className="p-2.5 text-indigo-300 truncate max-w-[150px]">
-                              {ev.capability_id ? `Cap: ${ev.capability_id.slice(0, 8)}...` : ev.server_id ? `Server: ${ev.server_id.slice(0, 8)}...` : '—'}
-                            </td>
-                            <td className="p-2.5 text-slate-500">{new Date(ev.timestamp).toLocaleTimeString()}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
               </div>
             </>
           )}
@@ -1256,267 +1489,589 @@ export default function UserMcpMarket({ triggerNotification }) {
       )}
 
       {/* ========================================================================= */}
-      {/* TOOL INSPECTOR & EXECUTION MODAL (PHASE 6.3 & 6.4) */}
+      {/* 7. EXECUTION HISTORY */}
       {/* ========================================================================= */}
-      {showToolModal && selectedTool && (
-        <div className="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-2xl w-full p-6 space-y-4 shadow-2xl max-h-[90vh] flex flex-col">
-            
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <div className="flex items-center gap-2.5">
-                <div className="p-2 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400">
-                  <Wrench className="w-4 h-4" />
-                </div>
-                <div>
-                  <h3 className="text-base font-bold text-white font-mono">{selectedTool.name}</h3>
-                  <p className="text-xs text-slate-400">Provided by server: <strong className="text-slate-200">{selectedTool.server_name}</strong></p>
-                </div>
+      {activeMode === 'history' && (
+        <div className="space-y-5 animate-fade-in">
+          {/* Filter Bar */}
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-slate-400 font-semibold">Filter Status:</span>
+              <div className="flex items-center bg-slate-900 border border-slate-800 p-1 rounded-xl gap-1">
+                {['all', 'COMPLETED', 'FAILED', 'REQUIRES_CONFIRMATION'].map((st) => (
+                  <button
+                    key={st}
+                    onClick={() => setHistoryStatusFilter(st)}
+                    className={`px-3 py-1 rounded-lg text-xs font-semibold transition ${
+                      historyStatusFilter === st
+                        ? 'bg-indigo-600 text-white'
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    {st}
+                  </button>
+                ))}
               </div>
-              <button onClick={() => setShowToolModal(false)} className="text-slate-400 hover:text-white p-1">
+            </div>
+
+            <button
+              onClick={fetchExecutionHistory}
+              className="p-2 bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 hover:text-white rounded-xl text-xs flex items-center gap-1.5 transition"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              <span>Refresh History</span>
+            </button>
+          </div>
+
+          {/* History Table */}
+          {isLoadingHistory ? (
+            <div className="flex items-center justify-center py-16 text-slate-400 text-xs gap-2">
+              <RefreshCw className="w-4 h-4 animate-spin text-indigo-400" />
+              <span>Loading execution trace log...</span>
+            </div>
+          ) : executionHistory.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16 border border-dashed border-slate-800 rounded-2xl p-6 text-center">
+              <History className="w-8 h-8 text-slate-500 mb-2" />
+              <h3 className="text-sm font-semibold text-slate-200">No Executions Recorded</h3>
+              <p className="text-xs text-slate-400 max-w-sm mt-1">Tools executed manually or via multi-agent pipelines will be listed here.</p>
+            </div>
+          ) : (
+            <div className="bg-slate-900/90 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs text-slate-300">
+                  <thead className="bg-slate-950 text-slate-400 uppercase text-[10px] font-semibold border-b border-slate-800">
+                    <tr>
+                      <th className="py-3 px-4">Started</th>
+                      <th className="py-3 px-4">Tool / Capability</th>
+                      <th className="py-3 px-4">Execution ID</th>
+                      <th className="py-3 px-4">Status</th>
+                      <th className="py-3 px-4">Duration</th>
+                      <th className="py-3 px-4 text-right">Details</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/60 font-mono">
+                    {executionHistory.map((ex) => {
+                      const isOk = ex.status === 'COMPLETED' || ex.status === 'SUCCESS';
+                      const isFailed = ex.status === 'FAILED';
+                      const statusClass = isOk 
+                        ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' 
+                        : isFailed 
+                        ? 'bg-rose-500/10 text-rose-400 border-rose-500/20' 
+                        : 'bg-amber-500/10 text-amber-400 border-amber-500/20';
+
+                      return (
+                        <tr key={ex.id} className="hover:bg-slate-800/40 transition">
+                          <td className="py-3 px-4 text-slate-400 text-[11px] whitespace-nowrap">
+                            {ex.started_at ? new Date(ex.started_at).toLocaleString() : '---'}
+                          </td>
+                          <td className="py-3 px-4 font-bold text-white">
+                            {ex.tool_name || ex.tool_id}
+                          </td>
+                          <td className="py-3 px-4 text-slate-400 text-[11px]">
+                            {ex.execution_id.slice(0, 8)}...
+                          </td>
+                          <td className="py-3 px-4">
+                            <span className={`px-2 py-0.5 rounded-full border text-[10px] font-bold ${statusClass}`}>
+                              {ex.status}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 text-slate-300">
+                            {ex.duration_ms ? `${Math.round(ex.duration_ms)}ms` : '---'}
+                          </td>
+                          <td className="py-3 px-4 text-right">
+                            <button
+                              onClick={() => {
+                                setSelectedExecution(ex);
+                                setShowExecutionDetailModal(true);
+                              }}
+                              className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-[11px] font-semibold transition"
+                            >
+                              Inspect
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* 8. SECURITY AUDIT LOG */}
+      {/* ========================================================================= */}
+      {activeMode === 'audit' && (
+        <div className="space-y-5 animate-fade-in">
+          {/* Search & Filter Bar */}
+          <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3">
+            <div className="relative flex-1 max-w-md">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+              <input
+                type="text"
+                value={auditSearchQuery}
+                onChange={(e) => setAuditSearchQuery(e.target.value)}
+                placeholder="Search audit log by operation, reason..."
+                className="bg-slate-900 border border-slate-800 rounded-xl py-2 pl-9 pr-4 text-xs text-slate-300 w-full outline-none focus:border-indigo-500 transition"
+              />
+            </div>
+
+            <div className="flex items-center bg-slate-900 border border-slate-800 p-1 rounded-xl gap-1 shrink-0">
+              {['all', 'ALLOW', 'REQUIRE_CONFIRMATION', 'DENY'].map((dec) => (
+                <button
+                  key={dec}
+                  onClick={() => setAuditDecisionFilter(dec)}
+                  className={`px-3 py-1 rounded-lg text-xs font-semibold transition ${
+                    auditDecisionFilter === dec
+                      ? 'bg-indigo-600 text-white'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  {dec}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Audit Events Table */}
+          {isLoadingSecurity ? (
+            <div className="flex items-center justify-center py-16 text-slate-400 text-xs gap-2">
+              <RefreshCw className="w-4 h-4 animate-spin text-indigo-400" />
+              <span>Loading audit events...</span>
+            </div>
+          ) : filteredAuditLogs.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16 border border-dashed border-slate-800 rounded-2xl p-6 text-center">
+              <Shield className="w-8 h-8 text-slate-500 mb-2" />
+              <h3 className="text-sm font-semibold text-slate-200">No Security Events Found</h3>
+              <p className="text-xs text-slate-400 max-w-sm mt-1">Audit log records all security evaluations with redacted metadata.</p>
+            </div>
+          ) : (
+            <div className="bg-slate-900/90 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs text-slate-300">
+                  <thead className="bg-slate-950 text-slate-400 uppercase text-[10px] font-semibold border-b border-slate-800">
+                    <tr>
+                      <th className="py-3 px-4">Timestamp</th>
+                      <th className="py-3 px-4">Operation</th>
+                      <th className="py-3 px-4">Decision</th>
+                      <th className="py-3 px-4">Reason Code</th>
+                      <th className="py-3 px-4">Capability</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/60 font-mono">
+                    {filteredAuditLogs.map((ev) => {
+                      const isAllow = ev.decision === 'ALLOW';
+                      const isDeny = ev.decision === 'DENY';
+                      const decClass = isAllow 
+                        ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' 
+                        : isDeny 
+                        ? 'bg-rose-500/10 text-rose-400 border-rose-500/20' 
+                        : 'bg-amber-500/10 text-amber-400 border-amber-500/20';
+
+                      return (
+                        <tr key={ev.id} className="hover:bg-slate-800/40 transition">
+                          <td className="py-3 px-4 text-slate-400 text-[11px] whitespace-nowrap">
+                            {ev.timestamp ? new Date(ev.timestamp).toLocaleString() : '---'}
+                          </td>
+                          <td className="py-3 px-4 font-bold text-white">
+                            {ev.operation}
+                          </td>
+                          <td className="py-3 px-4">
+                            <span className={`px-2 py-0.5 rounded-full border text-[10px] font-bold ${decClass}`}>
+                              {ev.decision}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 text-indigo-400 font-semibold">
+                            {ev.reason_code}
+                          </td>
+                          <td className="py-3 px-4 text-slate-400 text-[11px] truncate max-w-[200px]">
+                            {ev.capability_id || '---'}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* SERVER REGISTRATION MODAL */}
+      {/* ========================================================================= */}
+      {showRegisterModal && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <Server className="w-5 h-5 text-indigo-400" />
+                Register Model Context Protocol Server
+              </h3>
+              <button onClick={() => setShowRegisterModal(false)} className="text-slate-400 hover:text-white">
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            {/* Modal Internal Tabs */}
-            <div className="flex items-center gap-2 border-b border-slate-800 pb-2">
-              <button
-                onClick={() => setToolModalTab('schema')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition ${
-                  toolModalTab === 'schema'
-                    ? 'bg-indigo-600 text-white'
-                    : 'text-slate-400 hover:text-white hover:bg-slate-800'
-                }`}
-              >
-                <Code className="w-3.5 h-3.5" />
-                <span>Schema & Safety</span>
-              </button>
-              <button
-                onClick={() => setToolModalTab('execute')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition ${
-                  toolModalTab === 'execute'
-                    ? 'bg-indigo-600 text-white'
-                    : 'text-slate-400 hover:text-white hover:bg-slate-800'
-                }`}
-              >
-                <Play className="w-3.5 h-3.5" />
-                <span>Execute Tool</span>
+            {formError && (
+              <div className="p-3 bg-rose-500/10 border border-rose-500/20 text-rose-300 text-xs rounded-xl flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{formError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleRegister} className="space-y-3.5">
+              <div>
+                <label className="text-xs font-semibold text-slate-300 block mb-1">Server Name *</label>
+                <input
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="e.g., github-server, filesystem-daemon"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-xs text-white focus:border-indigo-500 outline-none transition"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-slate-300 block mb-1">Connection URL / Command *</label>
+                <input
+                  type="text"
+                  value={serverUrl}
+                  onChange={(e) => setServerUrl(e.target.value)}
+                  placeholder="e.g., http://localhost:8080/sse or stdio:///usr/bin/mcp"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-xs text-white font-mono focus:border-indigo-500 outline-none transition"
+                  required
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-semibold text-slate-300 block mb-1">Transport</label>
+                  <select
+                    value={transport}
+                    onChange={(e) => setTransport(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 outline-none"
+                  >
+                    <option value="sse">Server-Sent Events (SSE)</option>
+                    <option value="streamable_http">Streamable HTTP</option>
+                    <option value="stdio">Standard I/O (stdio)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-slate-300 block mb-1">Authentication</label>
+                  <select
+                    value={authType}
+                    onChange={(e) => setAuthType(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 outline-none"
+                  >
+                    <option value="none">None / Public</option>
+                    <option value="bearer">Bearer Token</option>
+                    <option value="api_key">API Key</option>
+                    <option value="oauth">OAuth 2.0</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-slate-300 block mb-1">Description (Optional)</label>
+                <textarea
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="Describe tools provided by this server..."
+                  rows={2}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-xs text-white focus:border-indigo-500 outline-none transition"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setShowRegisterModal(false)}
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold rounded-xl"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-xl flex items-center gap-1.5"
+                >
+                  {isSubmitting ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
+                  <span>Register Server</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* CAPABILITIES INSPECTOR MODAL */}
+      {/* ========================================================================= */}
+      {showCapabilitiesModal && selectedServer && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-4xl w-full p-6 space-y-4 shadow-2xl max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div>
+                <h3 className="text-base font-bold text-white flex items-center gap-2">
+                  <Layers className="w-5 h-5 text-indigo-400" />
+                  {selectedServer.name} &mdash; Discovered Capabilities
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">{selectedServer.server_url}</p>
+              </div>
+              <button onClick={() => setShowCapabilitiesModal(false)} className="text-slate-400 hover:text-white">
+                <X className="w-4 h-4" />
               </button>
             </div>
 
-            {/* TAB 1: SCHEMA & SAFETY */}
-            {toolModalTab === 'schema' && (
-              <div className="space-y-3.5 overflow-y-auto pr-1 text-xs">
-                <div>
-                  <h4 className="text-slate-300 font-semibold mb-1">Description</h4>
-                  <p className="text-slate-400 leading-relaxed bg-slate-950 p-3 rounded-xl border border-slate-800">
-                    {selectedTool.description || 'No description provided.'}
-                  </p>
-                </div>
+            {/* Capability Tab Filters */}
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center bg-slate-950 border border-slate-800 p-1 rounded-xl gap-1">
+                {['tool', 'resource', 'prompt'].map((t) => (
+                  <button
+                    key={t}
+                    onClick={() => setActiveCapTab(t)}
+                    className={`px-3 py-1 rounded-lg text-xs font-semibold uppercase transition ${
+                      activeCapTab === t ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    {t}s ({capabilities.filter(c => c.capability_type === t).length})
+                  </button>
+                ))}
+              </div>
 
-                {/* Risk Policy Assessment */}
-                <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="font-semibold text-slate-300">Deterministic Safety Policy</span>
-                    <span className={`px-2 py-0.5 rounded-full border text-[10px] uppercase font-mono ${
-                      selectedTool.risk_level === 'safe' 
-                        ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' 
-                        : selectedTool.risk_level === 'restricted'
-                        ? 'bg-amber-500/10 border-amber-500/30 text-amber-400'
-                        : 'bg-rose-500/10 border-rose-500/30 text-rose-400'
-                    }`}>
-                      {selectedTool.risk_level} ({selectedTool.policy_decision})
-                    </span>
+              <input
+                type="text"
+                value={capSearch}
+                onChange={(e) => setCapSearch(e.target.value)}
+                placeholder="Filter capabilities..."
+                className="bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-slate-300 outline-none w-56"
+              />
+            </div>
+
+            {/* Capabilities List & Detail Split */}
+            <div className="flex-1 overflow-hidden grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="overflow-y-auto space-y-2 pr-1 max-h-[50vh]">
+                {capabilities
+                  .filter(c => c.capability_type === activeCapTab && (!capSearch || c.name.toLowerCase().includes(capSearch.toLowerCase())))
+                  .map((cap) => (
+                    <div
+                      key={cap.id}
+                      onClick={() => setSelectedCap(cap)}
+                      className={`p-3 rounded-xl border transition cursor-pointer ${
+                        selectedCap?.id === cap.id 
+                          ? 'bg-indigo-950/40 border-indigo-500/50' 
+                          : 'bg-slate-950 border-slate-800 hover:border-slate-700'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-mono text-xs font-bold text-white">{cap.name}</span>
+                        <span className="text-[10px] font-mono text-slate-500">v{cap.version}</span>
+                      </div>
+                      <p className="text-[11px] text-slate-400 mt-1 line-clamp-2">{cap.description || 'No description'}</p>
+                    </div>
+                  ))}
+              </div>
+
+              {/* JSON Schema Viewer */}
+              <div className="bg-slate-950 border border-slate-800 rounded-xl p-4 overflow-y-auto max-h-[50vh]">
+                {selectedCap ? (
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                      <span className="font-mono text-xs font-bold text-indigo-300">{selectedCap.name}</span>
+                      <span className="text-[10px] font-mono text-slate-400">{selectedCap.capability_type}</span>
+                    </div>
+                    <pre className="text-[11px] font-mono text-slate-300 whitespace-pre-wrap">
+                      {JSON.stringify(selectedCap.input_schema || selectedCap.metadata || {}, null, 2)}
+                    </pre>
                   </div>
-                  {selectedTool.risk_reasons && selectedTool.risk_reasons.length > 0 ? (
-                    <ul className="list-disc list-inside text-amber-400 text-[11px] space-y-0.5">
-                      {selectedTool.risk_reasons.map((r, i) => (
-                        <li key={i}>{r}</li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <span className="text-slate-400 text-[11px]">No high-risk execution indicators detected.</span>
-                  )}
-                </div>
+                ) : (
+                  <div className="flex flex-col items-center justify-center h-full text-slate-500 text-xs">
+                    Select a capability to inspect its schema and metadata
+                  </div>
+                )}
+              </div>
+            </div>
 
-                {/* Input Schema Parameters Table */}
-                <div className="space-y-1.5">
-                  <h4 className="text-slate-300 font-semibold">Parameters & Schema Properties</h4>
-                  {selectedTool.input_schema?.properties && Object.keys(selectedTool.input_schema.properties).length > 0 ? (
-                    <div className="border border-slate-800 rounded-xl overflow-hidden">
-                      <table className="w-full text-left text-[11px]">
-                        <thead className="bg-slate-950 text-slate-400 font-mono border-b border-slate-800">
-                          <tr>
-                            <th className="p-2.5">Parameter</th>
-                            <th className="p-2.5">Type</th>
-                            <th className="p-2.5">Required</th>
-                            <th className="p-2.5">Description</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-800/60 bg-slate-900/40">
-                          {Object.entries(selectedTool.input_schema.properties).map(([propName, propDef]) => {
-                            const isReq = (selectedTool.input_schema.required || []).includes(propName);
-                            return (
-                              <tr key={propName}>
-                                <td className="p-2.5 font-mono text-indigo-300 font-semibold">{propName}</td>
-                                <td className="p-2.5 font-mono text-slate-400">{propDef.type || 'any'}</td>
-                                <td className="p-2.5">
-                                  <span className={`px-1.5 py-0.5 rounded text-[9px] font-mono ${isReq ? 'bg-rose-500/20 text-rose-300' : 'bg-slate-800 text-slate-400'}`}>
-                                    {isReq ? 'YES' : 'OPTIONAL'}
-                                  </span>
-                                </td>
-                                <td className="p-2.5 text-slate-300">{propDef.description || '—'}</td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  ) : (
-                    <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 text-slate-500 text-[11px]">
-                      This tool requires no input arguments (empty properties schema).
-                    </div>
-                  )}
-                </div>
+            <div className="border-t border-slate-800 pt-3 flex justify-end">
+              <button
+                onClick={() => setShowCapabilitiesModal(false)}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold rounded-xl"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
-                {/* Raw JSON Schema */}
-                <div className="space-y-1.5">
-                  <span className="text-slate-300 font-semibold">Raw JSON Schema</span>
-                  <pre className="p-3 bg-slate-950 rounded-xl border border-slate-800 font-mono text-[11px] text-slate-300 overflow-x-auto max-h-48">
-                    {JSON.stringify(selectedTool.input_schema, null, 2)}
-                  </pre>
+      {/* ========================================================================= */}
+      {/* TOOL INSPECT & RUN MODAL */}
+      {/* ========================================================================= */}
+      {showToolModal && selectedTool && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-2xl w-full p-6 space-y-4 shadow-2xl max-h-[90vh] flex flex-col">
+            
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-400">
+                  <Wrench className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white font-mono">{selectedTool.name}</h3>
+                  <p className="text-xs text-slate-400">Server: <strong className="text-slate-200">{selectedTool.server_name}</strong></p>
                 </div>
               </div>
-            )}
+              <button onClick={() => setShowToolModal(false)} className="text-slate-400 hover:text-white">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
 
-            {/* TAB 2: EXECUTE TOOL (PHASE 6.4) */}
-            {toolModalTab === 'execute' && (
-              <div className="space-y-4 overflow-y-auto pr-1 text-xs">
-                
-                {/* Warning / Policy Banner */}
-                {selectedTool.risk_level === 'restricted' && (
-                  <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex items-start gap-2">
-                    <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-amber-400" />
-                    <div>
-                      <strong className="block font-semibold">Restricted Tool Execution Warning</strong>
-                      <span>This capability performs privileged operations. A single-use confirmation token will be authorized before execution.</span>
-                    </div>
-                  </div>
-                )}
+            {/* Modal Tabs */}
+            <div className="flex items-center bg-slate-950 border border-slate-800 p-1 rounded-xl gap-1">
+              <button
+                onClick={() => setToolModalTab('schema')}
+                className={`px-3 py-1 rounded-lg text-xs font-semibold transition ${
+                  toolModalTab === 'schema' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                Schema Inspector
+              </button>
+              <button
+                onClick={() => setToolModalTab('execute')}
+                className={`px-3 py-1 rounded-lg text-xs font-semibold transition ${
+                  toolModalTab === 'execute' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                Execute Tool
+              </button>
+            </div>
 
-                {/* Dynamic Parameter Inputs Form */}
+            {/* Modal Body */}
+            <div className="flex-1 overflow-y-auto space-y-4 pr-1">
+              {toolModalTab === 'schema' && (
                 <div className="space-y-3">
-                  <h4 className="text-slate-300 font-semibold">Input Arguments</h4>
-                  {selectedTool.input_schema?.properties && Object.keys(selectedTool.input_schema.properties).length > 0 ? (
-                    Object.entries(selectedTool.input_schema.properties).map(([propName, propDef]) => {
-                      const isReq = (selectedTool.input_schema.required || []).includes(propName);
-                      return (
-                        <div key={propName} className="space-y-1">
-                          <label className="flex items-center justify-between text-slate-300 font-medium">
-                            <span className="font-mono text-indigo-300">{propName} {isReq && <span className="text-rose-400">*</span>}</span>
-                            <span className="text-[10px] text-slate-500 font-mono">({propDef.type || 'string'})</span>
-                          </label>
-                          <input
-                            type={propDef.type === 'number' || propDef.type === 'integer' ? 'number' : 'text'}
-                            placeholder={propDef.description || `Enter value for ${propName}...`}
-                            value={executionArgs[propName] ?? ''}
-                            onChange={(e) => {
-                              const val = propDef.type === 'number' || propDef.type === 'integer' 
-                                ? (e.target.value === '' ? '' : Number(e.target.value))
-                                : e.target.value;
-                              setExecutionArgs(prev => ({ ...prev, [propName]: val }));
-                            }}
-                            className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-slate-200 font-mono text-xs focus:outline-none focus:border-indigo-500"
-                          />
-                          {propDef.description && (
-                            <span className="text-[10px] text-slate-500 block px-1">{propDef.description}</span>
-                          )}
-                        </div>
-                      );
-                    })
-                  ) : (
-                    <p className="text-slate-500 italic p-3 bg-slate-950 rounded-xl border border-slate-800">
-                      No parameters required for this tool.
-                    </p>
-                  )}
-                </div>
-
-                {/* Error Banner */}
-                {executionError && (
-                  <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-center gap-2">
-                    <AlertCircle className="w-4 h-4 shrink-0" />
-                    <span>{executionError}</span>
+                  <p className="text-xs text-slate-400">{selectedTool.description || 'No description provided.'}</p>
+                  <div className="p-3 bg-slate-950 border border-slate-800 rounded-xl space-y-2">
+                    <span className="text-[10px] text-slate-400 uppercase font-semibold">JSON Schema</span>
+                    <pre className="text-xs font-mono text-slate-300 overflow-x-auto whitespace-pre-wrap">
+                      {JSON.stringify(selectedTool.input_schema || {}, null, 2)}
+                    </pre>
                   </div>
-                )}
+                </div>
+              )}
 
-                {/* Execution Result Viewer */}
-                {executionResult && (
-                  <div className="space-y-2 pt-2 border-t border-slate-800">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span className="font-semibold text-slate-200">Execution Output</span>
-                        <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[10px] font-mono">
-                          {executionResult.status}
-                        </span>
+              {toolModalTab === 'execute' && (
+                <div className="space-y-4">
+                  {/* Risk & Confirmation Banner */}
+                  {selectedTool.risk_level === 'restricted' && (
+                    <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs space-y-2">
+                      <div className="flex items-center gap-2 font-bold text-amber-400">
+                        <AlertTriangle className="w-4 h-4" />
+                        <span>Restricted Operation &mdash; Confirmation Required</span>
                       </div>
-                      <div className="flex items-center gap-2 text-[10px] text-slate-400 font-mono">
-                        <Clock className="w-3 h-3 text-indigo-400" />
-                        <span>{executionResult.duration_ms}ms</span>
+                      <p className="leading-relaxed">
+                        This tool may modify external state, access sensitive resources, or execute write actions.
+                      </p>
+                      <label className="flex items-center gap-2 mt-2 cursor-pointer font-semibold text-white">
+                        <input
+                          type="checkbox"
+                          checked={restrictedConfirmed}
+                          onChange={(e) => setRestrictedConfirmed(e.target.checked)}
+                          className="rounded border-amber-500 text-indigo-600 focus:ring-0"
+                        />
+                        <span>I understand and authorize execution of this tool</span>
+                      </label>
+                    </div>
+                  )}
+
+                  {/* Arguments Form */}
+                  <div className="space-y-3">
+                    <h4 className="text-xs font-semibold text-slate-300">Tool Parameters</h4>
+                    {Object.keys(selectedTool.input_schema?.properties || {}).length === 0 ? (
+                      <div className="p-3 bg-slate-950 border border-slate-800 rounded-xl text-slate-500 text-xs">
+                        This tool requires no input arguments.
+                      </div>
+                    ) : (
+                      Object.keys(selectedTool.input_schema?.properties || {}).map((paramKey) => {
+                        const prop = selectedTool.input_schema.properties[paramKey];
+                        return (
+                          <div key={paramKey} className="space-y-1">
+                            <label className="text-xs font-mono text-slate-300 flex items-center justify-between">
+                              <span>{paramKey}</span>
+                              <span className="text-[10px] text-slate-500">{prop.type || 'any'}</span>
+                            </label>
+                            <input
+                              type="text"
+                              value={executionArgs[paramKey] !== undefined ? executionArgs[paramKey] : ''}
+                              onChange={(e) => setExecutionArgs({ ...executionArgs, [paramKey]: e.target.value })}
+                              placeholder={prop.description || paramKey}
+                              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white font-mono focus:border-indigo-500 outline-none"
+                            />
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+
+                  {/* Execution Error Banner */}
+                  {executionError && (
+                    <div className="p-3 bg-rose-500/10 border border-rose-500/30 rounded-xl text-xs text-rose-300 flex items-center gap-2">
+                      <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
+                      <span className="font-mono">{executionError}</span>
+                    </div>
+                  )}
+
+                  {/* Sanitized Result Display */}
+                  {executionResult && (
+                    <div className="space-y-2 pt-2 border-t border-slate-800">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+                          <CheckCircle className="w-4 h-4 text-emerald-400" />
+                          <span>Sanitized Result ({executionResult.duration_ms}ms)</span>
+                        </span>
                         <button
                           onClick={() => {
                             navigator.clipboard.writeText(JSON.stringify(executionResult.result, null, 2));
-                            triggerNotification?.('Copied', 'Result copied to clipboard');
+                            setCopiedResult(true);
+                            setTimeout(() => setCopiedResult(false), 2000);
                           }}
-                          className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 ml-2"
-                          title="Copy Output JSON"
+                          className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-[10px] font-semibold flex items-center gap-1 transition"
                         >
-                          <Copy className="w-3 h-3" />
+                          {copiedResult ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                          <span>{copiedResult ? 'Copied' : 'Copy'}</span>
                         </button>
                       </div>
+
+                      <pre className="p-4 bg-slate-950 rounded-xl border border-slate-800 text-xs font-mono text-slate-200 overflow-x-auto max-h-56 whitespace-pre-wrap">
+                        {JSON.stringify(executionResult.result, null, 2)}
+                      </pre>
                     </div>
+                  )}
+                </div>
+              )}
+            </div>
 
-                    <pre className="p-3.5 bg-slate-950 rounded-xl border border-slate-800 font-mono text-[11px] text-slate-300 overflow-x-auto max-h-56 leading-relaxed">
-                      {JSON.stringify(executionResult.result, null, 2)}
-                    </pre>
-                  </div>
-                )}
-
-              </div>
-            )}
-
-            <div className="pt-2 flex justify-between items-center border-t border-slate-800">
-              <button
-                onClick={() => handleToggleToolEnable(selectedTool)}
-                className={`px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition ${
-                  selectedTool.enabled
-                    ? 'bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 border border-rose-500/30'
-                    : 'bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30'
-                }`}
-              >
-                <Power className="w-3.5 h-3.5" />
-                <span>{selectedTool.enabled ? 'Disable Tool' : 'Enable Tool'}</span>
-              </button>
-
+            {/* Footer */}
+            <div className="border-t border-slate-800 pt-3 flex items-center justify-between">
+              <span className="text-[10px] font-mono text-slate-500">Trust Label: UNTRUSTED_MCP</span>
               <div className="flex items-center gap-2">
                 {toolModalTab === 'execute' && (
                   <button
-                    onClick={handleExecute}
+                    onClick={handleExecuteTool}
                     disabled={isExecuting || !selectedTool.available_for_execution}
                     className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 shadow-sm"
                   >
-                    {isExecuting ? (
-                      <>
-                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                        <span>Executing...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Play className="w-3.5 h-3.5" />
-                        <span>Run Execution</span>
-                      </>
-                    )}
+                    {isExecuting ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />}
+                    <span>{isExecuting ? 'Executing...' : 'Run Execution'}</span>
                   </button>
                 )}
-
                 <button
                   onClick={() => setShowToolModal(false)}
                   className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold"
@@ -1531,12 +2086,11 @@ export default function UserMcpMarket({ triggerNotification }) {
       )}
 
       {/* ========================================================================= */}
-      {/* RESOURCE CONTENT INSPECTOR MODAL (PHASE 6.5) */}
+      {/* RESOURCE VIEWER MODAL */}
       {/* ========================================================================= */}
       {showResourceModal && selectedResource && (
-        <div className="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-2xl w-full p-6 space-y-4 shadow-2xl max-h-[90vh] flex flex-col">
-            
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <div className="flex items-center gap-2.5">
                 <div className="p-2 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400">
@@ -1547,50 +2101,29 @@ export default function UserMcpMarket({ triggerNotification }) {
                   <p className="text-xs text-slate-400 font-mono">{selectedResource.uri}</p>
                 </div>
               </div>
-              <button onClick={() => setShowResourceModal(false)} className="text-slate-400 hover:text-white p-1">
+              <button onClick={() => setShowResourceModal(false)} className="text-slate-400 hover:text-white">
                 <X className="w-4 h-4" />
               </button>
             </div>
 
             <div className="flex-1 overflow-y-auto space-y-4 pr-1">
-              <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 flex items-center justify-between text-xs">
-                <div className="space-y-0.5">
-                  <span className="text-[10px] text-slate-500 uppercase font-semibold">Server Origin</span>
-                  <p className="font-mono text-slate-300">{selectedResource.server_name}</p>
-                </div>
-                <div className="space-y-0.5 text-right">
-                  <span className="text-[10px] text-slate-500 uppercase font-semibold">MIME Type</span>
-                  <p className="font-mono text-indigo-400">{resourceContent?.mime_type || selectedResource.mime_type || 'text/plain'}</p>
-                </div>
-              </div>
-
               {isReadingResource ? (
                 <div className="flex flex-col items-center justify-center py-12 text-slate-400 text-xs gap-2">
                   <RefreshCw className="w-5 h-5 animate-spin text-indigo-400" />
-                  <span>Connecting to MCP server and reading resource content...</span>
+                  <span>Reading resource content from MCP server...</span>
                 </div>
               ) : resourceReadError ? (
-                <div className="p-4 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs space-y-1">
-                  <span className="font-bold flex items-center gap-1.5">
-                    <AlertCircle className="w-4 h-4 text-rose-400" />
-                    Resource Read Failed
-                  </span>
-                  <p className="font-mono">{resourceReadError}</p>
+                <div className="p-4 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs space-y-1 font-mono">
+                  <span className="font-bold block">Read Error:</span>
+                  <p>{resourceReadError}</p>
                 </div>
               ) : resourceContent ? (
                 <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-semibold text-slate-300">Sanitized Content Preview</span>
-                    <div className="flex items-center gap-2">
-                      {resourceContent.truncated && (
-                        <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                          TRUNCATED (1MB Limit)
-                        </span>
-                      )}
-                      <span className="text-[10px] font-mono text-slate-400">{resourceContent.size} bytes</span>
-                    </div>
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-semibold text-slate-300">Sanitized Content Preview</span>
+                    <span className="text-[10px] font-mono text-slate-400">{resourceContent.size} bytes</span>
                   </div>
-                  <pre className="p-4 bg-slate-950 rounded-xl border border-slate-800 text-xs font-mono text-slate-200 overflow-x-auto max-h-72 whitespace-pre-wrap leading-relaxed">
+                  <pre className="p-4 bg-slate-950 rounded-xl border border-slate-800 text-xs font-mono text-slate-200 overflow-x-auto max-h-72 whitespace-pre-wrap">
                     {resourceContent.text}
                   </pre>
                 </div>
@@ -1605,18 +2138,16 @@ export default function UserMcpMarket({ triggerNotification }) {
                 Close
               </button>
             </div>
-
           </div>
         </div>
       )}
 
       {/* ========================================================================= */}
-      {/* PROMPT TEMPLATE RENDERER MODAL (PHASE 6.5) */}
+      {/* PROMPT RENDERER MODAL */}
       {/* ========================================================================= */}
       {showPromptModal && selectedPrompt && (
-        <div className="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-2xl w-full p-6 space-y-4 shadow-2xl max-h-[90vh] flex flex-col">
-            
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <div className="flex items-center gap-2.5">
                 <div className="p-2 rounded-xl bg-purple-500/10 border border-purple-500/20 text-purple-400">
@@ -1624,10 +2155,10 @@ export default function UserMcpMarket({ triggerNotification }) {
                 </div>
                 <div>
                   <h3 className="text-base font-bold text-white font-mono">{selectedPrompt.name}</h3>
-                  <p className="text-xs text-slate-400">Server: <strong className="text-slate-200">{selectedPrompt.server_name}</strong></p>
+                  <p className="text-xs text-slate-400">Server: {selectedPrompt.server_name}</p>
                 </div>
               </div>
-              <button onClick={() => setShowPromptModal(false)} className="text-slate-400 hover:text-white p-1">
+              <button onClick={() => setShowPromptModal(false)} className="text-slate-400 hover:text-white">
                 <X className="w-4 h-4" />
               </button>
             </div>
@@ -1635,68 +2166,37 @@ export default function UserMcpMarket({ triggerNotification }) {
             <div className="flex-1 overflow-y-auto space-y-4 pr-1">
               <p className="text-xs text-slate-400 leading-relaxed">{selectedPrompt.description || 'No description provided.'}</p>
 
-              {/* Dynamic Arguments Form */}
+              {/* Arguments Entry Form */}
               <div className="space-y-3">
                 <h4 className="text-xs font-semibold text-slate-300">Template Arguments</h4>
-                {(selectedPrompt.arguments || []).length === 0 ? (
-                  <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 text-slate-500 text-xs">
-                    This template takes no required arguments.
+                {(selectedPrompt.arguments || []).map((arg) => (
+                  <div key={arg.name} className="space-y-1">
+                    <label className="text-xs font-mono text-slate-300">{arg.name}</label>
+                    <input
+                      type="text"
+                      value={promptArgs[arg.name] || ''}
+                      onChange={(e) => setPromptArgs({ ...promptArgs, [arg.name]: e.target.value })}
+                      placeholder={arg.description || arg.name}
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:border-purple-500 outline-none"
+                    />
                   </div>
-                ) : (
-                  <div className="space-y-2.5">
-                    {selectedPrompt.arguments.map((arg) => (
-                      <div key={arg.name} className="space-y-1">
-                        <label className="text-[11px] font-mono text-slate-300 flex items-center gap-1.5">
-                          <span>{arg.name}</span>
-                          {arg.required && <span className="text-rose-400 font-bold">*</span>}
-                        </label>
-                        <input
-                          type="text"
-                          value={promptArgs[arg.name] || ''}
-                          onChange={(e) => setPromptArgs({ ...promptArgs, [arg.name]: e.target.value })}
-                          placeholder={arg.description || `Enter value for ${arg.name}...`}
-                          className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 outline-none focus:border-purple-500 transition"
-                        />
-                      </div>
-                    ))}
-                  </div>
-                )}
+                ))}
               </div>
 
-              {isRenderingPrompt && (
-                <div className="flex items-center justify-center py-6 text-slate-400 text-xs gap-2">
-                  <RefreshCw className="w-4 h-4 animate-spin text-purple-400" />
-                  <span>Rendering prompt template via MCP server...</span>
-                </div>
-              )}
-
               {promptRenderError && (
-                <div className="p-4 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs space-y-1">
-                  <span className="font-bold flex items-center gap-1.5">
-                    <AlertCircle className="w-4 h-4 text-rose-400" />
-                    Render Error
-                  </span>
-                  <p className="font-mono">{promptRenderError}</p>
+                <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs font-mono">
+                  {promptRenderError}
                 </div>
               )}
 
               {renderedPrompt && (
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-semibold text-slate-300">Rendered Messages (External Untrusted Data)</span>
-                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">
-                      Untrusted Data
-                    </span>
-                  </div>
+                <div className="space-y-2 pt-2 border-t border-slate-800">
+                  <span className="text-xs font-semibold text-slate-300">Rendered Template Messages</span>
                   <div className="space-y-2">
-                    {renderedPrompt.messages.map((m, idx) => (
+                    {renderedPrompt.messages.map((msg, idx) => (
                       <div key={idx} className="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-1">
-                        <span className="text-[10px] font-mono font-bold uppercase text-purple-400">
-                          Role: {m.role}
-                        </span>
-                        <p className="text-xs font-mono text-slate-200 whitespace-pre-wrap leading-relaxed">
-                          {m.content}
-                        </p>
+                        <span className="text-[10px] font-bold font-mono text-purple-400 uppercase">{msg.role}</span>
+                        <p className="text-xs text-slate-200 whitespace-pre-wrap">{msg.content}</p>
                       </div>
                     ))}
                   </div>
@@ -1705,363 +2205,89 @@ export default function UserMcpMarket({ triggerNotification }) {
             </div>
 
             <div className="border-t border-slate-800 pt-3 flex items-center justify-between">
-              <button
-                onClick={handleRenderPrompt}
-                disabled={isRenderingPrompt}
-                className="px-4 py-2 bg-purple-600 hover:bg-purple-500 disabled:opacity-40 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 shadow-sm"
-              >
-                <Play className="w-3.5 h-3.5" />
-                <span>Render Prompt</span>
-              </button>
+              <span className="text-[10px] font-mono text-slate-500">Isolation: UNTRUSTED_MCP</span>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleRenderPrompt}
+                  disabled={isRenderingPrompt}
+                  className="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5"
+                >
+                  {isRenderingPrompt ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />}
+                  <span>Render Template</span>
+                </button>
+                <button
+                  onClick={() => setShowPromptModal(false)}
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
+      {/* ========================================================================= */}
+      {/* EXECUTION DETAIL INSPECTOR MODAL */}
+      {/* ========================================================================= */}
+      {showExecutionDetailModal && selectedExecution && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-2xl w-full p-6 space-y-4 shadow-2xl max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <h3 className="text-base font-bold text-white font-mono flex items-center gap-2">
+                <History className="w-5 h-5 text-indigo-400" />
+                Execution Trace &mdash; {selectedExecution.tool_name || selectedExecution.tool_id}
+              </h3>
+              <button onClick={() => setShowExecutionDetailModal(false)} className="text-slate-400 hover:text-white">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto space-y-3 font-mono text-xs">
+              <div className="grid grid-cols-2 gap-3 p-3 bg-slate-950 rounded-xl border border-slate-800">
+                <div>
+                  <span className="text-[10px] text-slate-500 uppercase block">Execution ID</span>
+                  <span className="text-slate-200">{selectedExecution.execution_id}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-500 uppercase block">Status</span>
+                  <span className="text-emerald-400 font-bold">{selectedExecution.status}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-500 uppercase block">Started At</span>
+                  <span className="text-slate-300">{selectedExecution.started_at ? new Date(selectedExecution.started_at).toLocaleString() : '---'}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-500 uppercase block">Duration</span>
+                  <span className="text-slate-300">{selectedExecution.duration_ms ? `${Math.round(selectedExecution.duration_ms)}ms` : '---'}</span>
+                </div>
+              </div>
+
+              {selectedExecution.error && (
+                <div className="p-3 bg-rose-500/10 border border-rose-500/30 rounded-xl text-rose-300 space-y-1">
+                  <span className="font-bold block">Execution Failure:</span>
+                  <p>{selectedExecution.error}</p>
+                </div>
+              )}
+
+              {selectedExecution.result_preview && (
+                <div className="space-y-1">
+                  <span className="text-[10px] text-slate-400 uppercase font-semibold">Sanitized Output Payload</span>
+                  <pre className="p-4 bg-slate-950 border border-slate-800 rounded-xl text-slate-200 overflow-x-auto whitespace-pre-wrap max-h-60">
+                    {selectedExecution.result_preview}
+                  </pre>
+                </div>
+              )}
+            </div>
+
+            <div className="border-t border-slate-800 pt-3 flex justify-end">
               <button
-                onClick={() => setShowPromptModal(false)}
+                onClick={() => setShowExecutionDetailModal(false)}
                 className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold"
               >
                 Close
               </button>
             </div>
-
-          </div>
-        </div>
-      )}
-
-      {/* Discovery Summary Modal */}
-      {discoverySummary && (
-        <div className="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <h3 className="text-base font-bold text-white flex items-center gap-2">
-                <CheckCircle className="w-4 h-4 text-emerald-400" />
-                Discovery Synchronization Result
-              </h3>
-              <button onClick={() => setDiscoverySummary(null)} className="text-slate-400 hover:text-white p-1">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="space-y-2.5 text-xs text-slate-300">
-              <div className="flex justify-between py-1 border-b border-slate-800/60">
-                <span className="text-slate-400">Server:</span>
-                <span className="font-semibold text-white font-mono">{discoverySummary.server_name}</span>
-              </div>
-              <div className="flex justify-between py-1 border-b border-slate-800/60">
-                <span className="text-slate-400">Protocol / Server Version:</span>
-                <span className="font-mono text-indigo-300">v{discoverySummary.protocol_version} (Server v{discoverySummary.server_version || '1.0.0'})</span>
-              </div>
-              <div className="grid grid-cols-2 gap-2 pt-1">
-                <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800">
-                  <span className="text-[10px] text-slate-400 block">Tools (+Added / ~Changed)</span>
-                  <strong className="text-sm text-emerald-400">+{discoverySummary.tools_added}</strong> / <span className="text-amber-400 font-semibold">~{discoverySummary.tools_changed}</span>
-                </div>
-                <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800">
-                  <span className="text-[10px] text-slate-400 block">Resources (+Added / ~Changed)</span>
-                  <strong className="text-sm text-emerald-400">+{discoverySummary.resources_added}</strong> / <span className="text-amber-400 font-semibold">~{discoverySummary.resources_changed}</span>
-                </div>
-                <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800">
-                  <span className="text-[10px] text-slate-400 block">Prompts (+Added / ~Changed)</span>
-                  <strong className="text-sm text-emerald-400">+{discoverySummary.prompts_added}</strong> / <span className="text-amber-400 font-semibold">~{discoverySummary.prompts_changed}</span>
-                </div>
-                <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800">
-                  <span className="text-[10px] text-slate-400 block">Stale / Reactivated</span>
-                  <strong className="text-sm text-rose-400">{discoverySummary.stale_capabilities}</strong> / <span className="text-indigo-400 font-semibold">{discoverySummary.reactivated_capabilities}</span>
-                </div>
-              </div>
-              <div className="text-[11px] text-slate-500 pt-1 text-right">
-                Latency: {discoverySummary.discovery_latency_ms}ms • Unchanged: {discoverySummary.unchanged_capabilities}
-              </div>
-            </div>
-
-            <div className="pt-2 flex justify-end">
-              <button
-                onClick={() => setDiscoverySummary(null)}
-                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-semibold text-xs"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Register Server Modal */}
-      {showRegisterModal && (
-        <div className="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <h3 className="text-base font-bold text-white flex items-center gap-2">
-                <Server className="w-4 h-4 text-indigo-400" />
-                Register MCP Server
-              </h3>
-              <button onClick={() => setShowRegisterModal(false)} className="text-slate-400 hover:text-white p-1">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            {formError && (
-              <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 shrink-0" />
-                <span>{formError}</span>
-              </div>
-            )}
-
-            <form onSubmit={handleRegister} className="space-y-3.5 text-xs">
-              <div>
-                <label className="block text-slate-300 font-medium mb-1">Server Name *</label>
-                <input
-                  type="text"
-                  placeholder="e.g. GitHub Workspace Server"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-slate-200 focus:outline-none focus:border-indigo-500"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-slate-300 font-medium mb-1">Connection URL / Command Path *</label>
-                <input
-                  type="text"
-                  placeholder="e.g. http://localhost:8000/sse or mock://github"
-                  value={serverUrl}
-                  onChange={(e) => setServerUrl(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-slate-200 font-mono text-xs focus:outline-none focus:border-indigo-500"
-                  required
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-slate-300 font-medium mb-1">Transport</label>
-                  <select
-                    value={transport}
-                    onChange={(e) => setTransport(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-slate-200 focus:outline-none focus:border-indigo-500"
-                  >
-                    <option value="sse">SSE (Server-Sent Events)</option>
-                    <option value="streamable_http">Streamable HTTP</option>
-                    <option value="stdio">Process STDIO</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-slate-300 font-medium mb-1">Authentication</label>
-                  <select
-                    value={authType}
-                    onChange={(e) => setAuthType(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-slate-200 focus:outline-none focus:border-indigo-500"
-                  >
-                    <option value="none">None (Open)</option>
-                    <option value="api_key">API Key</option>
-                    <option value="bearer">Bearer Token</option>
-                    <option value="oauth">OAuth 2.0</option>
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-slate-300 font-medium mb-1">Description</label>
-                <textarea
-                  rows={2}
-                  placeholder="Describe tools or resources this server provides..."
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-slate-200 focus:outline-none focus:border-indigo-500"
-                />
-              </div>
-
-              <div className="pt-2 flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setShowRegisterModal(false)}
-                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl font-medium"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded-xl font-semibold flex items-center gap-1.5"
-                >
-                  {isSubmitting && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
-                  <span>{isSubmitting ? 'Registering...' : 'Register Server'}</span>
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Capabilities Inspection Modal */}
-      {showCapabilitiesModal && selectedServer && (
-        <div className="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-4xl w-full p-6 space-y-4 shadow-2xl max-h-[90vh] flex flex-col">
-            
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <div className="flex items-center gap-2.5">
-                <div className="p-2 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400">
-                  <Server className="w-4 h-4" />
-                </div>
-                <div>
-                  <h3 className="text-base font-bold text-white tracking-wide">{selectedServer.name} Capabilities</h3>
-                  <p className="text-xs text-slate-400">{capabilities.length} discovered capabilities across catalog</p>
-                </div>
-              </div>
-              <button onClick={() => setShowCapabilitiesModal(false)} className="text-slate-400 hover:text-white p-1">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Filter & Search Bar */}
-            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 border-b border-slate-800 pb-2 text-xs">
-              <div className="flex items-center gap-2 w-full sm:w-auto">
-                <button
-                  onClick={() => { setActiveTab('tool'); setSelectedCap(null); }}
-                  className={`px-3 py-1.5 rounded-lg font-medium flex items-center gap-1.5 transition ${
-                    activeTab === 'tool' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-white hover:bg-slate-800'
-                  }`}
-                >
-                  <Wrench className="w-3.5 h-3.5" />
-                  <span>Tools ({capabilities.filter(c => c.capability_type === 'tool').length})</span>
-                </button>
-                <button
-                  onClick={() => { setActiveTab('resource'); setSelectedCap(null); }}
-                  className={`px-3 py-1.5 rounded-lg font-medium flex items-center gap-1.5 transition ${
-                    activeTab === 'resource' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-white hover:bg-slate-800'
-                  }`}
-                >
-                  <FileCode className="w-3.5 h-3.5" />
-                  <span>Resources ({capabilities.filter(c => c.capability_type === 'resource').length})</span>
-                </button>
-                <button
-                  onClick={() => { setActiveTab('prompt'); setSelectedCap(null); }}
-                  className={`px-3 py-1.5 rounded-lg font-medium flex items-center gap-1.5 transition ${
-                    activeTab === 'prompt' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-white hover:bg-slate-800'
-                  }`}
-                >
-                  <MessageSquare className="w-3.5 h-3.5" />
-                  <span>Prompts ({capabilities.filter(c => c.capability_type === 'prompt').length})</span>
-                </button>
-              </div>
-
-              <div className="relative w-full sm:w-56">
-                <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500" />
-                <input
-                  type="text"
-                  value={capSearch}
-                  onChange={(e) => setCapSearch(e.target.value)}
-                  placeholder={`Search ${activeTab}s...`}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg py-1.5 pl-8 pr-3 text-[11px] text-slate-200 focus:outline-none focus:border-indigo-500"
-                />
-              </div>
-            </div>
-
-            {/* Main Content Area */}
-            <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-4 overflow-y-auto min-h-[300px]">
-              
-              {/* Capabilities List */}
-              <div className="space-y-2 overflow-y-auto pr-1">
-                {isLoadingCaps ? (
-                  <div className="flex items-center justify-center py-12 text-slate-400 text-xs gap-2">
-                    <RefreshCw className="w-4 h-4 animate-spin text-indigo-400" />
-                    <span>Loading capabilities...</span>
-                  </div>
-                ) : (
-                  (activeTab === 'tool' ? toolsList : activeTab === 'resource' ? resourcesList : promptsList).length === 0 ? (
-                    <div className="text-center py-12 text-slate-500 text-xs">
-                      No matching {activeTab}s found. Click "Refresh" on server card to synchronize.
-                    </div>
-                  ) : (
-                    (activeTab === 'tool' ? toolsList : activeTab === 'resource' ? resourcesList : promptsList).map((cap) => (
-                      <div
-                        key={cap.id}
-                        onClick={() => setSelectedCap(cap)}
-                        className={`p-3 rounded-xl border text-xs cursor-pointer transition flex items-center justify-between ${
-                          selectedCap?.id === cap.id 
-                            ? 'bg-indigo-950/40 border-indigo-500 text-white' 
-                            : cap.is_stale
-                            ? 'bg-slate-950 border-amber-500/20 text-slate-400 opacity-60'
-                            : 'bg-slate-950 border-slate-800 hover:border-slate-700 text-slate-300'
-                        }`}
-                      >
-                        <div className="space-y-1 truncate pr-2">
-                          <div className="flex items-center gap-2">
-                            <span className="font-semibold font-mono text-indigo-300">{cap.name}</span>
-                            {cap.is_stale ? (
-                              <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">
-                                STALE
-                              </span>
-                            ) : (
-                              <span className="text-[9px] px-1.5 py-0.2 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                                v{cap.version || 1}
-                              </span>
-                            )}
-                          </div>
-                          <p className="text-[11px] text-slate-400 truncate">{cap.description || 'No description'}</p>
-                        </div>
-                        <ChevronRight className="w-4 h-4 text-slate-600 shrink-0" />
-                      </div>
-                    ))
-                  )
-                )}
-              </div>
-
-              {/* Capability Details & Schema Inspector */}
-              <div className="bg-slate-950 border border-slate-800 rounded-xl p-4 overflow-y-auto space-y-3">
-                {selectedCap ? (
-                  <div className="space-y-3 text-xs">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
-                          {selectedCap.capability_type}
-                        </span>
-                        {selectedCap.is_stale && (
-                          <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-1">
-                            <AlertTriangle className="w-3 h-3" />
-                            Stale / Disappeared
-                          </span>
-                        )}
-                      </div>
-                      <h4 className="text-sm font-bold text-white font-mono mt-2">{selectedCap.name}</h4>
-                      <p className="text-slate-400 text-xs mt-1 leading-relaxed">{selectedCap.description || 'No description provided.'}</p>
-                    </div>
-
-                    {selectedCap.definition_hash && (
-                      <div className="p-2 rounded-lg bg-slate-900/60 border border-slate-800 text-[10px] text-slate-400 flex items-center gap-1.5 font-mono">
-                        <Tag className="w-3 h-3 text-indigo-400" />
-                        <span>Hash: {selectedCap.definition_hash.slice(0, 16)}...</span>
-                        <span className="ml-auto">Rev: {selectedCap.version || 1}</span>
-                      </div>
-                    )}
-
-                    {selectedCap.input_schema && (
-                      <div className="space-y-1">
-                        <span className="text-[11px] font-semibold text-slate-300">Input Schema (JSON Schema)</span>
-                        <pre className="p-3 bg-slate-900 rounded-lg border border-slate-800 text-[11px] font-mono text-slate-300 overflow-x-auto">
-                          {JSON.stringify(selectedCap.input_schema, null, 2)}
-                        </pre>
-                      </div>
-                    )}
-
-                    {selectedCap.metadata && Object.keys(selectedCap.metadata).length > 0 && (
-                      <div className="space-y-1">
-                        <span className="text-[11px] font-semibold text-slate-300">Metadata</span>
-                        <pre className="p-3 bg-slate-900 rounded-lg border border-slate-800 text-[11px] font-mono text-slate-300 overflow-x-auto">
-                          {JSON.stringify(selectedCap.metadata, null, 2)}
-                        </pre>
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <div className="flex flex-col items-center justify-center h-full text-slate-500 text-xs text-center py-12">
-                    <Code className="w-6 h-6 mb-2 text-slate-600" />
-                    <span>Select a capability from the catalog to inspect its JSON schema, hash, and versioning details.</span>
-                  </div>
-                )}
-              </div>
-
-            </div>
-
           </div>
         </div>
       )}
