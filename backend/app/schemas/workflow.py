@@ -280,3 +280,15 @@ class WorkflowExecutionResponse(BaseModel):
 
 class WorkflowExecutionDetailResponse(WorkflowExecutionResponse):
     execution_nodes: List[WorkflowExecutionNodeResponse] = Field(default_factory=list)
+
+class WorkflowDefinitionUpdate(BaseModel):
+    expected_version: int
+    name: Optional[str] = None
+    description: Optional[str] = None
+    nodes: List[WorkflowNodeCreate] = Field(default_factory=list)
+    edges: List[WorkflowEdgeCreate] = Field(default_factory=list)
+    variables: Optional[List[WorkflowVariableCreate]] = Field(default_factory=list)
+
+class WorkflowCloneRequest(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None

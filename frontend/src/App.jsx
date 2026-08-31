@@ -11,6 +11,7 @@ import UserMemory from './pages/user/UserMemory';
 import UserGraph from './pages/user/UserGraph';
 import UserTasks from './pages/user/UserTasks';
 import UserWorkflows from './pages/user/UserWorkflows';
+import UserWorkflowEditor from './pages/user/UserWorkflowEditor';
 import UserMcpMarket from './pages/user/UserMcpMarket';
 import UserAiMarket from './pages/user/UserAiMarket';
 import UserDocuments from './pages/user/UserDocuments';
@@ -143,6 +144,7 @@ function AppContent() {
           <Route path="/user/knowledge-graph" element={<UserGraph />} />
           <Route path="/user/tasks" element={<UserTasks triggerNotification={triggerNotification} />} />
           <Route path="/user/workflows" element={<UserWorkflows triggerNotification={triggerNotification} />} />
+          <Route path="/user/workflows/:workflowId/edit" element={<UserWorkflowEditor triggerNotification={triggerNotification} />} />
           <Route path="/user/mcp-marketplace" element={<UserMcpMarket triggerNotification={triggerNotification} />} />
           <Route path="/user/ai-marketplace" element={<UserAiMarket triggerNotification={triggerNotification} />} />
           <Route path="/user/documents" element={<UserDocuments triggerNotification={triggerNotification} />} />

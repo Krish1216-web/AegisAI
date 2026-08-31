@@ -19,7 +19,9 @@ from app.schemas.workflow import (
     WorkflowValidationResult,
     WorkflowNodeCreate,
     WorkflowEdgeCreate,
-    WorkflowVariableCreate
+    WorkflowVariableCreate,
+    WorkflowDefinitionUpdate,
+    WorkflowCloneRequest
 )
 from app.services.workflow_validation import WorkflowValidationService
 from app.core.mcp.security import CredentialStore
@@ -356,3 +358,188 @@ class WorkflowService:
         self.db.refresh(workflow)
         logger.info(f"Archived workflow '{workflow.name}' (id={workflow.id})")
         return workflow
+
+    def get_workflow_definition(
+        self,
+        user_id: uuid.UUID,
+        workspace_id: uuid.UUID,
+        workflow_id: uuid.UUID
+    ) -> Optional[Workflow]:
+        return self.get_workflow(user_id, workspace_id, workflow_id)
+
+    def update_workflow_definition(
+        self,
+        user_id: uuid.UUID,
+        workspace_id: uuid.UUID,
+        workflow_id: uuid.UUID,
+        payload: WorkflowDefinitionUpdate
+    ) -> Optional[Workflow]:
+        workflow = self.get_workflow(user_id, workspace_id, workflow_id)
+        if not workflow:
+            return None
+
+        if workflow.status == WorkflowStatus.ARCHIVED:
+            raise WorkflowArchivedError(f"Cannot modify archived workflow '{workflow.name}'.")
+
+        # 1. Optimistic Concurrency Check
+        if workflow.version != payload.expected_version:
+            raise VersionConflictError(
+                f"Workflow version conflict: expected version {payload.expected_version}, but server has version {workflow.version}. Please reload the latest definition."
+            )
+
+        # 2. Graph Validation
+        raw_nodes = [n.dict() if hasattr(n, "dict") else n.model_dump() for n in payload.nodes]
+        raw_edges = [e.dict() if hasattr(e, "dict") else e.model_dump() for e in payload.edges]
+        raw_vars = [v.dict() if hasattr(v, "dict") else v.model_dump() for v in (payload.variables or [])]
+
+        validation = WorkflowValidationService.validate_graph(raw_nodes, raw_edges, raw_vars)
+        if not validation.valid:
+            err_msgs = "; ".join([e.message for e in validation.errors])
+            raise ValueError(f"Workflow definition validation failed: {err_msgs}")
+
+        # 3. Atomic Database Update
+        if payload.name:
+            workflow.name = payload.name
+        if payload.description is not None:
+            workflow.description = payload.description
+
+        # Remove existing edges, nodes, variables
+        self.db.query(WorkflowEdge).filter(WorkflowEdge.workflow_id == workflow.id).delete()
+        self.db.query(WorkflowNode).filter(WorkflowNode.workflow_id == workflow.id).delete()
+        self.db.query(WorkflowVariable).filter(WorkflowVariable.workflow_id == workflow.id).delete()
+        self.db.flush()
+
+        # Recreate nodes
+        node_key_to_id = {}
+        for node_data in payload.nodes:
+            node_id = uuid.uuid4()
+            node_key_to_id[node_data.node_key] = node_id
+            node = WorkflowNode(
+                id=node_id,
+                workflow_id=workflow.id,
+                node_key=node_data.node_key,
+                node_type=node_data.node_type,
+                name=node_data.name,
+                config=node_data.config,
+                position=node_data.position,
+                is_enabled=node_data.is_enabled
+            )
+            self.db.add(node)
+        self.db.flush()
+
+        # Recreate edges
+        for edge_data in payload.edges:
+            src_id = edge_data.source_node_id or node_key_to_id.get(edge_data.source_node_key or "")
+            tgt_id = edge_data.target_node_id or node_key_to_id.get(edge_data.target_node_key or "")
+            if src_id and tgt_id:
+                edge = WorkflowEdge(
+                    id=uuid.uuid4(),
+                    workflow_id=workflow.id,
+                    source_node_id=src_id,
+                    target_node_id=tgt_id,
+                    condition=edge_data.condition,
+                    priority=edge_data.priority
+                )
+                self.db.add(edge)
+
+        # Recreate variables
+        if payload.variables:
+            for var_data in payload.variables:
+                val = var_data.value
+                if var_data.is_secret and val:
+                    val = CredentialStore.encode_secure_token(val)
+                variable = WorkflowVariable(
+                    id=uuid.uuid4(),
+                    workflow_id=workflow.id,
+                    name=var_data.name,
+                    value=val,
+                    value_type=var_data.value_type,
+                    is_secret=var_data.is_secret
+                )
+                self.db.add(variable)
+
+        workflow.version += 1
+        self.db.commit()
+        self.db.refresh(workflow)
+        logger.info(f"Saved workflow definition '{workflow.name}' (id={workflow.id}, version={workflow.version})")
+        return workflow
+
+    def clone_workflow(
+        self,
+        user_id: uuid.UUID,
+        workspace_id: uuid.UUID,
+        workflow_id: uuid.UUID,
+        clone_name: Optional[str] = None
+    ) -> Optional[Workflow]:
+        source = self.get_workflow(user_id, workspace_id, workflow_id)
+        if not source:
+            return None
+
+        new_name = clone_name or f"{source.name} (Copy)"
+        cloned = Workflow(
+            id=uuid.uuid4(),
+            user_id=user_id,
+            workspace_id=workspace_id,
+            name=new_name,
+            description=source.description,
+            status=WorkflowStatus.DRAFT,
+            version=1,
+            is_active=False
+        )
+        self.db.add(cloned)
+        self.db.flush()
+
+        node_map = {}
+        for n in source.nodes:
+            if not n.deleted_at:
+                new_n_id = uuid.uuid4()
+                node_map[n.id] = new_n_id
+                cloned_node = WorkflowNode(
+                    id=new_n_id,
+                    workflow_id=cloned.id,
+                    node_key=n.node_key,
+                    node_type=n.node_type,
+                    name=n.name,
+                    config=n.config,
+                    position=n.position,
+                    is_enabled=n.is_enabled
+                )
+                self.db.add(cloned_node)
+        self.db.flush()
+
+        for e in source.edges:
+            if not e.deleted_at and e.source_node_id in node_map and e.target_node_id in node_map:
+                cloned_edge = WorkflowEdge(
+                    id=uuid.uuid4(),
+                    workflow_id=cloned.id,
+                    source_node_id=node_map[e.source_node_id],
+                    target_node_id=node_map[e.target_node_id],
+                    condition=e.condition,
+                    priority=e.priority
+                )
+                self.db.add(cloned_edge)
+
+        for v in source.variables:
+            if not v.deleted_at:
+                cloned_var = WorkflowVariable(
+                    id=uuid.uuid4(),
+                    workflow_id=cloned.id,
+                    name=v.name,
+                    value=v.value,
+                    value_type=v.value_type,
+                    is_secret=v.is_secret
+                )
+                self.db.add(cloned_var)
+
+        self.db.commit()
+        self.db.refresh(cloned)
+        logger.info(f"Cloned workflow '{source.name}' to '{cloned.name}' (id={cloned.id})")
+        return cloned
+
+
+class VersionConflictError(Exception):
+    pass
+
+
+class WorkflowArchivedError(Exception):
+    pass

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Workflow as WorkflowIcon,
   Play,
@@ -19,7 +20,9 @@ import {
   ChevronRight,
   Clock,
   Terminal,
-  FileCode
+  FileCode,
+  Edit3,
+  Copy
 } from 'lucide-react';
 import {
   getWorkflows,
@@ -32,10 +35,12 @@ import {
   pauseWorkflow,
   archiveWorkflow,
   executeWorkflow,
-  getWorkflowExecutions
+  getWorkflowExecutions,
+  cloneWorkflow
 } from '../../api/workflows';
 
 export default function UserWorkflows({ addLog, triggerNotification }) {
+  const navigate = useNavigate();
   const [workflows, setWorkflows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedWorkflow, setSelectedWorkflow] = useState(null);
@@ -185,6 +190,16 @@ export default function UserWorkflows({ addLog, triggerNotification }) {
     }
   };
 
+  const handleClone = async (wId) => {
+    try {
+      const cloned = await cloneWorkflow(wId);
+      if (triggerNotification) triggerNotification('Workflow Cloned', `Created copy: ${cloned.name}`);
+      fetchWorkflows();
+    } catch (err) {
+      console.error('Clone error:', err);
+    }
+  };
+
   const handleOpenDetail = async (wId) => {
     try {
       const detail = await getWorkflow(wId);
@@ -327,9 +342,23 @@ export default function UserWorkflows({ addLog, triggerNotification }) {
                   </div>
                   <div className="flex items-center gap-1">
                     <button
+                      onClick={() => navigate(`/user/workflows/${w.id}/edit`)}
+                      title="Open Visual Builder"
+                      className="p-1.5 text-slate-400 hover:text-indigo-300 rounded-lg hover:bg-slate-800 transition"
+                    >
+                      <Edit3 className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => handleClone(w.id)}
+                      title="Clone Workflow"
+                      className="p-1.5 text-slate-400 hover:text-cyan-400 rounded-lg hover:bg-slate-800 transition"
+                    >
+                      <Copy className="w-4 h-4" />
+                    </button>
+                    <button
                       onClick={() => handleValidate(w.id)}
                       title="Validate DAG"
-                      className="p-1.5 text-slate-400 hover:text-indigo-400 rounded-lg hover:bg-slate-800 transition"
+                      className="p-1.5 text-slate-400 hover:text-emerald-400 rounded-lg hover:bg-slate-800 transition"
                     >
                       <CheckCircle2 className="w-4 h-4" />
                     </button>
@@ -343,7 +372,10 @@ export default function UserWorkflows({ addLog, triggerNotification }) {
                   </div>
                 </div>
 
-                <h3 className="text-lg font-semibold text-slate-200 mb-1 group-hover:text-indigo-300 transition">
+                <h3
+                  onClick={() => navigate(`/user/workflows/${w.id}/edit`)}
+                  className="text-lg font-semibold text-slate-200 mb-1 group-hover:text-indigo-300 cursor-pointer transition"
+                >
                   {w.name}
                 </h3>
                 <p className="text-xs text-slate-400 line-clamp-2 mb-4">
@@ -364,24 +396,34 @@ export default function UserWorkflows({ addLog, triggerNotification }) {
 
               <div className="flex items-center gap-2 pt-3 border-t border-slate-800/80">
                 <button
+                  onClick={() => navigate(`/user/workflows/${w.id}/edit`)}
+                  className="flex-1 flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 text-xs font-semibold transition"
+                >
+                  <Edit3 className="w-3.5 h-3.5" />
+                  Visual Builder
+                </button>
+
+                <button
                   onClick={() => handleOpenDetail(w.id)}
-                  className="flex-1 flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium transition"
+                  className="py-1.5 px-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium transition"
+                  title="Inspect Metadata & History"
                 >
                   <Eye className="w-3.5 h-3.5" />
-                  Inspect
                 </button>
 
                 {w.status === 'active' ? (
                   <button
                     onClick={() => handlePause(w.id)}
-                    className="py-1.5 px-3 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/20 text-xs font-medium transition"
+                    className="py-1.5 px-2.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/20 text-xs font-medium transition"
+                    title="Pause Workflow"
                   >
                     <Pause className="w-3.5 h-3.5" />
                   </button>
                 ) : (
                   <button
                     onClick={() => handleActivate(w.id)}
-                    className="py-1.5 px-3 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border border-emerald-500/20 text-xs font-medium transition"
+                    className="py-1.5 px-2.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border border-emerald-500/20 text-xs font-medium transition"
+                    title="Activate Workflow"
                   >
                     <Play className="w-3.5 h-3.5" />
                   </button>
@@ -393,9 +435,9 @@ export default function UserWorkflows({ addLog, triggerNotification }) {
                     setExecutionResult(null);
                     setShowExecuteModal(true);
                   }}
-                  className="py-1.5 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium shadow-sm transition"
+                  className="py-1.5 px-3 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold shadow-sm transition"
                 >
-                  Execute
+                  Run
                 </button>
               </div>
             </div>

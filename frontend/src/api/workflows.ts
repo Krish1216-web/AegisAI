@@ -163,6 +163,34 @@ export const updateWorkflow = async (
   });
 };
 
+export const getWorkflowDefinition = async (id: string): Promise<WorkflowDetail> => {
+  return request<WorkflowDetail>(`/workflows/${id}/definition`, { method: 'GET' });
+};
+
+export const updateWorkflowDefinition = async (
+  id: string,
+  payload: {
+    expected_version: number;
+    name?: string;
+    description?: string;
+    nodes: any[];
+    edges: any[];
+    variables?: any[];
+  }
+): Promise<WorkflowDetail> => {
+  return request<WorkflowDetail>(`/workflows/${id}/definition`, {
+    method: 'PUT',
+    body: JSON.stringify(payload)
+  });
+};
+
+export const cloneWorkflow = async (id: string, name?: string): Promise<WorkflowDetail> => {
+  return request<WorkflowDetail>(`/workflows/${id}/clone`, {
+    method: 'POST',
+    body: JSON.stringify({ name })
+  });
+};
+
 export const deleteWorkflow = async (id: string): Promise<void> => {
   return request<void>(`/workflows/${id}`, { method: 'DELETE' });
 };

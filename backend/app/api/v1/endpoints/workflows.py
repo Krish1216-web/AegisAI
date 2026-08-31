@@ -26,9 +26,15 @@ from app.schemas.workflow import (
     WorkflowNodeResponse,
     WorkflowEdgeResponse,
     WorkflowVariableResponse,
-    WorkflowExecutionNodeResponse
+    WorkflowExecutionNodeResponse,
+    WorkflowDefinitionUpdate,
+    WorkflowCloneRequest
 )
-from app.services.workflow import WorkflowService
+from app.services.workflow import (
+    WorkflowService,
+    VersionConflictError,
+    WorkflowArchivedError
+)
 from app.services.workflow_execution import WorkflowExecutionService
 
 router = APIRouter(prefix="/workflows", tags=["Workflows Engine"])
@@ -125,6 +131,86 @@ async def update_workflow(
             detail=f"Workflow '{workflow_id}' not found in active workspace."
         )
     return workflow
+
+@router.get("/{workflow_id}/definition", response_model=WorkflowDetailResponse, dependencies=[Depends(check_rate_limit)])
+async def get_workflow_definition(
+    workflow_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Retrieves the complete graph definition of a workflow for visual canvas loading.
+    """
+    workspace_id = resolve_workspace_id(current_user, db)
+    service = WorkflowService(db)
+    workflow = service.get_workflow_definition(current_user.id, workspace_id, workflow_id)
+    if not workflow:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Workflow '{workflow_id}' not found in active workspace."
+        )
+    return workflow
+
+@router.put("/{workflow_id}/definition", response_model=WorkflowDetailResponse, dependencies=[Depends(check_rate_limit)])
+async def update_workflow_definition(
+    workflow_id: uuid.UUID,
+    payload: WorkflowDefinitionUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Atomically updates the complete visual workflow graph definition with optimistic concurrency protection.
+    """
+    workspace_id = resolve_workspace_id(current_user, db)
+    service = WorkflowService(db)
+    try:
+        workflow = service.update_workflow_definition(current_user.id, workspace_id, workflow_id, payload)
+        if not workflow:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Workflow '{workflow_id}' not found in active workspace."
+            )
+        return workflow
+    except VersionConflictError as e:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(e)
+        )
+    except WorkflowArchivedError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+
+@router.post("/{workflow_id}/clone", response_model=WorkflowDetailResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(check_rate_limit)])
+async def clone_workflow(
+    workflow_id: uuid.UUID,
+    payload: Optional[WorkflowCloneRequest] = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Clones an existing workflow into a new draft workflow.
+    """
+    workspace_id = resolve_workspace_id(current_user, db)
+    service = WorkflowService(db)
+    cloned = service.clone_workflow(
+        current_user.id,
+        workspace_id,
+        workflow_id,
+        clone_name=payload.name if payload else None
+    )
+    if not cloned:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Workflow '{workflow_id}' not found in active workspace."
+        )
+    return cloned
 
 @router.delete("/{workflow_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(check_rate_limit)])
 async def delete_workflow(
