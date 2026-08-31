@@ -26,7 +26,7 @@ app = FastAPI(
 # 1. Register security TrustedHostMiddleware
 app.add_middleware(
     TrustedHostMiddleware, 
-    allowed_hosts=["localhost", "127.0.0.1", "*.aegisai.enterprise"]
+    allowed_hosts=["localhost", "127.0.0.1", "testserver", "*.aegisai.enterprise"]
 )
 
 # 2. Register CORS policy middleware

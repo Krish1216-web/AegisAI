@@ -33,7 +33,7 @@ from app.models.task import Task, TaskExecution  # noqa
 from app.models.notification import Notification, NotificationPreference  # noqa
 
 # Model Context Protocol (MCP)
-from app.models.mcp import MCPServer, MCPTool, MCPConnection  # noqa
+from app.models.mcp import MCPServer, MCPCapability  # noqa
 
 # Analytics
 from app.models.analytics import AnalyticsEvent, UsageMetrics, APIUsage  # noqa

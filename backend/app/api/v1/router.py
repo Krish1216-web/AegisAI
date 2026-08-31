@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from app.api.v1.endpoints import auth, users, workspaces, organizations, ai, agent, documents, rag, knowledge_graph
+from app.api.v1.endpoints import auth, users, workspaces, organizations, ai, agent, documents, rag, knowledge_graph, mcp
 
 api_router = APIRouter()
 
@@ -13,4 +13,6 @@ api_router.include_router(agent.router)
 api_router.include_router(documents.router)
 api_router.include_router(rag.router)
 api_router.include_router(knowledge_graph.router)
+api_router.include_router(mcp.router)
+
 
