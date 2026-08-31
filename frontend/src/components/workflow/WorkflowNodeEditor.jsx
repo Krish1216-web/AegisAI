@@ -463,19 +463,27 @@ export default function WorkflowNodeEditor({
                   <option value="greater_or_equal">greater_or_equal (&gt;=)</option>
                   <option value="less_or_equal">less_or_equal (&lt;=)</option>
                   <option value="contains">contains</option>
-                  <option value="exists">exists</option>
+                  <option value="not_contains">not_contains</option>
+                  <option value="in">in list</option>
+                  <option value="not_in">not_in list</option>
+                  <option value="starts_with">starts_with</option>
+                  <option value="ends_with">ends_with</option>
+                  <option value="exists">exists (not empty)</option>
+                  <option value="not_exists">not_exists (is empty)</option>
                 </select>
               </div>
-              <div>
-                <label className="text-slate-400 block mb-1">Right Operand</label>
-                <input
-                  type="text"
-                  placeholder="e.g. 10 or approved"
-                  value={config.right || ''}
-                  onChange={(e) => updateConfigField('right', e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 font-mono text-slate-200"
-                />
-              </div>
+              {!['exists', 'not_exists'].includes(config.operator) && (
+                <div>
+                  <label className="text-slate-400 block mb-1">Right Operand</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. 10 or approved"
+                    value={config.right !== undefined ? String(config.right) : ''}
+                    onChange={(e) => updateConfigField('right', e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 font-mono text-slate-200"
+                  />
+                </div>
+              )}
             </div>
           )}
 

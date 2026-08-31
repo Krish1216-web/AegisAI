@@ -26,6 +26,7 @@ from app.schemas.workflow import (
     HumanApprovalNodeConfig,
     TransformNodeConfig
 )
+from app.services.condition_evaluator import ConditionEvaluator
 
 NODE_CONFIG_VALIDATORS = {
     WorkflowNodeType.START: StartNodeConfig,
@@ -129,6 +130,16 @@ class WorkflowValidationService:
                         node_key=key
                     ))
 
+            # Deep condition structure validation
+            if n_type == WorkflowNodeType.CONDITION and config:
+                cond_errs = ConditionEvaluator.validate_structure(config)
+                for c_err in cond_errs:
+                    errors.append(WorkflowValidationItem(
+                        code="INVALID_CONDITION_STRUCTURE",
+                        message=f"Condition node '{key}': {c_err}",
+                        node_key=key
+                    ))
+
         # 2. START & END node cardinality rules
         if len(start_nodes) == 0:
             errors.append(WorkflowValidationItem(
@@ -151,6 +162,7 @@ class WorkflowValidationService:
         adjacency: Dict[str, List[str]] = defaultdict(list)
         in_degree: Dict[str, int] = {key: 0 for key in node_keys_seen}
         edges_seen: Set[str] = set()
+        default_edges_count: Dict[str, int] = defaultdict(int)
 
         for edge in edges:
             # Resolve source/target by key or id
@@ -189,6 +201,26 @@ class WorkflowValidationService:
                 ))
                 continue
             edges_seen.add(edge_sig)
+
+            # Edge condition validation
+            edge_cond = edge.get("condition")
+            if edge_cond:
+                if isinstance(edge_cond, dict) and edge_cond.get("is_default") is True:
+                    default_edges_count[src] += 1
+                    if default_edges_count[src] > 1:
+                        errors.append(WorkflowValidationItem(
+                            code="MULTIPLE_DEFAULT_EDGES",
+                            message=f"Node '{src}' has multiple default fallback outgoing edges.",
+                            node_key=src
+                        ))
+                else:
+                    c_errs = ConditionEvaluator.validate_structure(edge_cond)
+                    for c_err in c_errs:
+                        errors.append(WorkflowValidationItem(
+                            code="INVALID_EDGE_CONDITION",
+                            message=f"Edge '{src}' -> '{tgt}': {c_err}",
+                            node_key=src
+                        ))
 
             adjacency[src].append(tgt)
             in_degree[tgt] += 1

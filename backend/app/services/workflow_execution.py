@@ -23,6 +23,7 @@ from app.models.workflow import (
     WorkflowNodeType
 )
 from app.services.workflow_validation import WorkflowValidationService
+from app.services.condition_evaluator import ConditionEvaluator
 from app.core.mcp.security import CredentialStore
 
 VAR_REF_PATTERN = re.compile(r"\{\{\s*([a-zA-Z0-9_\.\-]+)\s*\}\}")
@@ -136,71 +137,12 @@ class WorkflowExecutionContext(BaseModel):
 
         return VAR_REF_PATTERN.sub(replacer, text)
 
-        return VAR_REF_PATTERN.sub(replacer, text)
-
     def evaluate_condition(self, condition: Optional[Dict[str, Any]]) -> bool:
         """
-        Safely evaluates a deterministic condition dictionary without eval.
+        Safely evaluates a deterministic condition or condition group using ConditionEvaluator.
         """
-        if not condition or not isinstance(condition, dict):
-            return True
-
-        left_raw = condition.get("left")
-        operator = condition.get("operator", "equals").lower()
-        right_raw = condition.get("right")
-
-        left = self.resolve_expression(left_raw) if isinstance(left_raw, str) else left_raw
-        right = self.resolve_expression(right_raw) if isinstance(right_raw, str) else right_raw
-
-        # Handle boolean/number type coercion where appropriate
-        if isinstance(left, str):
-            if left.lower() == "true":
-                left = True
-            elif left.lower() == "false":
-                left = False
-            elif left.isdigit():
-                left = int(left)
-
-        if isinstance(right, str):
-            if right.lower() == "true":
-                right = True
-            elif right.lower() == "false":
-                right = False
-            elif right.isdigit():
-                right = int(right)
-
-        if operator == "equals":
-            return left == right
-        elif operator == "not_equals":
-            return left != right
-        elif operator == "greater_than":
-            try:
-                return float(left) > float(right)
-            except (ValueError, TypeError):
-                return False
-        elif operator == "less_than":
-            try:
-                return float(left) < float(right)
-            except (ValueError, TypeError):
-                return False
-        elif operator == "greater_or_equal":
-            try:
-                return float(left) >= float(right)
-            except (ValueError, TypeError):
-                return False
-        elif operator == "less_or_equal":
-            try:
-                return float(left) <= float(right)
-            except (ValueError, TypeError):
-                return False
-        elif operator == "contains":
-            if left is not None and right is not None:
-                return str(right) in str(left)
-            return False
-        elif operator == "exists":
-            return left is not None and left != ""
-        else:
-            return left == right
+        eval_res = ConditionEvaluator.evaluate(condition, self)
+        return eval_res.get("result", False)
 
 
 class WorkflowNodeExecutor:
@@ -271,16 +213,12 @@ class WorkflowNodeExecutor:
 
         # 4. CONDITION Node
         elif node_type == WorkflowNodeType.CONDITION:
-            cond_dict = {
-                "left": config.get("left"),
-                "operator": config.get("operator", "equals"),
-                "right": config.get("right")
-            }
-            res = context.evaluate_condition(cond_dict)
+            eval_res = ConditionEvaluator.evaluate(config, context)
+            res = eval_res.get("result", False)
             return {
                 "status": "completed",
                 "result": res,
-                "output": {"result": res}
+                "output": {"result": res, "evaluation": eval_res}
             }
 
         # 5. HUMAN_APPROVAL Node
@@ -876,14 +814,49 @@ class WorkflowExecutionService:
                 if node_type == WorkflowNodeType.END.value:
                     final_output = node_out.get("output", node_out)
 
-                # Conditional Edge Routing for downstream neighbors
-                for edge in edge_map.get(node_id_str, []):
-                    cond = edge.get("condition")
-                    if cond:
-                        passed = context.evaluate_condition(cond)
-                        if not passed:
-                            logger.info(f"Conditional edge from {node_key} to {edge['target_node_id']} evaluated false -> skipping target branch.")
-                            skipped_nodes.add(edge["target_node_id"])
+                # Multi-Branch Deterministic Edge Routing for downstream neighbors
+                outgoing_edges = edge_map.get(node_id_str, [])
+                if outgoing_edges:
+                    # Sort by priority descending (higher priority evaluated first)
+                    sorted_edges = sorted(outgoing_edges, key=lambda e: e.get("priority", 0), reverse=True)
+
+                    cond_edges = []
+                    default_edges = []
+                    uncond_edges = []
+
+                    for edge in sorted_edges:
+                        cond = edge.get("condition")
+                        if cond and isinstance(cond, dict) and cond.get("is_default") is True:
+                            default_edges.append(edge)
+                        elif cond:
+                            cond_edges.append(edge)
+                        else:
+                            uncond_edges.append(edge)
+
+                    if cond_edges or default_edges:
+                        matched_any_cond = False
+                        for edge in cond_edges:
+                            passed = context.evaluate_condition(edge["condition"])
+                            if passed:
+                                matched_any_cond = True
+                                logger.info(f"Conditional edge from '{node_key}' to '{edge['target_node_id']}' evaluated TRUE.")
+                            else:
+                                logger.info(f"Conditional edge from '{node_key}' to '{edge['target_node_id']}' evaluated FALSE -> skipping branch.")
+                                skipped_nodes.add(edge["target_node_id"])
+
+                        # If at least one conditional edge matched, skip fallback default edges
+                        if matched_any_cond:
+                            for def_edge in default_edges:
+                                logger.info(f"Conditional branch matched -> skipping default fallback edge to '{def_edge['target_node_id']}'.")
+                                skipped_nodes.add(def_edge["target_node_id"])
+                        else:
+                            # No conditional edge matched: activate default edge if present
+                            if default_edges:
+                                logger.info(f"No conditional edges matched from '{node_key}' -> routing to default fallback edge.")
+                            else:
+                                logger.info(f"No conditional edges matched from '{node_key}' and no default edge exists -> skipping branches.")
+                                for uncond_edge in uncond_edges:
+                                    skipped_nodes.add(uncond_edge["target_node_id"])
 
             except Exception as e:
                 logger.error(f"Error executing workflow node '{node_key}': {e}")
