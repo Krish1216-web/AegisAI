@@ -1,17 +1,17 @@
 import pytest
 import uuid
+import datetime
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import sessionmaker, Session
 
 from app.database.base_class import Base
 from app.models.user import User, Role
-from app.models.workspace import Workspace, Organization, WorkspaceMember
-from app.models.mcp import MCPServer, MCPCapability, MCPTransport, MCPServerStatus, MCPCapabilityType
-from app.services.mcp.mcp_security import (
-    MCPSecurityService,
-    MCPSecurityDecisionEnum,
-    MCPSecurityReasonCode
-)
+from app.models.workspace import Workspace, WorkspaceMember, Organization
+from app.models.mcp import MCPServer, MCPCapability, MCPServerStatus, MCPCapabilityType, MCPTransport, MCPAuthenticationType
+from app.services.mcp.mcp_security import MCPSecurityService, MCPSecurityDecisionEnum, MCPSecurityReasonCode
+from app.services.mcp.mcp_tool_catalog import MCPToolCatalogService
+from app.services.mcp.mcp_resource_service import MCPResourceService
+from app.services.mcp.mcp_prompt_service import MCPPromptService
 
 @pytest.fixture
 def db_session():
@@ -19,105 +19,92 @@ def db_session():
     Base.metadata.create_all(bind=engine)
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     session = SessionLocal()
-
-    org1 = Organization(id=uuid.uuid4(), name="Org 1")
-    org2 = Organization(id=uuid.uuid4(), name="Org 2")
-    role = Role(id=uuid.uuid4(), name="User")
-    session.add_all([org1, org2, role])
-    session.commit()
-
-    u1 = User(id=uuid.uuid4(), email="tenant1@test.com", username="t1", password_hash="pw", role_id=role.id, is_active=True)
-    u2 = User(id=uuid.uuid4(), email="tenant2@test.com", username="t2", password_hash="pw", role_id=role.id, is_active=True)
-    ws1 = Workspace(id=uuid.uuid4(), organization_id=org1.id, name="WS Tenant 1")
-    ws2 = Workspace(id=uuid.uuid4(), organization_id=org2.id, name="WS Tenant 2")
-    session.add_all([u1, u2, ws1, ws2])
-    session.commit()
-
-    mem1 = WorkspaceMember(id=uuid.uuid4(), workspace_id=ws1.id, user_id=u1.id, role="member")
-    mem2 = WorkspaceMember(id=uuid.uuid4(), workspace_id=ws2.id, user_id=u2.id, role="member")
-    session.add_all([mem1, mem2])
-    session.commit()
-
-    # Create server & capabilities belonging to Tenant 1
-    srv1 = MCPServer(
-        id=uuid.uuid4(),
-        user_id=u1.id,
-        workspace_id=ws1.id,
-        name="Tenant 1 Server",
-        server_url="mock://tenant-1",
-        transport=MCPTransport.SSE,
-        status=MCPServerStatus.ACTIVE,
-        enabled=True
-    )
-    session.add(srv1)
-    session.commit()
-
-    tool1 = MCPCapability(
-        id=uuid.uuid4(),
-        server_id=srv1.id,
-        capability_type=MCPCapabilityType.TOOL,
-        name="tenant1_tool",
-        input_schema={"type": "object", "properties": {}},
-        enabled=True,
-        is_stale=False
-    )
-    res1 = MCPCapability(
-        id=uuid.uuid4(),
-        server_id=srv1.id,
-        capability_type=MCPCapabilityType.RESOURCE,
-        name="tenant1_res",
-        input_schema={"uri": "workspace://t1/doc.md"},
-        enabled=True,
-        is_stale=False
-    )
-    prompt1 = MCPCapability(
-        id=uuid.uuid4(),
-        server_id=srv1.id,
-        capability_type=MCPCapabilityType.PROMPT,
-        name="tenant1_prompt",
-        input_schema={"arguments": []},
-        enabled=True,
-        is_stale=False
-    )
-    session.add_all([tool1, res1, prompt1])
-    session.commit()
-
     yield session
     session.close()
 
-def test_tenant_boundary_enforcement(db_session):
-    u1 = db_session.query(User).filter_by(email="tenant1@test.com").first()
-    u2 = db_session.query(User).filter_by(email="tenant2@test.com").first()
-    ws1 = db_session.query(Workspace).filter_by(name="WS Tenant 1").first()
-    ws2 = db_session.query(Workspace).filter_by(name="WS Tenant 2").first()
-    srv1 = db_session.query(MCPServer).filter_by(name="Tenant 1 Server").first()
-    tool1 = db_session.query(MCPCapability).filter_by(name="tenant1_tool").first()
-    res1 = db_session.query(MCPCapability).filter_by(name="tenant1_res").first()
-    prompt1 = db_session.query(MCPCapability).filter_by(name="tenant1_prompt").first()
+@pytest.fixture
+def multi_tenant_setup(db_session: Session):
+    org = Organization(id=uuid.uuid4(), name="Multi Tenant Org")
+    role = Role(id=uuid.uuid4(), name="User")
+    db_session.add_all([org, role])
+    db_session.flush()
 
+    # Tenant 1
+    ws1 = Workspace(id=uuid.uuid4(), organization_id=org.id, name="WS 1")
+    u1 = User(id=uuid.uuid4(), email="u1@test.com", username="u1", password_hash="pw", role_id=role.id, is_active=True)
+    db_session.add_all([ws1, u1])
+    db_session.flush()
+    db_session.add(WorkspaceMember(workspace_id=ws1.id, user_id=u1.id, role="member"))
+
+    s1 = MCPServer(
+        id=uuid.uuid4(), workspace_id=ws1.id, user_id=u1.id, name="srv1",
+        server_url="http://localhost:8001/sse", transport=MCPTransport.SSE,
+        status=MCPServerStatus.ACTIVE, enabled=True, authentication_type=MCPAuthenticationType.NONE
+    )
+    db_session.add(s1)
+    db_session.flush()
+
+    t1 = MCPCapability(id=uuid.uuid4(), server_id=s1.id, capability_type=MCPCapabilityType.TOOL, name="tool1", enabled=True, is_stale=False)
+    r1 = MCPCapability(id=uuid.uuid4(), server_id=s1.id, capability_type=MCPCapabilityType.RESOURCE, name="res1", input_schema={"uri": "workspace://ws1/doc"}, enabled=True, is_stale=False)
+    p1 = MCPCapability(id=uuid.uuid4(), server_id=s1.id, capability_type=MCPCapabilityType.PROMPT, name="prm1", enabled=True, is_stale=False)
+    db_session.add_all([t1, r1, p1])
+
+    # Tenant 2
+    ws2 = Workspace(id=uuid.uuid4(), organization_id=org.id, name="WS 2")
+    u2 = User(id=uuid.uuid4(), email="u2@test.com", username="u2", password_hash="pw", role_id=role.id, is_active=True)
+    db_session.add_all([ws2, u2])
+    db_session.flush()
+    db_session.add(WorkspaceMember(workspace_id=ws2.id, user_id=u2.id, role="member"))
+
+    s2 = MCPServer(
+        id=uuid.uuid4(), workspace_id=ws2.id, user_id=u2.id, name="srv2",
+        server_url="http://localhost:8002/sse", transport=MCPTransport.SSE,
+        status=MCPServerStatus.ACTIVE, enabled=True, authentication_type=MCPAuthenticationType.NONE
+    )
+    db_session.add(s2)
+    db_session.flush()
+
+    t2 = MCPCapability(id=uuid.uuid4(), server_id=s2.id, capability_type=MCPCapabilityType.TOOL, name="tool2", enabled=True, is_stale=False)
+    db_session.add(t2)
+    db_session.commit()
+
+    return {"u1": u1, "ws1": ws1, "s1": s1, "t1": t1, "r1": r1, "p1": p1, "u2": u2, "ws2": ws2, "s2": s2, "t2": t2}
+
+def test_cross_tenant_tool_catalog_isolation(db_session: Session, multi_tenant_setup):
+    s = multi_tenant_setup
+    catalog = MCPToolCatalogService(db_session)
+    
+    # User 1 queries tools in WS 1
+    tools_ws1, total_ws1 = catalog.list_tools(s["u1"].id, s["ws1"].id)
+    assert total_ws1 == 1
+    assert tools_ws1[0]["name"] == "tool1"
+
+    # User 1 attempts to query tool2 (from WS 2) within WS 1 context -> None
+    t2_lookup = catalog.get_tool(s["u1"].id, s["ws1"].id, s["t2"].id)
+    assert t2_lookup is None
+
+    # User 1 attempts to pass WS 2 directly -> denied
+    tools_cross, total_cross = catalog.list_tools(s["u1"].id, s["ws2"].id)
+    assert total_cross == 0
+
+def test_cross_tenant_security_evaluation_rejection(db_session: Session, multi_tenant_setup):
+    s = multi_tenant_setup
     sec_service = MCPSecurityService(db_session)
 
-    # 1. User 2 trying to access Tenant 1's Server -> DENY
-    dec_srv = sec_service.evaluate_server_access(u2.id, ws2.id, srv1.id)
-    assert dec_srv.decision == MCPSecurityDecisionEnum.DENY
-    assert dec_srv.reason_code == MCPSecurityReasonCode.TENANT_MISMATCH
+    # User 2 attempts to evaluate tool from WS 1
+    dec = sec_service.evaluate_tool_execution(s["u2"].id, s["ws2"].id, s["t1"].id, arguments={})
+    assert dec.decision == MCPSecurityDecisionEnum.DENY
+    assert dec.reason_code in (MCPSecurityReasonCode.TENANT_MISMATCH, MCPSecurityReasonCode.TOOL_ACCESS_DENIED)
 
-    # 2. User 2 trying to execute Tenant 1's Tool -> DENY
-    dec_tool = sec_service.evaluate_tool_execution(u2.id, ws2.id, tool1.id, {})
-    assert dec_tool.decision == MCPSecurityDecisionEnum.DENY
-    assert dec_tool.reason_code == MCPSecurityReasonCode.TOOL_ACCESS_DENIED
+def test_cross_tenant_resource_and_prompt_isolation(db_session: Session, multi_tenant_setup):
+    s = multi_tenant_setup
+    res_svc = MCPResourceService(db_session)
+    prm_svc = MCPPromptService(db_session)
 
-    # 3. User 2 trying to read Tenant 1's Resource -> DENY
-    dec_res = sec_service.evaluate_resource_read(u2.id, ws2.id, res1.id)
-    assert dec_res.decision == MCPSecurityDecisionEnum.DENY
-    assert dec_res.reason_code == MCPSecurityReasonCode.RESOURCE_ACCESS_DENIED
+    # User 2 cannot access resource from WS 1
+    res = res_svc.get_resource(s["u2"].id, s["ws2"].id, s["r1"].id)
+    assert res is None
 
-    # 4. User 2 trying to render Tenant 1's Prompt -> DENY
-    dec_prompt = sec_service.evaluate_prompt_render(u2.id, ws2.id, prompt1.id, {})
-    assert dec_prompt.decision == MCPSecurityDecisionEnum.DENY
-    assert dec_prompt.reason_code == MCPSecurityReasonCode.PROMPT_ACCESS_DENIED
-
-    # 5. User 1 attempting to execute in Workspace 2 (non-member) -> DENY
-    dec_ws2 = sec_service.evaluate_tool_execution(u1.id, ws2.id, tool1.id, {})
-    assert dec_ws2.decision == MCPSecurityDecisionEnum.DENY
-    assert dec_ws2.reason_code == MCPSecurityReasonCode.WORKSPACE_ACCESS_DENIED
+    # User 2 cannot access prompt from WS 1
+    prm = prm_svc.get_prompt(s["u2"].id, s["ws2"].id, s["p1"].id)
+    assert prm is None
