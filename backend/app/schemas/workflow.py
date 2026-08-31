@@ -91,6 +91,22 @@ class TransformNodeConfig(BaseNodeConfig):
     mapping: Optional[Dict[str, Any]] = Field(default_factory=dict)
     template: Optional[str] = None
 
+class ParallelNodeConfig(BaseNodeConfig):
+    max_concurrency: Optional[int] = 5
+    branches: Optional[List[str]] = Field(default_factory=list)
+
+class MergeNodeConfig(BaseNodeConfig):
+    policy: str = "all"  # "all", "any", "quorum"
+    quorum_count: Optional[int] = 2
+    merge_key: Optional[str] = "branches"
+
+class SubWorkflowNodeConfig(BaseNodeConfig):
+    workflow_id: Optional[str] = None
+    workflow_name: Optional[str] = None
+    input_mapping: Optional[Dict[str, Any]] = Field(default_factory=dict)
+    propagate_failure: bool = True
+    timeout_seconds: Optional[int] = 300
+
 # ---------------------------------------------------------
 # Workflow Node Schemas
 # ---------------------------------------------------------

@@ -44,8 +44,8 @@ class WorkflowExecutionContext(BaseModel):
     node_outputs: Dict[str, Any] = Field(default_factory=dict)
     node_statuses: Dict[str, str] = Field(default_factory=dict)
     citations: List[Dict[str, Any]] = Field(default_factory=list)
-    errors: List[str] = Field(default_factory=list)
     current_node: Optional[str] = None
+    call_stack: List[str] = Field(default_factory=list)
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
     def resolve_expression(self, text: Optional[str]) -> Any:
@@ -538,6 +538,112 @@ class WorkflowNodeExecutor:
                     "output": {"result": f"Local tool {tool_name} executed", "fallback": True}
                 }
 
+        # 14. PARALLEL Node
+        elif node_type == WorkflowNodeType.PARALLEL:
+            max_concurrency = int(config.get("max_concurrency", 5))
+            branches = config.get("branches", [])
+            return {
+                "status": "completed",
+                "max_concurrency": max_concurrency,
+                "branches": branches,
+                "output": {"parallel_fanout": True, "node_key": node_key}
+            }
+
+        # 15. MERGE Node
+        elif node_type == WorkflowNodeType.MERGE:
+            policy = str(config.get("policy", "all")).lower()
+            quorum_count = int(config.get("quorum_count", 2))
+            merge_key = config.get("merge_key", "branches")
+
+            merged_data = {}
+            for nk, out_val in context.node_outputs.items():
+                if nk != node_key and context.node_statuses.get(nk) == "completed":
+                    merged_data[nk] = out_val
+
+            return {
+                "status": "completed",
+                "policy": policy,
+                "merged_count": len(merged_data),
+                "output": {
+                    merge_key: merged_data,
+                    "policy": policy,
+                    "total_merged": len(merged_data)
+                }
+            }
+
+        # 16. SUB_WORKFLOW Node
+        elif node_type == WorkflowNodeType.SUB_WORKFLOW:
+            target_wf_id_str = config.get("workflow_id")
+            target_wf_name = config.get("workflow_name")
+            input_mapping = config.get("input_mapping", {})
+            propagate_failure = bool(config.get("propagate_failure", True))
+
+            if not target_wf_id_str and not target_wf_name:
+                raise ValueError(f"Sub-workflow node '{node_key}' must specify 'workflow_id' or 'workflow_name'.")
+
+            # Recursion & depth limit check (max 3 levels)
+            current_stack = list(context.call_stack or [])
+            if len(current_stack) >= 3:
+                raise ValueError(f"Sub-workflow execution depth limit (3) exceeded at node '{node_key}'.")
+
+            target_wf = None
+            if db:
+                from app.models.workflow import Workflow
+                if target_wf_id_str:
+                    try:
+                        target_wf_id = uuid.UUID(str(target_wf_id_str))
+                        target_wf = db.query(Workflow).filter(
+                            Workflow.id == target_wf_id,
+                            Workflow.workspace_id == context.workspace_id,
+                            Workflow.deleted_at.is_(None)
+                        ).first()
+                    except ValueError:
+                        pass
+                if not target_wf and target_wf_name:
+                    target_wf = db.query(Workflow).filter(
+                        Workflow.name == target_wf_name,
+                        Workflow.workspace_id == context.workspace_id,
+                        Workflow.deleted_at.is_(None)
+                    ).first()
+
+            if not target_wf:
+                raise ValueError(f"Sub-workflow '{target_wf_id_str or target_wf_name}' not found in workspace.")
+
+            if str(target_wf.id) in current_stack or str(target_wf.id) == str(context.workflow_id):
+                raise ValueError(f"Sub-workflow recursion/cycle detected: '{target_wf.name}' ({target_wf.id}) is already in call stack.")
+
+            # Resolve input mapping
+            resolved_sub_input = {}
+            for k, v in (input_mapping.items() if isinstance(input_mapping, dict) else {}):
+                resolved_sub_input[k] = context.resolve_expression(v)
+
+            # Execute sub-workflow via WorkflowExecutionService
+            from app.services.workflow_execution import WorkflowExecutionService
+            sub_exec_service = WorkflowExecutionService(db, ai_service=ai_service)
+            sub_execution = sub_exec_service.execute_workflow(
+                user_id=context.user_id,
+                workspace_id=context.workspace_id,
+                workflow_id=target_wf.id,
+                input_data=resolved_sub_input,
+                call_stack=current_stack + [str(context.workflow_id)]
+            )
+
+            if sub_execution.status == WorkflowExecutionStatus.FAILED and propagate_failure:
+                raise RuntimeError(f"Sub-workflow '{target_wf.name}' failed: {sub_execution.error}")
+
+            sub_out = sub_execution.output_data if isinstance(sub_execution.output_data, dict) else {"result": sub_execution.output_data}
+            output_dict = dict(sub_out)
+            output_dict["_sub_execution_id"] = str(sub_execution.id)
+            output_dict["_sub_status"] = sub_execution.status.value
+
+            return {
+                "status": "completed",
+                "sub_workflow_id": str(target_wf.id),
+                "sub_workflow_name": target_wf.name,
+                "sub_execution_id": str(sub_execution.id),
+                "output": output_dict
+            }
+
         return {
             "status": "completed",
             "output": {"executed_node": node_key}
@@ -644,7 +750,8 @@ class WorkflowExecutionService:
         workspace_id: uuid.UUID,
         workflow_id: uuid.UUID,
         input_data: Optional[Dict[str, Any]] = None,
-        idempotency_key: Optional[str] = None
+        idempotency_key: Optional[str] = None,
+        call_stack: Optional[List[str]] = None
     ) -> WorkflowExecution:
         workflow = self.db.query(Workflow).filter(
             and_(
@@ -718,7 +825,8 @@ class WorkflowExecutionService:
             input_data=input_data or {},
             variables=variables_dict,
             node_outputs={},
-            node_statuses={}
+            node_statuses={},
+            call_stack=call_stack or []
         )
 
         ordered_nodes = self.compute_topological_order(snapshot)

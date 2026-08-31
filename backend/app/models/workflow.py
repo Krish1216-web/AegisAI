@@ -43,6 +43,9 @@ class WorkflowNodeType(str, enum.Enum):
     CONDITION = "condition"
     HUMAN_APPROVAL = "human_approval"
     TRANSFORM = "transform"
+    PARALLEL = "parallel"
+    MERGE = "merge"
+    SUB_WORKFLOW = "sub_workflow"
 
 class Workflow(Base, AuditMixin):
     __tablename__ = "workflows"

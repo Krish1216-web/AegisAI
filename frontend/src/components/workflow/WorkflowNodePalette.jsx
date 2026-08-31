@@ -25,7 +25,10 @@ const NODE_CATALOG = [
       { type: 'end', name: 'End Output', desc: 'Terminal node returning final output', icon: Square, color: 'text-rose-400', bg: 'bg-rose-500/10' },
       { type: 'condition', name: 'Condition Branch', desc: 'Deterministic conditional evaluation', icon: HelpCircle, color: 'text-yellow-400', bg: 'bg-yellow-500/10' },
       { type: 'human_approval', name: 'Human Approval', desc: 'Pauses execution until reviewer approval', icon: Clock, color: 'text-orange-400', bg: 'bg-orange-500/10' },
-      { type: 'transform', name: 'Data Transform', desc: 'Declarative field mapping & expressions', icon: Shuffle, color: 'text-blue-400', bg: 'bg-blue-500/10' }
+      { type: 'transform', name: 'Data Transform', desc: 'Declarative field mapping & expressions', icon: Shuffle, color: 'text-blue-400', bg: 'bg-blue-500/10' },
+      { type: 'parallel', name: 'Parallel Fan-Out', desc: 'Execute downstream branches concurrently', icon: Layers, color: 'text-cyan-400', bg: 'bg-cyan-500/10' },
+      { type: 'merge', name: 'Merge Fan-In', desc: 'Combine and wait for upstream branches', icon: GitBranch, color: 'text-emerald-400', bg: 'bg-emerald-500/10' },
+      { type: 'sub_workflow', name: 'Sub-Workflow', desc: 'Invoke reusable nested workflow graph', icon: Bot, color: 'text-indigo-400', bg: 'bg-indigo-500/10' }
     ]
   },
   {

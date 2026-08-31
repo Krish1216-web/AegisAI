@@ -574,6 +574,88 @@ export default function WorkflowNodeEditor({
               </div>
             </div>
           )}
+
+          {/* PARALLEL NODE */}
+          {nodeType === 'parallel' && (
+            <div className="space-y-3">
+              <div>
+                <label className="text-slate-400 block mb-1">Max Concurrency Limit</label>
+                <input
+                  type="number"
+                  min={1}
+                  max={20}
+                  value={config.max_concurrency || 5}
+                  onChange={(e) => updateConfigField('max_concurrency', parseInt(e.target.value) || 5)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 font-mono text-cyan-300"
+                />
+              </div>
+              <p className="text-[10px] text-slate-500">
+                Executes all valid outgoing branch edges concurrently up to the concurrency limit.
+              </p>
+            </div>
+          )}
+
+          {/* MERGE NODE */}
+          {nodeType === 'merge' && (
+            <div className="space-y-3">
+              <div>
+                <label className="text-slate-400 block mb-1">Merge Policy</label>
+                <select
+                  value={config.policy || 'all'}
+                  onChange={(e) => updateConfigField('policy', e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 font-mono text-emerald-300"
+                >
+                  <option value="all">Wait for All Branches (ALL)</option>
+                  <option value="any">First Completed Branch (ANY)</option>
+                  <option value="quorum">Quorum Threshold (QUORUM)</option>
+                </select>
+              </div>
+
+              {config.policy === 'quorum' && (
+                <div>
+                  <label className="text-slate-400 block mb-1">Quorum Count</label>
+                  <input
+                    type="number"
+                    min={1}
+                    value={config.quorum_count || 2}
+                    onChange={(e) => updateConfigField('quorum_count', parseInt(e.target.value) || 2)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 font-mono text-emerald-300"
+                  />
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* SUB_WORKFLOW NODE */}
+          {nodeType === 'sub_workflow' && (
+            <div className="space-y-3">
+              <div>
+                <label className="text-slate-400 block mb-1">Target Workflow ID or Name</label>
+                <input
+                  type="text"
+                  placeholder="Workflow Name or UUID"
+                  value={config.workflow_name || config.workflow_id || ''}
+                  onChange={(e) => updateConfigField('workflow_name', e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 font-mono text-indigo-300"
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="propagate_failure"
+                  checked={config.propagate_failure !== false}
+                  onChange={(e) => updateConfigField('propagate_failure', e.target.checked)}
+                  className="rounded bg-slate-950 border-slate-800 text-indigo-500"
+                />
+                <label htmlFor="propagate_failure" className="text-slate-300 text-xs cursor-pointer">
+                  Propagate Sub-Workflow Failure
+                </label>
+              </div>
+              <p className="text-[10px] text-slate-500">
+                Invokes target workflow in current workspace. Maximum nesting depth is 3 levels.
+              </p>
+            </div>
+          )}
         </div>
       </div>
     </aside>

@@ -24,7 +24,10 @@ from app.schemas.workflow import (
     LocalToolNodeConfig,
     ConditionNodeConfig,
     HumanApprovalNodeConfig,
-    TransformNodeConfig
+    TransformNodeConfig,
+    ParallelNodeConfig,
+    MergeNodeConfig,
+    SubWorkflowNodeConfig
 )
 from app.services.condition_evaluator import ConditionEvaluator
 
@@ -42,6 +45,9 @@ NODE_CONFIG_VALIDATORS = {
     WorkflowNodeType.CONDITION: ConditionNodeConfig,
     WorkflowNodeType.HUMAN_APPROVAL: HumanApprovalNodeConfig,
     WorkflowNodeType.TRANSFORM: TransformNodeConfig,
+    WorkflowNodeType.PARALLEL: ParallelNodeConfig,
+    WorkflowNodeType.MERGE: MergeNodeConfig,
+    WorkflowNodeType.SUB_WORKFLOW: SubWorkflowNodeConfig,
 }
 
 class WorkflowValidationService:

@@ -17,7 +17,10 @@ export type WorkflowNodeType =
   | 'local_tool'
   | 'condition'
   | 'human_approval'
-  | 'transform';
+  | 'transform'
+  | 'parallel'
+  | 'merge'
+  | 'sub_workflow';
 
 export interface WorkflowNode {
   id: string;
