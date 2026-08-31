@@ -43,6 +43,19 @@ class CredentialStore:
         return sanitized
 
     @staticmethod
+    def redact_sensitive_str(text: Optional[str]) -> str:
+        """Sanitizes sensitive values in strings (e.g. passwords, tokens, API keys)."""
+        if not text:
+            return ""
+        redacted = re.sub(
+            r"(api[_-]?key|secret|token|password|auth|bearer|credential|private[_-]?key)\s*[:=]\s*([^\s,;]+)",
+            r"\1=[REDACTED]",
+            str(text),
+            flags=re.IGNORECASE
+        )
+        return redacted
+
+    @staticmethod
     def redact_sensitive_dict(data: Dict[str, Any]) -> Dict[str, Any]:
         """Recursively redacts sensitive keys from any dictionary."""
         if not isinstance(data, dict):

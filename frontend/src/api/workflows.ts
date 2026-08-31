@@ -406,3 +406,50 @@ export const resumeWorkflowSchedule = async (scheduleId: string): Promise<Workfl
 export const triggerWorkflowSchedule = async (scheduleId: string): Promise<WorkflowExecutionSummary> => {
   return request<WorkflowExecutionSummary>(`/workflows/schedules/${scheduleId}/trigger`, { method: 'POST' });
 };
+
+// Analytics APIs
+export const getWorkflowAnalyticsOverview = async (days: number = 7): Promise<any> => {
+  return request<any>(`/workflows/analytics/overview?days=${days}`, { method: 'GET' });
+};
+
+export const getWorkflowAnalyticsPerformance = async (params?: {
+  sort_by?: string;
+  order?: string;
+  limit?: number;
+  offset?: number;
+}): Promise<any> => {
+  const q = new URLSearchParams();
+  if (params?.sort_by) q.set('sort_by', params.sort_by);
+  if (params?.order) q.set('order', params.order);
+  if (params?.limit) q.set('limit', String(params.limit));
+  if (params?.offset) q.set('offset', String(params.offset));
+  const qs = q.toString();
+  return request<any>(`/workflows/analytics/performance${qs ? `?${qs}` : ''}`, { method: 'GET' });
+};
+
+export const getWorkflowAnalyticsNodes = async (workflowId?: string, limit: number = 50): Promise<any> => {
+  const q = new URLSearchParams();
+  if (workflowId) q.set('workflow_id', workflowId);
+  q.set('limit', String(limit));
+  return request<any>(`/workflows/analytics/nodes?${q.toString()}`, { method: 'GET' });
+};
+
+export const getWorkflowAnalyticsFailures = async (limit: number = 50): Promise<any> => {
+  return request<any>(`/workflows/analytics/failures?limit=${limit}`, { method: 'GET' });
+};
+
+export const getWorkflowAnalyticsComposition = async (): Promise<any> => {
+  return request<any>('/workflows/analytics/composition', { method: 'GET' });
+};
+
+export const getWorkflowAnalyticsSchedules = async (): Promise<any> => {
+  return request<any>('/workflows/analytics/schedules', { method: 'GET' });
+};
+
+export const getWorkflowAnalyticsApprovals = async (): Promise<any> => {
+  return request<any>('/workflows/analytics/approvals', { method: 'GET' });
+};
+
+export const getWorkflowExecutionAnalytics = async (executionId: string): Promise<any> => {
+  return request<any>(`/workflows/executions/${executionId}/analytics`, { method: 'GET' });
+};

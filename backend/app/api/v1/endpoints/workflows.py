@@ -46,6 +46,7 @@ from app.services.workflow import (
 from app.services.workflow_execution import WorkflowExecutionService
 from app.services.workflow_approval import WorkflowApprovalService
 from app.services.workflow_scheduler import WorkflowSchedulerService
+from app.services.workflow_analytics import WorkflowAnalyticsService
 
 router = APIRouter(prefix="/workflows", tags=["Workflows Engine"])
 
@@ -687,3 +688,118 @@ async def trigger_workflow_schedule_manual(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
         )
+
+# =========================================================
+# PHASE 7.8: WORKFLOW MONITORING & ANALYTICS ENDPOINTS
+# =========================================================
+
+@router.get("/analytics/overview", dependencies=[Depends(check_rate_limit)])
+async def get_workflow_analytics_overview(
+    days: int = Query(7, ge=1, le=90),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Returns workspace-isolated KPI overview metrics and time-series trends.
+    """
+    workspace_id = resolve_workspace_id(current_user, db)
+    service = WorkflowAnalyticsService(db)
+    return service.get_overview_metrics(workspace_id, days=days)
+
+@router.get("/analytics/performance", dependencies=[Depends(check_rate_limit)])
+async def get_workflow_analytics_performance(
+    sort_by: str = Query("total_runs"),
+    order: str = Query("desc"),
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Returns per-workflow execution volume, duration, success rates, and health classifications.
+    """
+    workspace_id = resolve_workspace_id(current_user, db)
+    service = WorkflowAnalyticsService(db)
+    return service.get_workflow_performance(workspace_id, sort_by=sort_by, order=order, limit=limit, offset=offset)
+
+@router.get("/analytics/nodes", dependencies=[Depends(check_rate_limit)])
+async def get_workflow_analytics_nodes(
+    workflow_id: Optional[uuid.UUID] = Query(None),
+    limit: int = Query(50, ge=1, le=100),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Returns node execution metrics, duration percentiles, and bottleneck classifications.
+    """
+    workspace_id = resolve_workspace_id(current_user, db)
+    service = WorkflowAnalyticsService(db)
+    return service.get_node_performance(workspace_id, workflow_id=workflow_id, limit=limit)
+
+@router.get("/analytics/failures", dependencies=[Depends(check_rate_limit)])
+async def get_workflow_analytics_failures(
+    limit: int = Query(50, ge=1, le=100),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Returns sanitized failure clusters with secret redaction.
+    """
+    workspace_id = resolve_workspace_id(current_user, db)
+    service = WorkflowAnalyticsService(db)
+    return service.get_failure_analytics(workspace_id, limit=limit)
+
+@router.get("/analytics/composition", dependencies=[Depends(check_rate_limit)])
+async def get_workflow_analytics_composition(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Returns telemetry for sub-workflow nested graphs, parallel branches, and merge policies.
+    """
+    workspace_id = resolve_workspace_id(current_user, db)
+    service = WorkflowAnalyticsService(db)
+    return service.get_composition_analytics(workspace_id)
+
+@router.get("/analytics/schedules", dependencies=[Depends(check_rate_limit)])
+async def get_workflow_analytics_schedules(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Returns summary statistics for automated workflow schedules.
+    """
+    workspace_id = resolve_workspace_id(current_user, db)
+    service = WorkflowAnalyticsService(db)
+    return service.get_schedule_analytics(workspace_id)
+
+@router.get("/analytics/approvals", dependencies=[Depends(check_rate_limit)])
+async def get_workflow_analytics_approvals(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Returns governance turnaround times and approval decision metrics.
+    """
+    workspace_id = resolve_workspace_id(current_user, db)
+    service = WorkflowAnalyticsService(db)
+    return service.get_approval_analytics(workspace_id)
+
+@router.get("/executions/{execution_id}/analytics", dependencies=[Depends(check_rate_limit)])
+async def get_workflow_execution_analytics(
+    execution_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Returns detailed node-level telemetry and duration waterfall for a single execution.
+    """
+    workspace_id = resolve_workspace_id(current_user, db)
+    service = WorkflowAnalyticsService(db)
+    detail = service.get_execution_detail_analytics(workspace_id, execution_id)
+    if not detail:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Execution '{execution_id}' not found."
+        )
+    return detail
