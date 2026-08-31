@@ -430,13 +430,14 @@ class WorkflowAnalyticsService:
 
         for en in exec_nodes:
             out = en.output_data or {}
-            if "_sub_execution_id" in out or "sub_execution_id" in out:
-                sub_wf_count += 1
-            if out.get("parallel_fanout"):
-                parallel_count += 1
-            if "policy" in out:
-                merge_count += 1
-                merge_policy_dist[out["policy"]] += 1
+            if isinstance(out, dict):
+                if "_sub_execution_id" in out or "sub_execution_id" in out:
+                    sub_wf_count += 1
+                if out.get("parallel_fanout"):
+                    parallel_count += 1
+                if "policy" in out:
+                    merge_count += 1
+                    merge_policy_dist[out["policy"]] += 1
 
         return {
             "total_sub_workflow_invocations": sub_wf_count,

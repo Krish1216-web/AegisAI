@@ -1047,7 +1047,8 @@ class WorkflowExecutionService:
         self,
         user_id: uuid.UUID,
         workspace_id: uuid.UUID,
-        execution_id: uuid.UUID
+        execution_id: uuid.UUID,
+        reason: Optional[str] = None
     ) -> Optional[WorkflowExecution]:
         """Cancels an active or pending workflow execution."""
         execution = self.db.query(WorkflowExecution).filter(
@@ -1063,6 +1064,8 @@ class WorkflowExecutionService:
 
         if execution.status in [WorkflowExecutionStatus.RUNNING, WorkflowExecutionStatus.PENDING, WorkflowExecutionStatus.WAITING]:
             execution.status = WorkflowExecutionStatus.CANCELLED
+            if reason:
+                execution.error = reason
             execution.completed_at = datetime.datetime.now(datetime.timezone.utc)
 
             # Cancel pending approvals
