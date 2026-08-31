@@ -6,6 +6,8 @@ from app.services.mcp.mcp_tool_executor import (
     generate_tool_confirmation_token,
     verify_and_consume_confirmation_token
 )
+from app.services.mcp.mcp_resource_service import MCPResourceService
+from app.services.mcp.mcp_prompt_service import MCPPromptService
 
 __all__ = [
     "MCPRegistryService",
@@ -14,4 +16,6 @@ __all__ = [
     "MCPToolExecutionService",
     "generate_tool_confirmation_token",
     "verify_and_consume_confirmation_token",
+    "MCPResourceService",
+    "MCPPromptService",
 ]

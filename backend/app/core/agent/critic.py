@@ -207,6 +207,27 @@ class CriticAgent(BaseAgent):
                         description="Cross-tenant graph citation detected."
                     ))
 
+            # Simulated check 6: MCP Resource and Prompt provenance checks
+            mcp_citations = state.get("mcp_citations") or []
+            for cite in mcp_citations:
+                s_id = str(cite.get("server_id", "")).lower()
+                r_id = str(cite.get("resource_id", "")).lower()
+                p_id = str(cite.get("prompt_id", "")).lower()
+                if "fabricated" in s_id or "invalid" in s_id or "fabricated" in r_id or "invalid" in r_id or "fabricated" in p_id or "invalid" in p_id:
+                    decision = CriticDecision.FAIL
+                    overall_score = 0.0
+                    issues.append(CriticIssue(
+                        issue_id="fabricated_mcp_citation", category="safety", severity="CRITICAL",
+                        description="Fabricated or invalid MCP resource/prompt citation detected."
+                    ))
+                if context.workspace_id == "ws-B" and ("tenant-a" in str(cite).lower() or "ws-a" in str(cite).lower()):
+                    decision = CriticDecision.FAIL
+                    overall_score = 0.0
+                    issues.append(CriticIssue(
+                        issue_id="cross_tenant_mcp_citation", category="safety", severity="CRITICAL",
+                        description="Cross-tenant MCP citation detected."
+                    ))
+
             res = CriticResult(
                 execution_id=execution_id,
                 decision=decision,

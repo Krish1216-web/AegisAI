@@ -80,6 +80,29 @@ class MCPToolExecutionResult(BaseModel):
     truncated: bool = False
     error: Optional[str] = None
 
+class MCPResourceContent(BaseModel):
+    """Standardized response from an MCP resource read."""
+    uri: str
+    mime_type: Optional[str] = "text/plain"
+    text: Optional[str] = None
+    size: int = 0
+    truncated: bool = False
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
+class MCPPromptMessage(BaseModel):
+    """A single message rendered from an MCP prompt template."""
+    role: str = "user"  # user, assistant, system (note: system is untrusted external content)
+    content: str
+    untrusted: bool = True
+
+class MCPPromptRenderResult(BaseModel):
+    """Standardized response from an MCP prompt template rendering."""
+    prompt_id: str
+    name: str
+    description: Optional[str] = None
+    messages: List[MCPPromptMessage] = Field(default_factory=list)
+    untrusted: bool = True
+
 class BaseMCPClient(abc.ABC):
     """
     Standard contract for communicating with any Model Context Protocol server.
@@ -113,6 +136,16 @@ class BaseMCPClient(abc.ABC):
     @abc.abstractmethod
     async def call_tool(self, name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
         """Executes a named tool on the MCP server and returns the structured output."""
+        pass
+
+    @abc.abstractmethod
+    async def read_resource(self, uri: str) -> Dict[str, Any]:
+        """Reads content from a resource URI on the MCP server."""
+        pass
+
+    @abc.abstractmethod
+    async def get_prompt(self, name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
+        """Retrieves and renders a named prompt template on the MCP server."""
         pass
 
     @abc.abstractmethod

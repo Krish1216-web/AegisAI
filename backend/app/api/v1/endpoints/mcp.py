@@ -26,7 +26,18 @@ from app.schemas.mcp import (
     MCPToolExecuteRequest,
     MCPToolExecutionResponse,
     MCPToolConfirmationRequest,
-    MCPToolConfirmationResponse
+    MCPToolConfirmationResponse,
+    MCPResourceResponse,
+    MCPResourceListResponse,
+    MCPResourceSearchRequest,
+    MCPResourceSearchResponse,
+    MCPResourceReadResponse,
+    MCPPromptResponse,
+    MCPPromptListResponse,
+    MCPPromptSearchRequest,
+    MCPPromptSearchResponse,
+    MCPPromptRenderRequest,
+    MCPPromptRenderResponse
 )
 from app.services.mcp.mcp_registry import MCPRegistryService
 from app.services.mcp.mcp_discovery import MCPDiscoveryService
@@ -35,6 +46,8 @@ from app.services.mcp.mcp_tool_executor import (
     MCPToolExecutionService,
     generate_tool_confirmation_token
 )
+from app.services.mcp.mcp_resource_service import MCPResourceService
+from app.services.mcp.mcp_prompt_service import MCPPromptService
 from app.core.mcp.base import MCPValidationError, MCPClientError, MCPToolConfirmationRequired
 from app.api.v1.endpoints.documents import resolve_workspace_id
 
@@ -609,4 +622,296 @@ async def execute_mcp_tool_endpoint(
     except Exception as e:
         logger.error(f"MCP Tool execution error: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Execution error: {str(e)}")
+
+# ==========================================
+# 4. MCP Resource Endpoints (Phase 6.5)
+# ==========================================
+
+@router.get("/resources", response_model=MCPResourceListResponse)
+def list_mcp_resources(
+    server_id: Optional[uuid.UUID] = Query(None, description="Filter by server ID"),
+    search: Optional[str] = Query(None, description="Search term for name or description"),
+    enabled_only: bool = Query(False, description="Filter for enabled resources only"),
+    include_stale: bool = Query(True, description="Whether to include stale resources"),
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    _rate_limit: bool = Depends(check_rate_limit)
+):
+    """
+    Lists discovered MCP resources with filtering, search, and pagination.
+    """
+    workspace_id = resolve_workspace_id(current_user, db)
+    svc = MCPResourceService(db)
+    resources, total = svc.list_resources(
+        user_id=current_user.id,
+        workspace_id=workspace_id,
+        server_id=server_id,
+        search=search,
+        enabled_only=enabled_only,
+        include_stale=include_stale,
+        limit=limit,
+        offset=offset
+    )
+    return MCPResourceListResponse(
+        resources=[MCPResourceResponse(**r) for r in resources],
+        total=total
+    )
+
+@router.post("/resources/search", response_model=MCPResourceSearchResponse)
+def search_mcp_resources(
+    req: MCPResourceSearchRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    _rate_limit: bool = Depends(check_rate_limit)
+):
+    """
+    Performs multi-tier ranked search across discovered MCP resources.
+    """
+    workspace_id = resolve_workspace_id(current_user, db)
+    svc = MCPResourceService(db)
+    results = svc.search_resources(
+        user_id=current_user.id,
+        workspace_id=workspace_id,
+        query=req.query,
+        server_id=req.server_id,
+        enabled_only=req.enabled_only,
+        include_stale=req.include_stale,
+        limit=req.limit
+    )
+    return MCPResourceSearchResponse(
+        results=[MCPResourceResponse(**r) for r in results],
+        total=len(results),
+        query=req.query
+    )
+
+@router.get("/resources/{resource_id}", response_model=MCPResourceResponse)
+def get_mcp_resource(
+    resource_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    _rate_limit: bool = Depends(check_rate_limit)
+):
+    """
+    Retrieves detailed metadata for a single discovered MCP resource.
+    """
+    workspace_id = resolve_workspace_id(current_user, db)
+    svc = MCPResourceService(db)
+    res = svc.get_resource(current_user.id, workspace_id, resource_id)
+    if not res:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="MCP resource not found.")
+    return MCPResourceResponse(**res)
+
+@router.post("/resources/{resource_id}/read", response_model=MCPResourceReadResponse)
+async def read_mcp_resource(
+    resource_id: uuid.UUID,
+    timeout: Optional[float] = Query(15.0, ge=1.0, le=60.0),
+    db: Session = Depends(get_db),
+    redis = Depends(get_redis),
+    current_user: User = Depends(get_current_user),
+    _rate_limit: bool = Depends(check_rate_limit)
+):
+    """
+    Reads content from a discovered MCP resource with strict URI validation, size limits, and sanitization.
+    """
+    workspace_id = resolve_workspace_id(current_user, db)
+    svc = MCPResourceService(db, redis_client=redis)
+    try:
+        content = await svc.read_resource(
+            user_id=current_user.id,
+            workspace_id=workspace_id,
+            resource_id=resource_id,
+            timeout=timeout
+        )
+        return MCPResourceReadResponse(
+            uri=content.uri,
+            mime_type=content.mime_type,
+            text=content.text,
+            size=content.size,
+            truncated=content.truncated,
+            metadata=content.metadata
+        )
+    except MCPValidationError as ve:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(ve))
+    except MCPClientError as ce:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"MCP server read failed: {str(ce)}")
+    except Exception as e:
+        logger.error(f"MCP Resource read error: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Read error: {str(e)}")
+
+@router.post("/resources/{resource_id}/enable", response_model=MCPResourceResponse)
+def enable_mcp_resource(
+    resource_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    _rate_limit: bool = Depends(check_rate_limit)
+):
+    workspace_id = resolve_workspace_id(current_user, db)
+    svc = MCPResourceService(db)
+    res = svc.toggle_resource(current_user.id, workspace_id, resource_id, enabled=True)
+    if not res:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="MCP resource not found.")
+    return MCPResourceResponse(**res)
+
+@router.post("/resources/{resource_id}/disable", response_model=MCPResourceResponse)
+def disable_mcp_resource(
+    resource_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    _rate_limit: bool = Depends(check_rate_limit)
+):
+    workspace_id = resolve_workspace_id(current_user, db)
+    svc = MCPResourceService(db)
+    res = svc.toggle_resource(current_user.id, workspace_id, resource_id, enabled=False)
+    if not res:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="MCP resource not found.")
+    return MCPResourceResponse(**res)
+
+# ==========================================
+# 5. MCP Prompt Endpoints (Phase 6.5)
+# ==========================================
+
+@router.get("/prompts", response_model=MCPPromptListResponse)
+def list_mcp_prompts(
+    server_id: Optional[uuid.UUID] = Query(None, description="Filter by server ID"),
+    search: Optional[str] = Query(None, description="Search term for name or description"),
+    enabled_only: bool = Query(False, description="Filter for enabled prompts only"),
+    include_stale: bool = Query(True, description="Whether to include stale prompts"),
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    _rate_limit: bool = Depends(check_rate_limit)
+):
+    """
+    Lists discovered MCP prompt templates with filtering, search, and pagination.
+    """
+    workspace_id = resolve_workspace_id(current_user, db)
+    svc = MCPPromptService(db)
+    prompts, total = svc.list_prompts(
+        user_id=current_user.id,
+        workspace_id=workspace_id,
+        server_id=server_id,
+        search=search,
+        enabled_only=enabled_only,
+        include_stale=include_stale,
+        limit=limit,
+        offset=offset
+    )
+    return MCPPromptListResponse(
+        prompts=[MCPPromptResponse(**p) for p in prompts],
+        total=total
+    )
+
+@router.post("/prompts/search", response_model=MCPPromptSearchResponse)
+def search_mcp_prompts(
+    req: MCPPromptSearchRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    _rate_limit: bool = Depends(check_rate_limit)
+):
+    """
+    Performs multi-tier ranked search across discovered MCP prompt templates.
+    """
+    workspace_id = resolve_workspace_id(current_user, db)
+    svc = MCPPromptService(db)
+    results = svc.search_prompts(
+        user_id=current_user.id,
+        workspace_id=workspace_id,
+        query=req.query,
+        server_id=req.server_id,
+        enabled_only=req.enabled_only,
+        include_stale=req.include_stale,
+        limit=req.limit
+    )
+    return MCPPromptSearchResponse(
+        results=[MCPPromptResponse(**p) for p in results],
+        total=len(results),
+        query=req.query
+    )
+
+@router.get("/prompts/{prompt_id}", response_model=MCPPromptResponse)
+def get_mcp_prompt(
+    prompt_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    _rate_limit: bool = Depends(check_rate_limit)
+):
+    """
+    Retrieves detailed metadata and argument schemas for a single discovered prompt template.
+    """
+    workspace_id = resolve_workspace_id(current_user, db)
+    svc = MCPPromptService(db)
+    res = svc.get_prompt(current_user.id, workspace_id, prompt_id)
+    if not res:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="MCP prompt not found.")
+    return MCPPromptResponse(**res)
+
+@router.post("/prompts/{prompt_id}/render", response_model=MCPPromptRenderResponse)
+async def render_mcp_prompt(
+    prompt_id: uuid.UUID,
+    req: MCPPromptRenderRequest,
+    timeout: Optional[float] = Query(15.0, ge=1.0, le=60.0),
+    db: Session = Depends(get_db),
+    redis = Depends(get_redis),
+    current_user: User = Depends(get_current_user),
+    _rate_limit: bool = Depends(check_rate_limit)
+):
+    """
+    Renders an MCP prompt template with bound arguments, strictly isolating messages as untrusted data.
+    """
+    workspace_id = resolve_workspace_id(current_user, db)
+    svc = MCPPromptService(db, redis_client=redis)
+    try:
+        res = await svc.render_prompt(
+            user_id=current_user.id,
+            workspace_id=workspace_id,
+            prompt_id=prompt_id,
+            arguments=req.arguments,
+            timeout=timeout
+        )
+        return MCPPromptRenderResponse(
+            prompt_id=res.prompt_id,
+            name=res.name,
+            description=res.description,
+            messages=[{"role": m.role, "content": m.content, "untrusted": m.untrusted} for m in res.messages],
+            untrusted=res.untrusted
+        )
+    except MCPValidationError as ve:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(ve))
+    except MCPClientError as ce:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"MCP server prompt rendering failed: {str(ce)}")
+    except Exception as e:
+        logger.error(f"MCP Prompt render error: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Render error: {str(e)}")
+
+@router.post("/prompts/{prompt_id}/enable", response_model=MCPPromptResponse)
+def enable_mcp_prompt(
+    prompt_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    _rate_limit: bool = Depends(check_rate_limit)
+):
+    workspace_id = resolve_workspace_id(current_user, db)
+    svc = MCPPromptService(db)
+    res = svc.toggle_prompt(current_user.id, workspace_id, prompt_id, enabled=True)
+    if not res:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="MCP prompt not found.")
+    return MCPPromptResponse(**res)
+
+@router.post("/prompts/{prompt_id}/disable", response_model=MCPPromptResponse)
+def disable_mcp_prompt(
+    prompt_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    _rate_limit: bool = Depends(check_rate_limit)
+):
+    workspace_id = resolve_workspace_id(current_user, db)
+    svc = MCPPromptService(db)
+    res = svc.toggle_prompt(current_user.id, workspace_id, prompt_id, enabled=False)
+    if not res:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="MCP prompt not found.")
+    return MCPPromptResponse(**res)
+
 

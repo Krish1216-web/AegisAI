@@ -197,3 +197,110 @@ class MCPToolConfirmationResponse(BaseModel):
     expires_in_seconds: int
     risk_level: str
     risk_reasons: List[str] = Field(default_factory=list)
+
+# ==========================================
+# Phase 6.5 Resource Schemas
+# ==========================================
+
+class MCPResourceResponse(BaseModel):
+    id: uuid.UUID
+    server_id: uuid.UUID
+    server_name: str
+    server_transport: str
+    server_status: str
+    server_enabled: bool
+    name: str
+    uri: str
+    mime_type: Optional[str] = "text/plain"
+    description: Optional[str] = None
+    metadata: Optional[Dict[str, Any]] = None
+    enabled: bool
+    is_stale: bool = False
+    stale_at: Optional[datetime.datetime] = None
+    definition_hash: Optional[str] = None
+    version: int = 1
+    first_discovered_at: Optional[datetime.datetime] = None
+    last_discovered_at: Optional[datetime.datetime] = None
+    created_at: datetime.datetime
+    updated_at: datetime.datetime
+
+class MCPResourceListResponse(BaseModel):
+    resources: List[MCPResourceResponse]
+    total: int
+
+class MCPResourceSearchRequest(BaseModel):
+    query: str = Field(..., max_length=200, description="Search query matching resource name or URI")
+    server_id: Optional[uuid.UUID] = Field(None, description="Optional server ID filter")
+    enabled_only: bool = Field(True, description="Filter for enabled resources")
+    include_stale: bool = Field(False, description="Whether to include stale resources")
+    limit: int = Field(20, ge=1, le=100)
+
+class MCPResourceSearchResponse(BaseModel):
+    results: List[MCPResourceResponse]
+    total: int
+    query: str
+
+class MCPResourceReadResponse(BaseModel):
+    uri: str
+    mime_type: Optional[str] = "text/plain"
+    text: Optional[str] = None
+    size: int = 0
+    truncated: bool = False
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
+# ==========================================
+# Phase 6.5 Prompt Schemas
+# ==========================================
+
+class MCPPromptResponse(BaseModel):
+    id: uuid.UUID
+    server_id: uuid.UUID
+    server_name: str
+    server_transport: str
+    server_status: str
+    server_enabled: bool
+    name: str
+    description: Optional[str] = None
+    arguments: List[Dict[str, Any]] = Field(default_factory=list)
+    metadata: Optional[Dict[str, Any]] = None
+    enabled: bool
+    is_stale: bool = False
+    stale_at: Optional[datetime.datetime] = None
+    definition_hash: Optional[str] = None
+    version: int = 1
+    first_discovered_at: Optional[datetime.datetime] = None
+    last_discovered_at: Optional[datetime.datetime] = None
+    created_at: datetime.datetime
+    updated_at: datetime.datetime
+
+class MCPPromptListResponse(BaseModel):
+    prompts: List[MCPPromptResponse]
+    total: int
+
+class MCPPromptSearchRequest(BaseModel):
+    query: str = Field(..., max_length=200, description="Search query matching prompt name or description")
+    server_id: Optional[uuid.UUID] = Field(None, description="Optional server ID filter")
+    enabled_only: bool = Field(True, description="Filter for enabled prompts")
+    include_stale: bool = Field(False, description="Whether to include stale prompts")
+    limit: int = Field(20, ge=1, le=100)
+
+class MCPPromptSearchResponse(BaseModel):
+    results: List[MCPPromptResponse]
+    total: int
+    query: str
+
+class MCPPromptRenderRequest(BaseModel):
+    arguments: Dict[str, Any] = Field(default_factory=dict, description="Arguments bound to the prompt template")
+
+class MCPPromptMessageSchema(BaseModel):
+    role: str = "user"
+    content: str
+    untrusted: bool = True
+
+class MCPPromptRenderResponse(BaseModel):
+    prompt_id: str
+    name: str
+    description: Optional[str] = None
+    messages: List[MCPPromptMessageSchema] = Field(default_factory=list)
+    untrusted: bool = True
+

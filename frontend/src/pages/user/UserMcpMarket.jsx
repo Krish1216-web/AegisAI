@@ -37,10 +37,18 @@ import {
   listWorkspaceTools,
   searchWorkspaceTools,
   getToolDetails,
-  enableMCPTool,
-  disableMCPTool,
   executeMCPTool,
-  generateToolConfirmationToken
+  generateToolConfirmationToken,
+  listMCPResources,
+  searchMCPResources,
+  readMCPResource,
+  enableMCPResource,
+  disableMCPResource,
+  listMCPPrompts,
+  searchMCPPrompts,
+  renderMCPPrompt,
+  enableMCPPrompt,
+  disableMCPPrompt
 } from '../../api/mcp';
 
 export default function UserMcpMarket({ triggerNotification }) {
@@ -93,6 +101,27 @@ export default function UserMcpMarket({ triggerNotification }) {
   const [healthCheckingIds, setHealthCheckingIds] = useState(new Set());
   const [healthMetrics, setHealthMetrics] = useState({});
 
+  // Resources State (Phase 6.5)
+  const [resources, setResources] = useState([]);
+  const [isLoadingResources, setIsLoadingResources] = useState(false);
+  const [resourceSearchQuery, setResourceSearchQuery] = useState('');
+  const [selectedResource, setSelectedResource] = useState(null);
+  const [showResourceModal, setShowResourceModal] = useState(false);
+  const [isReadingResource, setIsReadingResource] = useState(false);
+  const [resourceContent, setResourceContent] = useState(null);
+  const [resourceReadError, setResourceReadError] = useState(null);
+
+  // Prompts State (Phase 6.5)
+  const [prompts, setPrompts] = useState([]);
+  const [isLoadingPrompts, setIsLoadingPrompts] = useState(false);
+  const [promptSearchQuery, setPromptSearchQuery] = useState('');
+  const [selectedPrompt, setSelectedPrompt] = useState(null);
+  const [showPromptModal, setShowPromptModal] = useState(false);
+  const [isRenderingPrompt, setIsRenderingPrompt] = useState(false);
+  const [promptArgs, setPromptArgs] = useState({});
+  const [renderedPrompt, setRenderedPrompt] = useState(null);
+  const [promptRenderError, setPromptRenderError] = useState(null);
+
   const fetchServers = async () => {
     setIsLoading(true);
     try {
@@ -134,6 +163,58 @@ export default function UserMcpMarket({ triggerNotification }) {
     }
   };
 
+  const fetchResources = async () => {
+    setIsLoadingResources(true);
+    try {
+      if (resourceSearchQuery.trim()) {
+        const data = await searchMCPResources({
+          query: resourceSearchQuery.trim(),
+          enabled_only: false,
+          include_stale: true,
+          limit: 50
+        });
+        setResources(data.results || []);
+      } else {
+        const data = await listMCPResources({
+          include_stale: true,
+          limit: 100
+        });
+        setResources(data.resources || []);
+      }
+    } catch (err) {
+      console.error('Failed to load resources:', err);
+      triggerNotification?.('Error', 'Failed to load MCP resources catalog.');
+    } finally {
+      setIsLoadingResources(false);
+    }
+  };
+
+  const fetchPrompts = async () => {
+    setIsLoadingPrompts(true);
+    try {
+      if (promptSearchQuery.trim()) {
+        const data = await searchMCPPrompts({
+          query: promptSearchQuery.trim(),
+          enabled_only: false,
+          include_stale: true,
+          limit: 50
+        });
+        setPrompts(data.results || []);
+      } else {
+        const data = await listMCPPrompts({
+          include_stale: true,
+          limit: 100
+        });
+        setPrompts(data.prompts || []);
+      }
+    } catch (err) {
+      console.error('Failed to load prompts:', err);
+      triggerNotification?.('Error', 'Failed to load MCP prompts catalog.');
+    } finally {
+      setIsLoadingPrompts(false);
+    }
+  };
+
   useEffect(() => {
     fetchServers();
   }, []);
@@ -144,8 +225,18 @@ export default function UserMcpMarket({ triggerNotification }) {
         fetchTools();
       }, 250);
       return () => clearTimeout(timer);
+    } else if (activeMode === 'resources') {
+      const timer = setTimeout(() => {
+        fetchResources();
+      }, 250);
+      return () => clearTimeout(timer);
+    } else if (activeMode === 'prompts') {
+      const timer = setTimeout(() => {
+        fetchPrompts();
+      }, 250);
+      return () => clearTimeout(timer);
     }
-  }, [activeMode, toolSearchQuery, selectedRiskFilter]);
+  }, [activeMode, toolSearchQuery, selectedRiskFilter, resourceSearchQuery, promptSearchQuery]);
 
   const handleRegister = async (e) => {
     e.preventDefault();
@@ -310,6 +401,55 @@ export default function UserMcpMarket({ triggerNotification }) {
     }
   };
 
+  const handleReadResource = async (resource) => {
+    setSelectedResource(resource);
+    setShowResourceModal(true);
+    setIsReadingResource(true);
+    setResourceReadError(null);
+    setResourceContent(null);
+
+    try {
+      const res = await readMCPResource(resource.id);
+      setResourceContent(res);
+      triggerNotification?.('Resource Loaded', `Successfully read '${resource.name}'`);
+    } catch (err) {
+      setResourceReadError(err.message || 'Failed to read resource content');
+      triggerNotification?.('Read Failed', err.message || 'Failed to read resource');
+    } finally {
+      setIsReadingResource(false);
+    }
+  };
+
+  const handleOpenPrompt = (prompt) => {
+    setSelectedPrompt(prompt);
+    setShowPromptModal(true);
+    setPromptRenderError(null);
+    setRenderedPrompt(null);
+    const initial = {};
+    (prompt.arguments || []).forEach(arg => {
+      initial[arg.name] = '';
+    });
+    setPromptArgs(initial);
+  };
+
+  const handleRenderPrompt = async () => {
+    if (!selectedPrompt) return;
+    setIsRenderingPrompt(true);
+    setPromptRenderError(null);
+    setRenderedPrompt(null);
+
+    try {
+      const res = await renderMCPPrompt(selectedPrompt.id, promptArgs);
+      setRenderedPrompt(res);
+      triggerNotification?.('Prompt Rendered', `Rendered '${selectedPrompt.name}' template.`);
+    } catch (err) {
+      setPromptRenderError(err.message || 'Failed to render prompt template');
+      triggerNotification?.('Render Failed', err.message || 'Failed to render prompt');
+    } finally {
+      setIsRenderingPrompt(false);
+    }
+  };
+
   const filteredServers = servers.filter(item => 
     item.name.toLowerCase().includes(search.toLowerCase()) || 
     item.server_url.toLowerCase().includes(search.toLowerCase()) ||
@@ -327,17 +467,16 @@ export default function UserMcpMarket({ triggerNotification }) {
   const promptsList = filterCapabilities(capabilities.filter(c => c.capability_type === 'prompt'));
 
   return (
-    <div className="flex flex-col gap-6 animate-fade-in p-2">
-      
-      {/* Top Header & Navigation Switcher */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+    <div className="space-y-6 max-w-7xl mx-auto pb-12">
+      {/* Header Section */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-5">
         <div>
-          <h2 className="text-xl font-bold text-white tracking-wide flex items-center gap-2">
+          <h2 className="text-xl font-bold text-white tracking-tight flex items-center gap-2.5">
             <Server className="w-5 h-5 text-indigo-400" />
-            Model Context Protocol (MCP) Subsystem
+            Model Context Protocol (MCP) Ecosystem
           </h2>
           <p className="text-xs text-slate-400 mt-1">
-            Manage external tool server connections, discover dynamic tools, inspect JSON Schemas, and execute validated capabilities.
+            Manage external tool server connections, discover dynamic tools, inspect JSON Schemas, read secure resources, and render prompt templates.
           </p>
         </div>
 
@@ -355,7 +494,7 @@ export default function UserMcpMarket({ triggerNotification }) {
             <span>Servers ({servers.length})</span>
           </button>
           <button
-            onClick={() => { setActiveMode('tools'); }}
+            onClick={() => setActiveMode('tools')}
             className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition ${
               activeMode === 'tools'
                 ? 'bg-indigo-600 text-white shadow-sm'
@@ -363,7 +502,29 @@ export default function UserMcpMarket({ triggerNotification }) {
             }`}
           >
             <Wrench className="w-3.5 h-3.5" />
-            <span>Tool Catalog</span>
+            <span>Tools</span>
+          </button>
+          <button
+            onClick={() => setActiveMode('resources')}
+            className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition ${
+              activeMode === 'resources'
+                ? 'bg-indigo-600 text-white shadow-sm'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+            }`}
+          >
+            <FileCode className="w-3.5 h-3.5" />
+            <span>Resources</span>
+          </button>
+          <button
+            onClick={() => setActiveMode('prompts')}
+            className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition ${
+              activeMode === 'prompts'
+                ? 'bg-indigo-600 text-white shadow-sm'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+            }`}
+          >
+            <MessageSquare className="w-3.5 h-3.5" />
+            <span>Prompts</span>
           </button>
         </div>
       </div>
@@ -726,6 +887,178 @@ export default function UserMcpMarket({ triggerNotification }) {
       )}
 
       {/* ========================================================================= */}
+      {/* VIEW MODE 3: RESOURCES CATALOG (PHASE 6.5) */}
+      {/* ========================================================================= */}
+      {activeMode === 'resources' && (
+        <div className="space-y-4">
+          <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3">
+            <div className="relative flex-1 max-w-md">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+              <input
+                type="text"
+                value={resourceSearchQuery}
+                onChange={(e) => setResourceSearchQuery(e.target.value)}
+                placeholder="Search resources by name or URI..."
+                className="bg-slate-900 border border-slate-800 rounded-xl py-2 pl-9 pr-4 text-xs text-slate-300 w-full outline-none focus:border-indigo-500 transition"
+              />
+            </div>
+            <button
+              onClick={fetchResources}
+              disabled={isLoadingResources}
+              className="px-3.5 py-2 bg-slate-900 border border-slate-800 hover:bg-slate-800 text-slate-300 text-xs font-semibold rounded-xl flex items-center justify-center gap-1.5 transition"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isLoadingResources ? 'animate-spin text-indigo-400' : ''}`} />
+              <span>Refresh Resources</span>
+            </button>
+          </div>
+
+          {isLoadingResources ? (
+            <div className="flex items-center justify-center py-16 text-slate-400 text-xs gap-2">
+              <RefreshCw className="w-4 h-4 animate-spin text-indigo-400" />
+              <span>Loading MCP resources catalog...</span>
+            </div>
+          ) : resources.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16 border border-dashed border-slate-800 rounded-2xl p-6 text-center">
+              <div className="p-3 bg-slate-900 rounded-full text-slate-500 mb-3">
+                <FileCode className="w-6 h-6" />
+              </div>
+              <h3 className="text-sm font-semibold text-slate-200">No MCP Resources Discovered</h3>
+              <p className="text-xs text-slate-400 max-w-sm mt-1">Discovered resources exposed by connected MCP servers will appear here.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+              {resources.map((resource) => (
+                <div
+                  key={resource.id}
+                  className={`bg-slate-900/80 border rounded-2xl p-5 flex flex-col justify-between transition-all ${
+                    resource.enabled && !resource.is_stale ? 'border-slate-800 hover:border-slate-700 shadow-md' : 'border-slate-800/40 opacity-60'
+                  }`}
+                >
+                  <div className="space-y-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-8 h-8 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 flex items-center justify-center shrink-0">
+                          <FileCode className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <h4 className="text-sm font-bold text-white tracking-wide">{resource.name}</h4>
+                          <span className="text-[10px] text-slate-400 font-mono block truncate max-w-[200px]">{resource.uri}</span>
+                        </div>
+                      </div>
+                      <span className="px-2 py-0.5 rounded text-[9px] font-mono bg-slate-800 text-slate-300 uppercase border border-slate-700">
+                        {resource.mime_type || 'text/plain'}
+                      </span>
+                    </div>
+
+                    <p className="text-xs text-slate-400 line-clamp-2 leading-relaxed">
+                      {resource.description || 'No description provided.'}
+                    </p>
+                  </div>
+
+                  <div className="mt-4 pt-3 border-t border-slate-800 flex items-center justify-between">
+                    <span className="text-[11px] text-slate-400 font-mono">{resource.server_name}</span>
+                    <button
+                      onClick={() => handleReadResource(resource)}
+                      className="px-3 py-1.5 bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/30 text-indigo-300 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition"
+                    >
+                      <span>Read Resource</span>
+                      <ChevronRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* VIEW MODE 4: PROMPTS CATALOG (PHASE 6.5) */}
+      {/* ========================================================================= */}
+      {activeMode === 'prompts' && (
+        <div className="space-y-4">
+          <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3">
+            <div className="relative flex-1 max-w-md">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+              <input
+                type="text"
+                value={promptSearchQuery}
+                onChange={(e) => setPromptSearchQuery(e.target.value)}
+                placeholder="Search prompt templates..."
+                className="bg-slate-900 border border-slate-800 rounded-xl py-2 pl-9 pr-4 text-xs text-slate-300 w-full outline-none focus:border-indigo-500 transition"
+              />
+            </div>
+            <button
+              onClick={fetchPrompts}
+              disabled={isLoadingPrompts}
+              className="px-3.5 py-2 bg-slate-900 border border-slate-800 hover:bg-slate-800 text-slate-300 text-xs font-semibold rounded-xl flex items-center justify-center gap-1.5 transition"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isLoadingPrompts ? 'animate-spin text-indigo-400' : ''}`} />
+              <span>Refresh Prompts</span>
+            </button>
+          </div>
+
+          {isLoadingPrompts ? (
+            <div className="flex items-center justify-center py-16 text-slate-400 text-xs gap-2">
+              <RefreshCw className="w-4 h-4 animate-spin text-indigo-400" />
+              <span>Loading MCP prompt templates...</span>
+            </div>
+          ) : prompts.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16 border border-dashed border-slate-800 rounded-2xl p-6 text-center">
+              <div className="p-3 bg-slate-900 rounded-full text-slate-500 mb-3">
+                <MessageSquare className="w-6 h-6" />
+              </div>
+              <h3 className="text-sm font-semibold text-slate-200">No Prompt Templates Discovered</h3>
+              <p className="text-xs text-slate-400 max-w-sm mt-1">Prompt templates exposed by connected MCP servers will appear here.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+              {prompts.map((prompt) => (
+                <div
+                  key={prompt.id}
+                  className={`bg-slate-900/80 border rounded-2xl p-5 flex flex-col justify-between transition-all ${
+                    prompt.enabled && !prompt.is_stale ? 'border-slate-800 hover:border-slate-700 shadow-md' : 'border-slate-800/40 opacity-60'
+                  }`}
+                >
+                  <div className="space-y-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-8 h-8 rounded-xl bg-purple-500/10 border border-purple-500/20 text-purple-400 flex items-center justify-center shrink-0">
+                          <MessageSquare className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <h4 className="text-sm font-bold text-white tracking-wide font-mono">{prompt.name}</h4>
+                          <span className="text-[10px] text-slate-400 font-mono">{prompt.server_name}</span>
+                        </div>
+                      </div>
+                      <span className="px-2 py-0.5 rounded text-[9px] font-mono bg-purple-500/10 text-purple-300 border border-purple-500/20">
+                        {(prompt.arguments || []).length} args
+                      </span>
+                    </div>
+
+                    <p className="text-xs text-slate-400 line-clamp-2 leading-relaxed">
+                      {prompt.description || 'No description provided.'}
+                    </p>
+                  </div>
+
+                  <div className="mt-4 pt-3 border-t border-slate-800 flex items-center justify-between">
+                    <span className="text-[11px] text-slate-400 font-mono">Template</span>
+                    <button
+                      onClick={() => handleOpenPrompt(prompt)}
+                      className="px-3 py-1.5 bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/30 text-purple-300 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition"
+                    >
+                      <span>Render Template</span>
+                      <ChevronRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ========================================================================= */}
       {/* TOOL INSPECTOR & EXECUTION MODAL (PHASE 6.3 & 6.4) */}
       {/* ========================================================================= */}
       {showToolModal && selectedTool && (
@@ -994,6 +1327,202 @@ export default function UserMcpMarket({ triggerNotification }) {
                   Close
                 </button>
               </div>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* RESOURCE CONTENT INSPECTOR MODAL (PHASE 6.5) */}
+      {/* ========================================================================= */}
+      {showResourceModal && selectedResource && (
+        <div className="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-2xl w-full p-6 space-y-4 shadow-2xl max-h-[90vh] flex flex-col">
+            
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400">
+                  <FileCode className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white font-mono">{selectedResource.name}</h3>
+                  <p className="text-xs text-slate-400 font-mono">{selectedResource.uri}</p>
+                </div>
+              </div>
+              <button onClick={() => setShowResourceModal(false)} className="text-slate-400 hover:text-white p-1">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto space-y-4 pr-1">
+              <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 flex items-center justify-between text-xs">
+                <div className="space-y-0.5">
+                  <span className="text-[10px] text-slate-500 uppercase font-semibold">Server Origin</span>
+                  <p className="font-mono text-slate-300">{selectedResource.server_name}</p>
+                </div>
+                <div className="space-y-0.5 text-right">
+                  <span className="text-[10px] text-slate-500 uppercase font-semibold">MIME Type</span>
+                  <p className="font-mono text-indigo-400">{resourceContent?.mime_type || selectedResource.mime_type || 'text/plain'}</p>
+                </div>
+              </div>
+
+              {isReadingResource ? (
+                <div className="flex flex-col items-center justify-center py-12 text-slate-400 text-xs gap-2">
+                  <RefreshCw className="w-5 h-5 animate-spin text-indigo-400" />
+                  <span>Connecting to MCP server and reading resource content...</span>
+                </div>
+              ) : resourceReadError ? (
+                <div className="p-4 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs space-y-1">
+                  <span className="font-bold flex items-center gap-1.5">
+                    <AlertCircle className="w-4 h-4 text-rose-400" />
+                    Resource Read Failed
+                  </span>
+                  <p className="font-mono">{resourceReadError}</p>
+                </div>
+              ) : resourceContent ? (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-slate-300">Sanitized Content Preview</span>
+                    <div className="flex items-center gap-2">
+                      {resourceContent.truncated && (
+                        <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                          TRUNCATED (1MB Limit)
+                        </span>
+                      )}
+                      <span className="text-[10px] font-mono text-slate-400">{resourceContent.size} bytes</span>
+                    </div>
+                  </div>
+                  <pre className="p-4 bg-slate-950 rounded-xl border border-slate-800 text-xs font-mono text-slate-200 overflow-x-auto max-h-72 whitespace-pre-wrap leading-relaxed">
+                    {resourceContent.text}
+                  </pre>
+                </div>
+              ) : null}
+            </div>
+
+            <div className="border-t border-slate-800 pt-3 flex justify-end">
+              <button
+                onClick={() => setShowResourceModal(false)}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold"
+              >
+                Close
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* PROMPT TEMPLATE RENDERER MODAL (PHASE 6.5) */}
+      {/* ========================================================================= */}
+      {showPromptModal && selectedPrompt && (
+        <div className="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-2xl w-full p-6 space-y-4 shadow-2xl max-h-[90vh] flex flex-col">
+            
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-purple-500/10 border border-purple-500/20 text-purple-400">
+                  <MessageSquare className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white font-mono">{selectedPrompt.name}</h3>
+                  <p className="text-xs text-slate-400">Server: <strong className="text-slate-200">{selectedPrompt.server_name}</strong></p>
+                </div>
+              </div>
+              <button onClick={() => setShowPromptModal(false)} className="text-slate-400 hover:text-white p-1">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto space-y-4 pr-1">
+              <p className="text-xs text-slate-400 leading-relaxed">{selectedPrompt.description || 'No description provided.'}</p>
+
+              {/* Dynamic Arguments Form */}
+              <div className="space-y-3">
+                <h4 className="text-xs font-semibold text-slate-300">Template Arguments</h4>
+                {(selectedPrompt.arguments || []).length === 0 ? (
+                  <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 text-slate-500 text-xs">
+                    This template takes no required arguments.
+                  </div>
+                ) : (
+                  <div className="space-y-2.5">
+                    {selectedPrompt.arguments.map((arg) => (
+                      <div key={arg.name} className="space-y-1">
+                        <label className="text-[11px] font-mono text-slate-300 flex items-center gap-1.5">
+                          <span>{arg.name}</span>
+                          {arg.required && <span className="text-rose-400 font-bold">*</span>}
+                        </label>
+                        <input
+                          type="text"
+                          value={promptArgs[arg.name] || ''}
+                          onChange={(e) => setPromptArgs({ ...promptArgs, [arg.name]: e.target.value })}
+                          placeholder={arg.description || `Enter value for ${arg.name}...`}
+                          className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 outline-none focus:border-purple-500 transition"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {isRenderingPrompt && (
+                <div className="flex items-center justify-center py-6 text-slate-400 text-xs gap-2">
+                  <RefreshCw className="w-4 h-4 animate-spin text-purple-400" />
+                  <span>Rendering prompt template via MCP server...</span>
+                </div>
+              )}
+
+              {promptRenderError && (
+                <div className="p-4 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs space-y-1">
+                  <span className="font-bold flex items-center gap-1.5">
+                    <AlertCircle className="w-4 h-4 text-rose-400" />
+                    Render Error
+                  </span>
+                  <p className="font-mono">{promptRenderError}</p>
+                </div>
+              )}
+
+              {renderedPrompt && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-slate-300">Rendered Messages (External Untrusted Data)</span>
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                      Untrusted Data
+                    </span>
+                  </div>
+                  <div className="space-y-2">
+                    {renderedPrompt.messages.map((m, idx) => (
+                      <div key={idx} className="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-1">
+                        <span className="text-[10px] font-mono font-bold uppercase text-purple-400">
+                          Role: {m.role}
+                        </span>
+                        <p className="text-xs font-mono text-slate-200 whitespace-pre-wrap leading-relaxed">
+                          {m.content}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="border-t border-slate-800 pt-3 flex items-center justify-between">
+              <button
+                onClick={handleRenderPrompt}
+                disabled={isRenderingPrompt}
+                className="px-4 py-2 bg-purple-600 hover:bg-purple-500 disabled:opacity-40 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 shadow-sm"
+              >
+                <Play className="w-3.5 h-3.5" />
+                <span>Render Prompt</span>
+              </button>
+
+              <button
+                onClick={() => setShowPromptModal(false)}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold"
+              >
+                Close
+              </button>
             </div>
 
           </div>

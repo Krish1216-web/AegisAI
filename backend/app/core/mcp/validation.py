@@ -1,7 +1,8 @@
 import re
 import json
+import ipaddress
 from urllib.parse import urlparse
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from app.core.mcp.base import MCPValidationError
 from app.models.mcp import MCPTransport, MCPAuthenticationType
 
@@ -10,15 +11,19 @@ MAX_SERVER_NAME_LENGTH = 100
 MAX_SERVER_URL_LENGTH = 512
 MAX_METADATA_BYTES = 64 * 1024       # 64 KB
 MAX_SCHEMA_BYTES = 32 * 1024         # 32 KB
+MAX_PROMPT_ARGS_BYTES = 32 * 1024    # 32 KB
 MAX_SCHEMA_DEPTH = 6
 
 ALLOWED_URL_SCHEMES = {"http", "https", "stdio", "ws", "wss", "mock"}
+ALLOWED_RESOURCE_SCHEMES = {"workspace", "db", "s3", "mock", "repo", "http", "https", "custom"}
 DANGEROUS_URL_CHARACTERS = re.compile(r"[`$;|&><\n\r\t]")
 VALID_NAME_PATTERN = re.compile(r"^[a-zA-Z0-9_\-\.\s]{1,100}$")
 
+PROHIBITED_SSRF_HOSTS = {"localhost", "127.0.0.1", "0.0.0.0", "169.254.169.254", "::1"}
+
 class MCPValidator:
     """
-    Strict validation utility for MCP server configurations, URLs, and capability schemas.
+    Strict validation utility for MCP server configurations, URLs, resource URIs, and prompt schemas.
     """
     @staticmethod
     def validate_server_name(name: str) -> str:
@@ -63,6 +68,57 @@ class MCPValidator:
         return clean_url
 
     @staticmethod
+    def validate_resource_uri(uri: str) -> str:
+        """
+        Validates resource URIs, preventing path traversal, local filesystem scheme access,
+        embedded credentials, and internal network SSRF attempts.
+        """
+        if not uri or not uri.strip():
+            raise MCPValidationError("Resource URI cannot be empty.")
+        clean_uri = uri.strip()
+
+        # 1. Path traversal checks
+        if ".." in clean_uri or clean_uri.startswith("/") or clean_uri.startswith("\\"):
+            raise MCPValidationError("Resource URI contains illegal path traversal characters ('..', absolute root path).")
+
+        # 2. Reject file:// scheme outright
+        if clean_uri.lower().startswith("file://") or clean_uri.lower().startswith("file:\\"):
+            raise MCPValidationError("Local filesystem 'file://' URI scheme is strictly forbidden.")
+
+        try:
+            parsed = urlparse(clean_uri)
+            scheme = parsed.scheme.lower()
+            if not scheme:
+                raise MCPValidationError("Resource URI must include a valid URI scheme (e.g. 'workspace://', 'db://', 'https://').")
+
+            if scheme not in ALLOWED_RESOURCE_SCHEMES:
+                raise MCPValidationError(f"Unsupported resource URI scheme '{scheme}'. Allowed: {', '.join(ALLOWED_RESOURCE_SCHEMES)}")
+
+            # 3. Reject embedded credentials (user:pass@host)
+            if parsed.username or parsed.password:
+                raise MCPValidationError("Resource URI cannot contain embedded credentials.")
+
+            # 4. SSRF defense for HTTP/HTTPS resource URIs
+            if scheme in ("http", "https"):
+                hostname = (parsed.hostname or "").lower()
+                if hostname in PROHIBITED_SSRF_HOSTS:
+                    raise MCPValidationError(f"Resource URI target '{hostname}' is prohibited (SSRF protection).")
+                try:
+                    ip = ipaddress.ip_address(hostname)
+                    if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
+                        raise MCPValidationError(f"Resource URI cannot target private/internal IP address '{hostname}'.")
+                except ValueError:
+                    # Hostname is not an IP literal
+                    pass
+
+        except MCPValidationError:
+            raise
+        except Exception as e:
+            raise MCPValidationError(f"Malformed resource URI: {e}")
+
+        return clean_uri
+
+    @staticmethod
     def validate_metadata(metadata: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         if metadata is None:
             return {}
@@ -105,8 +161,39 @@ class MCPValidator:
 
         check_depth(schema)
 
-        # Standardize default schema type if missing
-        if "type" not in schema:
-            schema["type"] = "object"
+        # Enforce max 50 properties limit
+        props = schema.get("properties", {})
+        if isinstance(props, dict) and len(props) > 50:
+            raise MCPValidationError(f"Tool input schema defines {len(props)} properties, exceeding maximum limit of 50.")
 
         return schema
+
+    @staticmethod
+    def validate_prompt_arguments(
+        arguments: Optional[Dict[str, Any]],
+        prompt_def_arguments: Optional[List[Dict[str, Any]]] = None
+    ) -> Dict[str, Any]:
+        """
+        Validates prompt arguments dictionary against prompt template definition.
+        """
+        if arguments is None:
+            arguments = {}
+
+        if not isinstance(arguments, dict):
+            raise MCPValidationError("Prompt arguments must be a JSON object dictionary.")
+
+        try:
+            serialized = json.dumps(arguments)
+            if len(serialized.encode("utf-8")) > MAX_PROMPT_ARGS_BYTES:
+                raise MCPValidationError(f"Prompt arguments exceed maximum payload size of {MAX_PROMPT_ARGS_BYTES} bytes.")
+        except Exception as e:
+            raise MCPValidationError(f"Prompt arguments are not valid JSON: {e}")
+
+        if prompt_def_arguments:
+            for arg_def in prompt_def_arguments:
+                arg_name = arg_def.get("name")
+                is_req = arg_def.get("required", False)
+                if is_req and (arg_name not in arguments or arguments[arg_name] is None):
+                    raise MCPValidationError(f"Missing required prompt argument: '{arg_name}'.")
+
+        return arguments

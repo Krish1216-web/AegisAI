@@ -353,3 +353,189 @@ export async function executeMCPTool(
   });
 }
 
+// ==========================================
+// Phase 6.5 Resources API
+// ==========================================
+
+export interface MCPResource {
+  id: string;
+  server_id: string;
+  server_name: string;
+  server_transport: string;
+  server_status: string;
+  server_enabled: boolean;
+  name: string;
+  uri: string;
+  mime_type?: string;
+  description?: string;
+  metadata?: Record<string, any>;
+  enabled: boolean;
+  is_stale: boolean;
+  stale_at?: string;
+  definition_hash?: string;
+  version: number;
+  first_discovered_at?: string;
+  last_discovered_at?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MCPResourceReadResult {
+  uri: string;
+  mime_type?: string;
+  text?: string;
+  size: number;
+  truncated: boolean;
+  metadata: Record<string, any>;
+}
+
+export async function listMCPResources(params?: {
+  server_id?: string;
+  search?: string;
+  enabled_only?: boolean;
+  include_stale?: boolean;
+  limit?: number;
+  offset?: number;
+}): Promise<{ resources: MCPResource[]; total: number }> {
+  const query = new URLSearchParams();
+  if (params?.server_id) query.append('server_id', params.server_id);
+  if (params?.search) query.append('search', params.search);
+  if (params?.enabled_only !== undefined) query.append('enabled_only', String(params.enabled_only));
+  if (params?.include_stale !== undefined) query.append('include_stale', String(params.include_stale));
+  if (params?.limit) query.append('limit', String(params.limit));
+  if (params?.offset) query.append('offset', String(params.offset));
+
+  return request(`/resources?${query.toString()}`);
+}
+
+export async function searchMCPResources(payload: {
+  query: string;
+  server_id?: string;
+  enabled_only?: boolean;
+  include_stale?: boolean;
+  limit?: number;
+}): Promise<{ results: MCPResource[]; total: number; query: string }> {
+  return request('/resources/search', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function readMCPResource(resourceId: string, timeout?: number): Promise<MCPResourceReadResult> {
+  const query = timeout ? `?timeout=${timeout}` : '';
+  return request(`/resources/${resourceId}/read${query}`, {
+    method: 'POST',
+  });
+}
+
+export async function enableMCPResource(resourceId: string): Promise<MCPResource> {
+  return request(`/resources/${resourceId}/enable`, {
+    method: 'POST',
+  });
+}
+
+export async function disableMCPResource(resourceId: string): Promise<MCPResource> {
+  return request(`/resources/${resourceId}/disable`, {
+    method: 'POST',
+  });
+}
+
+// ==========================================
+// Phase 6.5 Prompts API
+// ==========================================
+
+export interface MCPPrompt {
+  id: string;
+  server_id: string;
+  server_name: string;
+  server_transport: string;
+  server_status: string;
+  server_enabled: boolean;
+  name: string;
+  description?: string;
+  arguments: Array<{
+    name: string;
+    description?: string;
+    required?: boolean;
+  }>;
+  metadata?: Record<string, any>;
+  enabled: boolean;
+  is_stale: boolean;
+  stale_at?: string;
+  definition_hash?: string;
+  version: number;
+  first_discovered_at?: string;
+  last_discovered_at?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MCPPromptRenderResult {
+  prompt_id: string;
+  name: string;
+  description?: string;
+  messages: Array<{
+    role: string;
+    content: string;
+    untrusted: boolean;
+  }>;
+  untrusted: boolean;
+}
+
+export async function listMCPPrompts(params?: {
+  server_id?: string;
+  search?: string;
+  enabled_only?: boolean;
+  include_stale?: boolean;
+  limit?: number;
+  offset?: number;
+}): Promise<{ prompts: MCPPrompt[]; total: number }> {
+  const query = new URLSearchParams();
+  if (params?.server_id) query.append('server_id', params.server_id);
+  if (params?.search) query.append('search', params.search);
+  if (params?.enabled_only !== undefined) query.append('enabled_only', String(params.enabled_only));
+  if (params?.include_stale !== undefined) query.append('include_stale', String(params.include_stale));
+  if (params?.limit) query.append('limit', String(params.limit));
+  if (params?.offset) query.append('offset', String(params.offset));
+
+  return request(`/prompts?${query.toString()}`);
+}
+
+export async function searchMCPPrompts(payload: {
+  query: string;
+  server_id?: string;
+  enabled_only?: boolean;
+  include_stale?: boolean;
+  limit?: number;
+}): Promise<{ results: MCPPrompt[]; total: number; query: string }> {
+  return request('/prompts/search', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function renderMCPPrompt(
+  promptId: string,
+  argumentsPayload: Record<string, any>,
+  timeout?: number
+): Promise<MCPPromptRenderResult> {
+  const query = timeout ? `?timeout=${timeout}` : '';
+  return request(`/prompts/${promptId}/render${query}`, {
+    method: 'POST',
+    body: JSON.stringify({ arguments: argumentsPayload }),
+  });
+}
+
+export async function enableMCPPrompt(promptId: string): Promise<MCPPrompt> {
+  return request(`/prompts/${promptId}/enable`, {
+    method: 'POST',
+  });
+}
+
+export async function disableMCPPrompt(promptId: string): Promise<MCPPrompt> {
+  return request(`/prompts/${promptId}/disable`, {
+    method: 'POST',
+  });
+}
+
+

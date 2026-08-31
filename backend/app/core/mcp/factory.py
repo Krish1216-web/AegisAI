@@ -180,6 +180,84 @@ class MockMCPClient(BaseMCPClient):
             "text": f"Tool '{name}' completed with arguments {arguments}."
         }
 
+    async def read_resource(self, uri: str) -> Dict[str, Any]:
+        """
+        Simulates reading content from a resource URI.
+        """
+        if uri == "workspace://docs/architecture.md":
+            text = "# AegisAI Architecture\nComprehensive subsystem design and architecture guide."
+            return {
+                "uri": uri,
+                "mime_type": "text/markdown",
+                "text": text,
+                "size": len(text.encode("utf-8")),
+                "truncated": False
+            }
+        elif uri == "db://schema/public":
+            text = '{"tables": ["users", "workspaces", "mcp_servers", "mcp_capabilities"]}'
+            return {
+                "uri": uri,
+                "mime_type": "application/json",
+                "text": text,
+                "size": len(text.encode("utf-8")),
+                "truncated": False
+            }
+        
+        # Default mock content
+        text = f"Mock resource content retrieved from URI: {uri}"
+        return {
+            "uri": uri,
+            "mime_type": "text/plain",
+            "text": text,
+            "size": len(text.encode("utf-8")),
+            "truncated": False
+        }
+
+    async def get_prompt(self, name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Simulates rendering a prompt template with bound arguments.
+        """
+        if name == "audit_code_security":
+            code = arguments.get("code", "")
+            lang = arguments.get("language", "python")
+            return {
+                "name": name,
+                "description": "Security audit template",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": f"Please perform a security audit on the following {lang} snippet:\n\n```{lang}\n{code}\n```"
+                    }
+                ],
+                "untrusted": True
+            }
+        elif name == "summarize_database_table":
+            tbl = arguments.get("table_name", "unknown")
+            return {
+                "name": name,
+                "description": "Database table summary template",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": f"Please analyze table schema and relationships for: {tbl}"
+                    }
+                ],
+                "untrusted": True
+            }
+
+        # Default fallback
+        return {
+            "name": name,
+            "description": f"Prompt template '{name}'",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": f"Execute prompt '{name}' with arguments: {arguments}"
+                }
+            ],
+            "untrusted": True
+        }
+
     async def ping(self) -> MCPPingResult:
         return MCPPingResult(latency_ms=1.5, status="ok")
 
@@ -212,6 +290,12 @@ class SSEMCPClient(BaseMCPClient):
     async def call_tool(self, name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
         return {"result": f"SSE tool call to '{name}' executed.", "text": f"Executed '{name}'."}
 
+    async def read_resource(self, uri: str) -> Dict[str, Any]:
+        return {"uri": uri, "mime_type": "text/plain", "text": f"SSE Resource content for {uri}", "size": 50, "truncated": False}
+
+    async def get_prompt(self, name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
+        return {"name": name, "messages": [{"role": "user", "content": f"SSE prompt {name}"}], "untrusted": True}
+
     async def ping(self) -> MCPPingResult:
         return MCPPingResult(latency_ms=12.0, status="ok")
 
@@ -228,7 +312,7 @@ class StreamableHTTPClient(BaseMCPClient):
         return MCPInitializeResult(
             protocol_version="2024-11-05",
             server_name=f"HTTPStreamServer({self.server_url})",
-            capabilities={"tools": {}}
+            capabilities={"tools": {}, "resources": {}, "prompts": {}}
         )
 
     async def list_tools(self) -> List[MCPToolDefinition]:
@@ -242,6 +326,12 @@ class StreamableHTTPClient(BaseMCPClient):
 
     async def call_tool(self, name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
         return {"result": f"HTTP tool call to '{name}' executed.", "text": f"Executed '{name}'."}
+
+    async def read_resource(self, uri: str) -> Dict[str, Any]:
+        return {"uri": uri, "mime_type": "text/plain", "text": f"HTTP Resource content for {uri}", "size": 50, "truncated": False}
+
+    async def get_prompt(self, name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
+        return {"name": name, "messages": [{"role": "user", "content": f"HTTP prompt {name}"}], "untrusted": True}
 
     async def ping(self) -> MCPPingResult:
         return MCPPingResult(latency_ms=15.0, status="ok")
@@ -259,7 +349,7 @@ class STDIOMCPClient(BaseMCPClient):
         return MCPInitializeResult(
             protocol_version="2024-11-05",
             server_name=f"STDIOServer({self.server_url})",
-            capabilities={"tools": {}}
+            capabilities={"tools": {}, "resources": {}, "prompts": {}}
         )
 
     async def list_tools(self) -> List[MCPToolDefinition]:
@@ -273,6 +363,12 @@ class STDIOMCPClient(BaseMCPClient):
 
     async def call_tool(self, name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
         return {"result": f"STDIO tool call to '{name}' executed.", "text": f"Executed '{name}'."}
+
+    async def read_resource(self, uri: str) -> Dict[str, Any]:
+        return {"uri": uri, "mime_type": "text/plain", "text": f"STDIO Resource content for {uri}", "size": 50, "truncated": False}
+
+    async def get_prompt(self, name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
+        return {"name": name, "messages": [{"role": "user", "content": f"STDIO prompt {name}"}], "untrusted": True}
 
     async def ping(self) -> MCPPingResult:
         return MCPPingResult(latency_ms=0.5, status="ok")
