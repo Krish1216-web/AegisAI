@@ -3,7 +3,7 @@ import json
 import uuid
 import datetime
 import hashlib
-from typing import Dict, Any, Set
+from typing import Dict, Any, Set, Optional
 from loguru import logger
 
 from app.core.agent.base import BaseAgent, AgentResult, ExecutionContext
@@ -20,7 +20,8 @@ from app.core.agent.tools import (
 
 class ToolExecutorAgent(BaseAgent):
     """
-    ToolExecutorAgent coordinates safe tool runs from planning steps.
+    ToolExecutorAgent coordinates safe tool runs from planning steps across
+    both local built-in tools and external Model Context Protocol (MCP) capabilities.
     """
     def __init__(self, registry: ToolRegistry):
         self.registry = registry
@@ -32,7 +33,7 @@ class ToolExecutorAgent(BaseAgent):
 
     @property
     def description(self) -> str:
-        return "Resolves and executes approved tools in a secure isolated environment."
+        return "Resolves and executes approved local and MCP tools in a secure isolated environment."
 
     def validate_input(self, state: AgentState) -> bool:
         # Require original prompt or active planner steps
@@ -61,6 +62,8 @@ class ToolExecutorAgent(BaseAgent):
         # 1. Resolve target tool from step action
         action = "calculator" # Default action
         args = {"operation": "multiply", "a": 250, "b": 12} # Default args
+        is_mcp_step = False
+        mcp_tool_id: Optional[str] = None
         
         planner_output = state.get("agent_outputs", {}).get("PlannerAgent")
         if planner_output:
@@ -68,8 +71,11 @@ class ToolExecutorAgent(BaseAgent):
                 plan_data = json.loads(planner_output["output"])
                 for step in plan_data.get("steps", []):
                     if step.get("agent_type") == "TOOL_EXECUTOR":
-                        action = step.get("action")
-                        if action == "calculator" or action == "calculator_tool":
+                        action = step.get("action", "calculator")
+                        if step.get("tool_source") == "MCP" or action.startswith("mcp:"):
+                            is_mcp_step = True
+                            mcp_tool_id = step.get("tool_id")
+                        elif action in ("calculator", "calculator_tool"):
                             action = "calculator"
                         break
             except Exception:
@@ -100,101 +106,147 @@ class ToolExecutorAgent(BaseAgent):
             from app.core.agent.graph import log_event
             try:
                 tool_exec = ToolExecution(
-                    execution_id=uuid.UUID(str(execution_id)),
+                    execution_id=uuid.UUID(str(execution_id)) if isinstance(execution_id, str) and len(execution_id) == 36 else uuid.uuid4(),
                     tool_id=action,
-                    status="RUNNING",
                     arguments_hash=args_hash,
+                    status="RUNNING",
                     started_at=datetime.datetime.now(datetime.timezone.utc),
                     retry_count=state.get("metadata", {}).get("tool_retries", 0)
                 )
                 db.add(tool_exec)
                 db.commit()
                 
-                log_event(db, execution_id, "ToolStarted", agent_type=self.name, status="success", metadata={"tool_id": action})
+                log_event(db, str(execution_id), "ToolStarted", agent_type=self.name, status="success", metadata={"tool_id": action})
             except Exception as e:
                 logger.error(f"Failed to record tool execution start: {e}")
 
         try:
-            # 2. Retrieve tool
-            tool = self.registry.get(action)
-            defn = tool.definition()
-            
-            # 3. Enforce active check
-            if not defn.enabled:
-                raise ToolDisabled()
-                
-            # 4. Permission guard check
-            required_perms = defn.required_permissions
-            if required_perms:
-                user_perms = context.permissions or []
-                if not any(p in user_perms for p in required_perms):
-                    raise ToolPermissionDenied(f"ExecutionContext lacks permission: {required_perms}")
-                    
-            # 5. Argument validations
-            tool.validate_arguments(args)
-            
-            # 6. Check confirmation system
-            if defn.requires_confirmation:
-                expected_token = generate_confirmation_token(
-                    execution_id, action, user_id, workspace_id, args
-                )
-                if not conf_token:
-                    logger.info("Human confirmation token required for tool run.")
-                    elapsed = time.perf_counter() - start_time
-                    tool_res = ToolExecutionResult(
-                        execution_id=execution_id,
-                        tool_id=action,
-                        status=ToolExecutionStatus.REQUIRES_CONFIRMATION,
-                        error="Human confirmation required.",
-                        execution_time=elapsed,
-                        metadata={"confirmation_token": expected_token}
-                    )
-                    
-                    if db and tool_exec:
-                        try:
-                            tool_exec.status = "REQUIRES_CONFIRMATION"
-                            tool_exec.completed_at = datetime.datetime.now(datetime.timezone.utc)
-                            tool_exec.result = "Requires human confirmation."
-                            db.commit()
-                        except Exception as db_err:
-                            logger.error(f"Failed to update tool state to confirmation: {db_err}")
-                    
-                    tool_results_list = state.get("tool_results", [])
-                    tool_results_list.append(tool_res.model_dump())
-                    
-                    return AgentResult(
-                        agent_name=self.name,
-                        status="requires_confirmation",
-                        output=tool_res.model_dump_json(),
-                        confidence=1.0,
-                        execution_time=elapsed,
-                        token_usage={"prompt_tokens": 5, "completion_tokens": 5, "total_tokens": 10}
-                    )
-                elif conf_token != expected_token:
-                    raise ToolConfirmationInvalid()
+            # 2. Check if this is an MCP Tool invocation
+            if (is_mcp_step or action.startswith("mcp:")) and db:
+                from app.services.mcp.mcp_tool_executor import MCPToolExecutionService
+                from app.services.mcp.mcp_tool_catalog import MCPToolCatalogService
+                from app.core.mcp.base import MCPToolConfirmationRequired
 
-            # 7. Execute the tool
-            ctx = {"user_id": user_id, "workspace_id": workspace_id}
-            output = await tool.execute(args, ctx)
-            elapsed = time.perf_counter() - start_time
-            
-            tool_res = ToolExecutionResult(
-                execution_id=execution_id,
-                tool_id=action,
-                status=ToolExecutionStatus.SUCCESS,
-                output=output,
-                execution_time=elapsed
-            )
-            
+                clean_mcp_name = action[4:] if action.startswith("mcp:") else action
+                catalog = MCPToolCatalogService(db)
+                
+                # Resolve MCP capability by ID or name
+                target_tool = None
+                if mcp_tool_id:
+                    target_tool = catalog.get_tool(uuid.UUID(user_id), uuid.UUID(workspace_id), uuid.UUID(mcp_tool_id))
+                if not target_tool:
+                    candidates = catalog.search_tools(uuid.UUID(user_id), uuid.UUID(workspace_id), query=clean_mcp_name, limit=1)
+                    if candidates:
+                        target_tool = candidates[0]
+
+                if not target_tool:
+                    raise ToolNotFound(f"MCP tool '{action}' not found in workspace catalog.")
+
+                mcp_executor = MCPToolExecutionService(db)
+                try:
+                    mcp_res = await mcp_executor.execute_tool(
+                        user_id=uuid.UUID(user_id),
+                        workspace_id=uuid.UUID(workspace_id),
+                        tool_id=uuid.UUID(str(target_tool["id"])),
+                        arguments=args,
+                        confirmation_token=conf_token,
+                        timeout=15.0
+                    )
+                except MCPToolConfirmationRequired as mcr:
+                    raise ToolConfirmationRequired(mcr.risk_reasons)
+
+                elapsed = time.perf_counter() - start_time
+                tool_res = ToolExecutionResult(
+                    execution_id=execution_id,
+                    tool_id=action,
+                    status=ToolExecutionStatus.SUCCESS,
+                    output=mcp_res.result,
+                    execution_time=elapsed,
+                    metadata={"source": "MCP", "tool_id": str(target_tool["id"])}
+                )
+
+            else:
+                # 3. Retrieve and execute local tool from registry
+                tool = self.registry.get(action)
+                defn = tool.definition()
+                
+                # Enforce active check
+                if not defn.enabled:
+                    raise ToolDisabled()
+                    
+                # Permission guard check
+                required_perms = defn.required_permissions
+                if required_perms:
+                    user_perms = context.permissions or []
+                    if not any(p in user_perms for p in required_perms):
+                        raise ToolPermissionDenied(f"ExecutionContext lacks permission: {required_perms}")
+                        
+                # Argument validations
+                tool.validate_arguments(args)
+                
+                # Check confirmation system
+                if defn.requires_confirmation:
+                    expected_token = generate_confirmation_token(
+                        execution_id, action, user_id, workspace_id, args
+                    )
+                    if not conf_token:
+                        logger.info("Human confirmation token required for tool run.")
+                        elapsed = time.perf_counter() - start_time
+                        tool_res = ToolExecutionResult(
+                            execution_id=execution_id,
+                            tool_id=action,
+                            status=ToolExecutionStatus.REQUIRES_CONFIRMATION,
+                            error="Human confirmation required.",
+                            execution_time=elapsed,
+                            metadata={"confirmation_token": expected_token}
+                        )
+                        
+                        if db and tool_exec:
+                            try:
+                                tool_exec.status = "REQUIRES_CONFIRMATION"
+                                tool_exec.completed_at = datetime.datetime.now(datetime.timezone.utc)
+                                tool_exec.result = "Requires human confirmation."
+                                db.commit()
+                            except Exception as db_err:
+                                logger.error(f"Failed to update tool state to confirmation: {db_err}")
+
+                        tool_results_list = state.get("tool_results", [])
+                        tool_results_list.append(tool_res.model_dump())
+                        
+                        return AgentResult(
+                            agent_name=self.name,
+                            status="requires_confirmation",
+                            output=tool_res.model_dump_json(),
+                            confidence=1.0,
+                            execution_time=elapsed,
+                            token_usage={"prompt_tokens": 5, "completion_tokens": 5, "total_tokens": 10}
+                        )
+                    elif conf_token != expected_token:
+                        raise ToolConfirmationInvalid()
+
+                # Execute the local tool
+                ctx = {"user_id": user_id, "workspace_id": workspace_id}
+                output = await tool.execute(args, ctx)
+                elapsed = time.perf_counter() - start_time
+                
+                tool_res = ToolExecutionResult(
+                    execution_id=execution_id,
+                    tool_id=action,
+                    status=ToolExecutionStatus.SUCCESS,
+                    output=output,
+                    execution_time=elapsed
+                )
+
+            # Update DB ToolExecution record
             if db and tool_exec:
                 try:
                     tool_exec.status = "COMPLETED"
                     tool_exec.completed_at = datetime.datetime.now(datetime.timezone.utc)
-                    tool_exec.result = str(output)
+                    tool_exec.result = str(tool_res.output)
                     db.commit()
                     
                     from app.core.agent.graph import log_event
-                    log_event(db, execution_id, "ToolCompleted", agent_type=self.name, status="success", metadata={"tool_id": action})
+                    log_event(db, str(execution_id), "ToolCompleted", agent_type=self.name, status="success", metadata={"tool_id": action})
                 except Exception as db_err:
                     logger.error(f"Failed to update tool completion: {db_err}")
             
@@ -213,6 +265,7 @@ class ToolExecutorAgent(BaseAgent):
                 execution_time=elapsed,
                 token_usage={"prompt_tokens": 10, "completion_tokens": 10, "total_tokens": 20}
             )
+
         except Exception as e:
             logger.error(f"ToolExecutorAgent execution failure: {e}")
             if db and tool_exec:
@@ -221,9 +274,6 @@ class ToolExecutorAgent(BaseAgent):
                     tool_exec.completed_at = datetime.datetime.now(datetime.timezone.utc)
                     tool_exec.error = str(e)
                     db.commit()
-                    
-                    from app.core.agent.graph import log_event
-                    log_event(db, execution_id, "ToolCompleted", agent_type=self.name, status="failed", metadata={"tool_id": action, "error": str(e)})
-                except Exception as db_err:
-                    logger.error(f"Failed to log tool failure in database: {db_err}")
+                except Exception:
+                    pass
             raise e

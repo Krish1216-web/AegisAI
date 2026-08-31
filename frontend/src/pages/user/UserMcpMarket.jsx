@@ -21,7 +21,9 @@ import {
   Layers,
   CheckCircle2,
   XCircle,
-  HelpCircle
+  Play,
+  Copy,
+  Clock
 } from 'lucide-react';
 import {
   listMCPServers,
@@ -36,7 +38,9 @@ import {
   searchWorkspaceTools,
   getToolDetails,
   enableMCPTool,
-  disableMCPTool
+  disableMCPTool,
+  executeMCPTool,
+  generateToolConfirmationToken
 } from '../../api/mcp';
 
 export default function UserMcpMarket({ triggerNotification }) {
@@ -70,13 +74,19 @@ export default function UserMcpMarket({ triggerNotification }) {
   // Discovery Summary Modal
   const [discoverySummary, setDiscoverySummary] = useState(null);
 
-  // Tool Catalog Mode State
+  // Tool Catalog & Execution State (Phase 6.3 & 6.4)
   const [tools, setTools] = useState([]);
   const [isLoadingTools, setIsLoadingTools] = useState(false);
   const [toolSearchQuery, setToolSearchQuery] = useState('');
   const [selectedRiskFilter, setSelectedRiskFilter] = useState('all');
   const [selectedTool, setSelectedTool] = useState(null);
   const [showToolModal, setShowToolModal] = useState(false);
+  const [toolModalTab, setToolModalTab] = useState('schema'); // 'schema' | 'execute'
+  const [executionArgs, setExecutionArgs] = useState({});
+  const [isExecuting, setIsExecuting] = useState(false);
+  const [executionResult, setExecutionResult] = useState(null);
+  const [executionError, setExecutionError] = useState(null);
+  const [restrictedConfirmed, setRestrictedConfirmed] = useState(false);
 
   // In-flight state trackers
   const [discoveringIds, setDiscoveringIds] = useState(new Set());
@@ -271,6 +281,35 @@ export default function UserMcpMarket({ triggerNotification }) {
     }
   };
 
+  // Phase 6.4: Tool Execution Handler
+  const handleExecute = async () => {
+    if (!selectedTool) return;
+    setIsExecuting(true);
+    setExecutionError(null);
+    setExecutionResult(null);
+
+    try {
+      let confirmationToken = undefined;
+      if (selectedTool.risk_level === 'restricted') {
+        const confRes = await generateToolConfirmationToken(selectedTool.id, executionArgs);
+        confirmationToken = confRes.token;
+      }
+
+      const res = await executeMCPTool(selectedTool.id, {
+        arguments: executionArgs,
+        confirmation_token: confirmationToken,
+        timeout: 20.0
+      });
+      setExecutionResult(res);
+      triggerNotification?.('Tool Executed', `Executed '${selectedTool.name}' in ${res.duration_ms}ms`);
+    } catch (err) {
+      setExecutionError(err.message || 'Tool execution failed');
+      triggerNotification?.('Execution Failed', err.message || 'Tool execution failed');
+    } finally {
+      setIsExecuting(false);
+    }
+  };
+
   const filteredServers = servers.filter(item => 
     item.name.toLowerCase().includes(search.toLowerCase()) || 
     item.server_url.toLowerCase().includes(search.toLowerCase()) ||
@@ -298,7 +337,7 @@ export default function UserMcpMarket({ triggerNotification }) {
             Model Context Protocol (MCP) Subsystem
           </h2>
           <p className="text-xs text-slate-400 mt-1">
-            Manage external tool server connections, discover dynamic tools, inspect JSON Schemas, and review risk policies.
+            Manage external tool server connections, discover dynamic tools, inspect JSON Schemas, and execute validated capabilities.
           </p>
         </div>
 
@@ -515,7 +554,7 @@ export default function UserMcpMarket({ triggerNotification }) {
       )}
 
       {/* ========================================================================= */}
-      {/* VIEW MODE 2: DEDICATED TOOL CATALOG (PHASE 6.3) */}
+      {/* VIEW MODE 2: DEDICATED TOOL CATALOG & EXECUTION (PHASE 6.3 & 6.4) */}
       {/* ========================================================================= */}
       {activeMode === 'tools' && (
         <div className="space-y-4">
@@ -626,7 +665,7 @@ export default function UserMcpMarket({ triggerNotification }) {
                       <div className="mt-3 flex items-center gap-1.5 text-[11px]">
                         {tool.available_for_execution ? (
                           <span className="text-emerald-400 flex items-center gap-1 font-medium">
-                            <CheckCircle2 className="w-3.5 h-3.5" /> Ready for Planning
+                            <CheckCircle2 className="w-3.5 h-3.5" /> Ready for Execution
                           </span>
                         ) : (
                           <span className="text-slate-500 flex items-center gap-1 font-medium">
@@ -641,16 +680,40 @@ export default function UserMcpMarket({ triggerNotification }) {
                         v{tool.version || 1} • {tool.input_schema?.properties ? Object.keys(tool.input_schema.properties).length : 0} params
                       </span>
 
-                      <button
-                        onClick={() => {
-                          setSelectedTool(tool);
-                          setShowToolModal(true);
-                        }}
-                        className="px-3 py-1 bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/30 text-indigo-300 text-xs font-medium rounded-lg flex items-center gap-1 transition"
-                      >
-                        <Code className="w-3 h-3" />
-                        <span>Inspect Schema</span>
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => {
+                            setSelectedTool(tool);
+                            setToolModalTab('schema');
+                            setShowToolModal(true);
+                            setExecutionArgs({});
+                            setExecutionResult(null);
+                            setExecutionError(null);
+                            setRestrictedConfirmed(false);
+                          }}
+                          className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 border border-slate-700/80 text-slate-300 text-xs font-medium rounded-lg flex items-center gap-1 transition"
+                        >
+                          <Code className="w-3 h-3" />
+                          <span>Schema</span>
+                        </button>
+
+                        <button
+                          onClick={() => {
+                            setSelectedTool(tool);
+                            setToolModalTab('execute');
+                            setShowToolModal(true);
+                            setExecutionArgs({});
+                            setExecutionResult(null);
+                            setExecutionError(null);
+                            setRestrictedConfirmed(false);
+                          }}
+                          disabled={!tool.available_for_execution}
+                          className="px-3 py-1 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:hover:bg-indigo-600 text-white text-xs font-medium rounded-lg flex items-center gap-1 transition"
+                        >
+                          <Play className="w-3 h-3" />
+                          <span>Execute</span>
+                        </button>
+                      </div>
                     </div>
 
                   </div>
@@ -663,7 +726,7 @@ export default function UserMcpMarket({ triggerNotification }) {
       )}
 
       {/* ========================================================================= */}
-      {/* TOOL SCHEMA & POLICY INSPECTOR MODAL */}
+      {/* TOOL INSPECTOR & EXECUTION MODAL (PHASE 6.3 & 6.4) */}
       {/* ========================================================================= */}
       {showToolModal && selectedTool && (
         <div className="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -684,88 +747,211 @@ export default function UserMcpMarket({ triggerNotification }) {
               </button>
             </div>
 
-            <div className="space-y-3.5 overflow-y-auto pr-1 text-xs">
-              <div>
-                <h4 className="text-slate-300 font-semibold mb-1">Description</h4>
-                <p className="text-slate-400 leading-relaxed bg-slate-950 p-3 rounded-xl border border-slate-800">
-                  {selectedTool.description || 'No description provided.'}
-                </p>
-              </div>
-
-              {/* Risk Policy Assessment */}
-              <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="font-semibold text-slate-300">Deterministic Safety Policy</span>
-                  <span className={`px-2 py-0.5 rounded-full border text-[10px] uppercase font-mono ${
-                    selectedTool.risk_level === 'safe' 
-                      ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' 
-                      : selectedTool.risk_level === 'restricted'
-                      ? 'bg-amber-500/10 border-amber-500/30 text-amber-400'
-                      : 'bg-rose-500/10 border-rose-500/30 text-rose-400'
-                  }`}>
-                    {selectedTool.risk_level} ({selectedTool.policy_decision})
-                  </span>
-                </div>
-                {selectedTool.risk_reasons && selectedTool.risk_reasons.length > 0 ? (
-                  <ul className="list-disc list-inside text-amber-400 text-[11px] space-y-0.5">
-                    {selectedTool.risk_reasons.map((r, i) => (
-                      <li key={i}>{r}</li>
-                    ))}
-                  </ul>
-                ) : (
-                  <span className="text-slate-400 text-[11px]">No high-risk execution indicators detected.</span>
-                )}
-              </div>
-
-              {/* Input Schema Parameters Table */}
-              <div className="space-y-1.5">
-                <h4 className="text-slate-300 font-semibold">Parameters & Schema Properties</h4>
-                {selectedTool.input_schema?.properties && Object.keys(selectedTool.input_schema.properties).length > 0 ? (
-                  <div className="border border-slate-800 rounded-xl overflow-hidden">
-                    <table className="w-full text-left text-[11px]">
-                      <thead className="bg-slate-950 text-slate-400 font-mono border-b border-slate-800">
-                        <tr>
-                          <th className="p-2.5">Parameter</th>
-                          <th className="p-2.5">Type</th>
-                          <th className="p-2.5">Required</th>
-                          <th className="p-2.5">Description</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-800/60 bg-slate-900/40">
-                        {Object.entries(selectedTool.input_schema.properties).map(([propName, propDef]) => {
-                          const isReq = (selectedTool.input_schema.required || []).includes(propName);
-                          return (
-                            <tr key={propName}>
-                              <td className="p-2.5 font-mono text-indigo-300 font-semibold">{propName}</td>
-                              <td className="p-2.5 font-mono text-slate-400">{propDef.type || 'any'}</td>
-                              <td className="p-2.5">
-                                <span className={`px-1.5 py-0.5 rounded text-[9px] font-mono ${isReq ? 'bg-rose-500/20 text-rose-300' : 'bg-slate-800 text-slate-400'}`}>
-                                  {isReq ? 'YES' : 'OPTIONAL'}
-                                </span>
-                              </td>
-                              <td className="p-2.5 text-slate-300">{propDef.description || '—'}</td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : (
-                  <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 text-slate-500 text-[11px]">
-                    This tool requires no input arguments (empty properties schema).
-                  </div>
-                )}
-              </div>
-
-              {/* Raw JSON Schema */}
-              <div className="space-y-1.5">
-                <span className="text-slate-300 font-semibold">Raw JSON Schema</span>
-                <pre className="p-3 bg-slate-950 rounded-xl border border-slate-800 font-mono text-[11px] text-slate-300 overflow-x-auto max-h-48">
-                  {JSON.stringify(selectedTool.input_schema, null, 2)}
-                </pre>
-              </div>
-
+            {/* Modal Internal Tabs */}
+            <div className="flex items-center gap-2 border-b border-slate-800 pb-2">
+              <button
+                onClick={() => setToolModalTab('schema')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition ${
+                  toolModalTab === 'schema'
+                    ? 'bg-indigo-600 text-white'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                }`}
+              >
+                <Code className="w-3.5 h-3.5" />
+                <span>Schema & Safety</span>
+              </button>
+              <button
+                onClick={() => setToolModalTab('execute')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition ${
+                  toolModalTab === 'execute'
+                    ? 'bg-indigo-600 text-white'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                }`}
+              >
+                <Play className="w-3.5 h-3.5" />
+                <span>Execute Tool</span>
+              </button>
             </div>
+
+            {/* TAB 1: SCHEMA & SAFETY */}
+            {toolModalTab === 'schema' && (
+              <div className="space-y-3.5 overflow-y-auto pr-1 text-xs">
+                <div>
+                  <h4 className="text-slate-300 font-semibold mb-1">Description</h4>
+                  <p className="text-slate-400 leading-relaxed bg-slate-950 p-3 rounded-xl border border-slate-800">
+                    {selectedTool.description || 'No description provided.'}
+                  </p>
+                </div>
+
+                {/* Risk Policy Assessment */}
+                <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold text-slate-300">Deterministic Safety Policy</span>
+                    <span className={`px-2 py-0.5 rounded-full border text-[10px] uppercase font-mono ${
+                      selectedTool.risk_level === 'safe' 
+                        ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' 
+                        : selectedTool.risk_level === 'restricted'
+                        ? 'bg-amber-500/10 border-amber-500/30 text-amber-400'
+                        : 'bg-rose-500/10 border-rose-500/30 text-rose-400'
+                    }`}>
+                      {selectedTool.risk_level} ({selectedTool.policy_decision})
+                    </span>
+                  </div>
+                  {selectedTool.risk_reasons && selectedTool.risk_reasons.length > 0 ? (
+                    <ul className="list-disc list-inside text-amber-400 text-[11px] space-y-0.5">
+                      {selectedTool.risk_reasons.map((r, i) => (
+                        <li key={i}>{r}</li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <span className="text-slate-400 text-[11px]">No high-risk execution indicators detected.</span>
+                  )}
+                </div>
+
+                {/* Input Schema Parameters Table */}
+                <div className="space-y-1.5">
+                  <h4 className="text-slate-300 font-semibold">Parameters & Schema Properties</h4>
+                  {selectedTool.input_schema?.properties && Object.keys(selectedTool.input_schema.properties).length > 0 ? (
+                    <div className="border border-slate-800 rounded-xl overflow-hidden">
+                      <table className="w-full text-left text-[11px]">
+                        <thead className="bg-slate-950 text-slate-400 font-mono border-b border-slate-800">
+                          <tr>
+                            <th className="p-2.5">Parameter</th>
+                            <th className="p-2.5">Type</th>
+                            <th className="p-2.5">Required</th>
+                            <th className="p-2.5">Description</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-800/60 bg-slate-900/40">
+                          {Object.entries(selectedTool.input_schema.properties).map(([propName, propDef]) => {
+                            const isReq = (selectedTool.input_schema.required || []).includes(propName);
+                            return (
+                              <tr key={propName}>
+                                <td className="p-2.5 font-mono text-indigo-300 font-semibold">{propName}</td>
+                                <td className="p-2.5 font-mono text-slate-400">{propDef.type || 'any'}</td>
+                                <td className="p-2.5">
+                                  <span className={`px-1.5 py-0.5 rounded text-[9px] font-mono ${isReq ? 'bg-rose-500/20 text-rose-300' : 'bg-slate-800 text-slate-400'}`}>
+                                    {isReq ? 'YES' : 'OPTIONAL'}
+                                  </span>
+                                </td>
+                                <td className="p-2.5 text-slate-300">{propDef.description || '—'}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 text-slate-500 text-[11px]">
+                      This tool requires no input arguments (empty properties schema).
+                    </div>
+                  )}
+                </div>
+
+                {/* Raw JSON Schema */}
+                <div className="space-y-1.5">
+                  <span className="text-slate-300 font-semibold">Raw JSON Schema</span>
+                  <pre className="p-3 bg-slate-950 rounded-xl border border-slate-800 font-mono text-[11px] text-slate-300 overflow-x-auto max-h-48">
+                    {JSON.stringify(selectedTool.input_schema, null, 2)}
+                  </pre>
+                </div>
+              </div>
+            )}
+
+            {/* TAB 2: EXECUTE TOOL (PHASE 6.4) */}
+            {toolModalTab === 'execute' && (
+              <div className="space-y-4 overflow-y-auto pr-1 text-xs">
+                
+                {/* Warning / Policy Banner */}
+                {selectedTool.risk_level === 'restricted' && (
+                  <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex items-start gap-2">
+                    <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-amber-400" />
+                    <div>
+                      <strong className="block font-semibold">Restricted Tool Execution Warning</strong>
+                      <span>This capability performs privileged operations. A single-use confirmation token will be authorized before execution.</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Dynamic Parameter Inputs Form */}
+                <div className="space-y-3">
+                  <h4 className="text-slate-300 font-semibold">Input Arguments</h4>
+                  {selectedTool.input_schema?.properties && Object.keys(selectedTool.input_schema.properties).length > 0 ? (
+                    Object.entries(selectedTool.input_schema.properties).map(([propName, propDef]) => {
+                      const isReq = (selectedTool.input_schema.required || []).includes(propName);
+                      return (
+                        <div key={propName} className="space-y-1">
+                          <label className="flex items-center justify-between text-slate-300 font-medium">
+                            <span className="font-mono text-indigo-300">{propName} {isReq && <span className="text-rose-400">*</span>}</span>
+                            <span className="text-[10px] text-slate-500 font-mono">({propDef.type || 'string'})</span>
+                          </label>
+                          <input
+                            type={propDef.type === 'number' || propDef.type === 'integer' ? 'number' : 'text'}
+                            placeholder={propDef.description || `Enter value for ${propName}...`}
+                            value={executionArgs[propName] ?? ''}
+                            onChange={(e) => {
+                              const val = propDef.type === 'number' || propDef.type === 'integer' 
+                                ? (e.target.value === '' ? '' : Number(e.target.value))
+                                : e.target.value;
+                              setExecutionArgs(prev => ({ ...prev, [propName]: val }));
+                            }}
+                            className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-slate-200 font-mono text-xs focus:outline-none focus:border-indigo-500"
+                          />
+                          {propDef.description && (
+                            <span className="text-[10px] text-slate-500 block px-1">{propDef.description}</span>
+                          )}
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <p className="text-slate-500 italic p-3 bg-slate-950 rounded-xl border border-slate-800">
+                      No parameters required for this tool.
+                    </p>
+                  )}
+                </div>
+
+                {/* Error Banner */}
+                {executionError && (
+                  <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    <span>{executionError}</span>
+                  </div>
+                )}
+
+                {/* Execution Result Viewer */}
+                {executionResult && (
+                  <div className="space-y-2 pt-2 border-t border-slate-800">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-slate-200">Execution Output</span>
+                        <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[10px] font-mono">
+                          {executionResult.status}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2 text-[10px] text-slate-400 font-mono">
+                        <Clock className="w-3 h-3 text-indigo-400" />
+                        <span>{executionResult.duration_ms}ms</span>
+                        <button
+                          onClick={() => {
+                            navigator.clipboard.writeText(JSON.stringify(executionResult.result, null, 2));
+                            triggerNotification?.('Copied', 'Result copied to clipboard');
+                          }}
+                          className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 ml-2"
+                          title="Copy Output JSON"
+                        >
+                          <Copy className="w-3 h-3" />
+                        </button>
+                      </div>
+                    </div>
+
+                    <pre className="p-3.5 bg-slate-950 rounded-xl border border-slate-800 font-mono text-[11px] text-slate-300 overflow-x-auto max-h-56 leading-relaxed">
+                      {JSON.stringify(executionResult.result, null, 2)}
+                    </pre>
+                  </div>
+                )}
+
+              </div>
+            )}
 
             <div className="pt-2 flex justify-between items-center border-t border-slate-800">
               <button
@@ -780,12 +966,34 @@ export default function UserMcpMarket({ triggerNotification }) {
                 <span>{selectedTool.enabled ? 'Disable Tool' : 'Enable Tool'}</span>
               </button>
 
-              <button
-                onClick={() => setShowToolModal(false)}
-                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold"
-              >
-                Done
-              </button>
+              <div className="flex items-center gap-2">
+                {toolModalTab === 'execute' && (
+                  <button
+                    onClick={handleExecute}
+                    disabled={isExecuting || !selectedTool.available_for_execution}
+                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 shadow-sm"
+                  >
+                    {isExecuting ? (
+                      <>
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                        <span>Executing...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Play className="w-3.5 h-3.5" />
+                        <span>Run Execution</span>
+                      </>
+                    )}
+                  </button>
+                )}
+
+                <button
+                  onClick={() => setShowToolModal(false)}
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold"
+                >
+                  Close
+                </button>
+              </div>
             </div>
 
           </div>

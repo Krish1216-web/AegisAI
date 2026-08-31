@@ -25,6 +25,13 @@ class MCPTimeoutError(MCPClientError):
     """Raised when an MCP operation times out."""
     pass
 
+class MCPToolConfirmationRequired(MCPClientError):
+    """Raised when a tool is RESTRICTED and requires user confirmation."""
+    def __init__(self, message: str, tool_id: str, risk_reasons: List[str]):
+        super().__init__(message)
+        self.tool_id = tool_id
+        self.risk_reasons = risk_reasons
+
 class MCPToolDefinition(BaseModel):
     """Represents a discovered MCP tool capability."""
     name: str = Field(..., max_length=100)
@@ -60,6 +67,19 @@ class MCPPingResult(BaseModel):
     latency_ms: float
     status: str = "ok"
 
+class MCPToolExecutionResult(BaseModel):
+    """Standardized response from an MCP tool execution."""
+    execution_id: str
+    tool_id: str
+    tool_name: str
+    status: str  # SUCCESS, FAILED, TIMED_OUT, DENIED, REQUIRES_CONFIRMATION
+    result: Dict[str, Any] = Field(default_factory=dict)
+    text_content: Optional[str] = None
+    duration_ms: float = 0.0
+    retry_count: int = 0
+    truncated: bool = False
+    error: Optional[str] = None
+
 class BaseMCPClient(abc.ABC):
     """
     Standard contract for communicating with any Model Context Protocol server.
@@ -88,6 +108,11 @@ class BaseMCPClient(abc.ABC):
     @abc.abstractmethod
     async def list_prompts(self) -> List[MCPPromptDefinition]:
         """Discovers all prompt templates exposed by the MCP server."""
+        pass
+
+    @abc.abstractmethod
+    async def call_tool(self, name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
+        """Executes a named tool on the MCP server and returns the structured output."""
         pass
 
     @abc.abstractmethod

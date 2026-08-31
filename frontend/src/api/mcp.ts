@@ -306,3 +306,50 @@ export async function disableMCPTool(toolId: string): Promise<MCPTool> {
     method: 'POST',
   });
 }
+
+// Tool Execution (Phase 6.4)
+export interface MCPToolExecutionResult {
+  execution_id: string;
+  tool_id: string;
+  tool_name: string;
+  status: string;
+  result: Record<string, any>;
+  text_content?: string;
+  duration_ms: number;
+  retry_count: number;
+  truncated: boolean;
+  error?: string;
+}
+
+export interface MCPToolConfirmationResult {
+  token: string;
+  tool_id: string;
+  expires_in_seconds: number;
+  risk_level: string;
+  risk_reasons: string[];
+}
+
+export async function generateToolConfirmationToken(
+  toolId: string,
+  argumentsPayload: Record<string, any>
+): Promise<MCPToolConfirmationResult> {
+  return request(`/tools/${toolId}/confirm`, {
+    method: 'POST',
+    body: JSON.stringify({ arguments: argumentsPayload }),
+  });
+}
+
+export async function executeMCPTool(
+  toolId: string,
+  payload: {
+    arguments: Record<string, any>;
+    confirmation_token?: string;
+    timeout?: number;
+  }
+): Promise<MCPToolExecutionResult> {
+  return request(`/tools/${toolId}/execute`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+

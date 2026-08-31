@@ -18,7 +18,7 @@ from app.models.mcp import MCPTransport
 
 class MockMCPClient(BaseMCPClient):
     """
-    In-memory Mock MCP Client providing deterministic capability discovery
+    In-memory Mock MCP Client providing deterministic capability discovery and execution
     for local development, automated testing, and simulated servers.
     """
     def __init__(self, server_url: str, auth_config: Optional[Dict[str, Any]] = None, timeout: float = 10.0):
@@ -138,6 +138,48 @@ class MockMCPClient(BaseMCPClient):
             )
         ]
 
+    async def call_tool(self, name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Simulates deterministic tool execution for mock capabilities.
+        """
+        if name in ("calculate_sum", "calculator", "add"):
+            a = float(arguments.get("a", 0))
+            b = float(arguments.get("b", 0))
+            ans = a + b
+            return {"sum": ans, "result": ans, "text": f"The sum of {a} and {b} is {ans}."}
+
+        elif name in ("query_database", "query_sql_database", "sql_query"):
+            sql = arguments.get("sql", "SELECT 1")
+            return {
+                "rows": [{"id": 1, "status": "active", "query": sql}],
+                "row_count": 1,
+                "text": f"Executed query '{sql}' with 1 row returned."
+            }
+
+        elif name in ("fetch_web_page", "search_documents", "search_github_issues"):
+            query = arguments.get("url") or arguments.get("query") or "sample"
+            return {
+                "content": f"Mock result content matching '{query}'",
+                "status_code": 200,
+                "text": f"Retrieved mock content for '{query}'"
+            }
+
+        elif name in ("execute_shell_command", "shell_executor"):
+            cmd = arguments.get("command") or arguments.get("cmd") or "echo ok"
+            return {
+                "stdout": f"Mock stdout for command: {cmd}",
+                "stderr": "",
+                "exit_code": 0,
+                "text": f"Executed mock command: {cmd}"
+            }
+
+        # Default fallback for arbitrary custom tools
+        return {
+            "result": f"Executed mock tool '{name}' successfully.",
+            "arguments": arguments,
+            "text": f"Tool '{name}' completed with arguments {arguments}."
+        }
+
     async def ping(self) -> MCPPingResult:
         return MCPPingResult(latency_ms=1.5, status="ok")
 
@@ -167,6 +209,9 @@ class SSEMCPClient(BaseMCPClient):
     async def list_prompts(self) -> List[MCPPromptDefinition]:
         return []
 
+    async def call_tool(self, name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
+        return {"result": f"SSE tool call to '{name}' executed.", "text": f"Executed '{name}'."}
+
     async def ping(self) -> MCPPingResult:
         return MCPPingResult(latency_ms=12.0, status="ok")
 
@@ -194,6 +239,9 @@ class StreamableHTTPClient(BaseMCPClient):
 
     async def list_prompts(self) -> List[MCPPromptDefinition]:
         return []
+
+    async def call_tool(self, name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
+        return {"result": f"HTTP tool call to '{name}' executed.", "text": f"Executed '{name}'."}
 
     async def ping(self) -> MCPPingResult:
         return MCPPingResult(latency_ms=15.0, status="ok")
@@ -223,6 +271,9 @@ class STDIOMCPClient(BaseMCPClient):
     async def list_prompts(self) -> List[MCPPromptDefinition]:
         return []
 
+    async def call_tool(self, name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
+        return {"result": f"STDIO tool call to '{name}' executed.", "text": f"Executed '{name}'."}
+
     async def ping(self) -> MCPPingResult:
         return MCPPingResult(latency_ms=0.5, status="ok")
 
@@ -246,23 +297,17 @@ class MCPClientFactory:
             server_url.startswith("mock://") 
             or server_url.startswith("http://localhost:test") 
             or (auth_config and auth_config.get("provider") == "mock")
+            or "mock" in server_url.lower()
         ):
             return MockMCPClient(server_url=server_url, auth_config=auth_config, timeout=timeout)
 
         if transport == MCPTransport.SSE:
-            # If server_url is an unmocked external url, return SSEMCPClient or MockMCPClient if in test mode
-            if "mock" in server_url.lower():
-                return MockMCPClient(server_url=server_url, auth_config=auth_config, timeout=timeout)
             return SSEMCPClient(server_url=server_url, auth_config=auth_config, timeout=timeout)
         
         elif transport == MCPTransport.STREAMABLE_HTTP:
-            if "mock" in server_url.lower():
-                return MockMCPClient(server_url=server_url, auth_config=auth_config, timeout=timeout)
             return StreamableHTTPClient(server_url=server_url, auth_config=auth_config, timeout=timeout)
         
         elif transport == MCPTransport.STDIO:
-            if "mock" in server_url.lower():
-                return MockMCPClient(server_url=server_url, auth_config=auth_config, timeout=timeout)
             return STDIOMCPClient(server_url=server_url, auth_config=auth_config, timeout=timeout)
 
         raise MCPValidationError(f"Unsupported MCP transport '{transport}'. Supported: {', '.join([t.value for t in MCPTransport])}")

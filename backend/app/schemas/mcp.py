@@ -166,3 +166,34 @@ class MCPToolSearchResponse(BaseModel):
     results: List[MCPToolResponse]
     total: int
     query: str
+
+# ==========================================
+# Phase 6.4 Tool Execution Schemas
+# ==========================================
+
+class MCPToolExecuteRequest(BaseModel):
+    arguments: Dict[str, Any] = Field(default_factory=dict, description="Execution arguments conforming to input_schema")
+    confirmation_token: Optional[str] = Field(None, description="Single-use confirmation token for RESTRICTED tools")
+    timeout: Optional[float] = Field(15.0, ge=1.0, le=60.0, description="Execution timeout in seconds")
+
+class MCPToolExecutionResponse(BaseModel):
+    execution_id: str
+    tool_id: str
+    tool_name: str
+    status: str
+    result: Dict[str, Any] = Field(default_factory=dict)
+    text_content: Optional[str] = None
+    duration_ms: float
+    retry_count: int = 0
+    truncated: bool = False
+    error: Optional[str] = None
+
+class MCPToolConfirmationRequest(BaseModel):
+    arguments: Dict[str, Any] = Field(default_factory=dict, description="Arguments to bind to the confirmation token")
+
+class MCPToolConfirmationResponse(BaseModel):
+    token: str
+    tool_id: str
+    expires_in_seconds: int
+    risk_level: str
+    risk_reasons: List[str] = Field(default_factory=list)

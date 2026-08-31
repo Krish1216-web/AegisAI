@@ -22,12 +22,20 @@ from app.schemas.mcp import (
     MCPToolResponse,
     MCPToolListResponse,
     MCPToolSearchRequest,
-    MCPToolSearchResponse
+    MCPToolSearchResponse,
+    MCPToolExecuteRequest,
+    MCPToolExecutionResponse,
+    MCPToolConfirmationRequest,
+    MCPToolConfirmationResponse
 )
 from app.services.mcp.mcp_registry import MCPRegistryService
 from app.services.mcp.mcp_discovery import MCPDiscoveryService
 from app.services.mcp.mcp_tool_catalog import MCPToolCatalogService
-from app.core.mcp.base import MCPValidationError, MCPClientError
+from app.services.mcp.mcp_tool_executor import (
+    MCPToolExecutionService,
+    generate_tool_confirmation_token
+)
+from app.core.mcp.base import MCPValidationError, MCPClientError, MCPToolConfirmationRequired
 from app.api.v1.endpoints.documents import resolve_workspace_id
 
 router = APIRouter(prefix="/mcp", tags=["Model Context Protocol (MCP)"])
@@ -510,3 +518,95 @@ async def disable_mcp_tool(
     if not tool:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="MCP tool not found or access denied.")
     return MCPToolResponse(**tool)
+
+# ==========================================
+# 3. Phase 6.4 Tool Execution Endpoints
+# ==========================================
+
+@router.post("/tools/{tool_id}/confirm", response_model=MCPToolConfirmationResponse, dependencies=[Depends(check_rate_limit)])
+async def generate_confirmation_token_endpoint(
+    tool_id: uuid.UUID,
+    payload: MCPToolConfirmationRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Generates a single-use confirmation token for a RESTRICTED tool execution, bound to user, workspace, tool ID, and arguments.
+    """
+    workspace_id = resolve_workspace_id(current_user, db)
+    catalog = MCPToolCatalogService(db)
+
+    tool = catalog.get_tool(user_id=current_user.id, workspace_id=workspace_id, tool_id=tool_id)
+    if not tool:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="MCP tool not found or access denied.")
+
+    token = generate_tool_confirmation_token(
+        user_id=current_user.id,
+        workspace_id=workspace_id,
+        tool_id=tool_id,
+        arguments=payload.arguments,
+        expires_in_seconds=300
+    )
+
+    return MCPToolConfirmationResponse(
+        token=token,
+        tool_id=str(tool_id),
+        expires_in_seconds=300,
+        risk_level=tool["risk_level"],
+        risk_reasons=tool.get("risk_reasons", [])
+    )
+
+@router.post("/tools/{tool_id}/execute", response_model=MCPToolExecutionResponse, dependencies=[Depends(check_rate_limit)])
+async def execute_mcp_tool_endpoint(
+    tool_id: uuid.UUID,
+    payload: MCPToolExecuteRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    redis = Depends(get_redis)
+):
+    """
+    Safely executes an approved MCP tool with JSON Schema validation, risk policies,
+    single-use confirmation for RESTRICTED tools, and sanitized result handling.
+    """
+    workspace_id = resolve_workspace_id(current_user, db)
+    executor = MCPToolExecutionService(db, redis_client=redis)
+
+    try:
+        res = await executor.execute_tool(
+            user_id=current_user.id,
+            workspace_id=workspace_id,
+            tool_id=tool_id,
+            arguments=payload.arguments,
+            confirmation_token=payload.confirmation_token,
+            timeout=payload.timeout or 15.0
+        )
+        return MCPToolExecutionResponse(
+            execution_id=res.execution_id,
+            tool_id=res.tool_id,
+            tool_name=res.tool_name,
+            status=res.status,
+            result=res.result,
+            text_content=res.text_content,
+            duration_ms=res.duration_ms,
+            retry_count=res.retry_count,
+            truncated=res.truncated,
+            error=res.error
+        )
+    except MCPToolConfirmationRequired as cr:
+        raise HTTPException(
+            status_code=status.HTTP_428_PRECONDITION_REQUIRED,
+            detail={
+                "error": "REQUIRES_CONFIRMATION",
+                "message": str(cr),
+                "tool_id": cr.tool_id,
+                "risk_reasons": cr.risk_reasons
+            }
+        )
+    except MCPValidationError as ve:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(ve))
+    except MCPClientError as ce:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"MCP server execution failed: {str(ce)}")
+    except Exception as e:
+        logger.error(f"MCP Tool execution error: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Execution error: {str(e)}")
+
