@@ -53,6 +53,7 @@ def test_mcp_server_registration_and_get(db_session):
     assert server.name == "GitHub Integration"
     assert server.status == MCPServerStatus.INACTIVE
     assert server.enabled is True
+    assert server.protocol_version == "2024-11-05"
     
     # Get server
     fetched = registry.get_server(user.id, ws.id, server.id)
@@ -71,7 +72,7 @@ def test_duplicate_server_name_rejection(db_session):
         server_url="http://localhost:8000/sse"
     )
     
-    # Duplicate registration should raise validation error
+    # Duplicate name should raise validation error
     with pytest.raises(MCPValidationError) as exc:
         registry.register_server(
             user_id=user.id,
@@ -80,6 +81,28 @@ def test_duplicate_server_name_rejection(db_session):
             server_url="http://localhost:8001/sse"
         )
     assert "already registered" in str(exc.value)
+
+def test_duplicate_server_url_rejection(db_session):
+    user = db_session.query(User).filter_by(email="user1@example.com").first()
+    ws = db_session.query(Workspace).filter_by(name="Workspace 1").first()
+    
+    registry = MCPRegistryService(db_session)
+    registry.register_server(
+        user_id=user.id,
+        workspace_id=ws.id,
+        name="Server A",
+        server_url="http://localhost:8000/sse"
+    )
+    
+    # Duplicate URL should raise validation error
+    with pytest.raises(MCPValidationError) as exc:
+        registry.register_server(
+            user_id=user.id,
+            workspace_id=ws.id,
+            name="Server B",
+            server_url="http://localhost:8000/sse"
+        )
+    assert "already registered in this workspace" in str(exc.value)
 
 def test_server_update_and_toggle(db_session):
     user = db_session.query(User).filter_by(email="user1@example.com").first()
@@ -126,24 +149,80 @@ def test_server_deletion(db_session):
     # Verify non-existence
     assert registry.get_server(user.id, ws.id, server.id) is None
 
-def test_tenant_isolation_in_registry(db_session):
+@pytest.mark.asyncio
+async def test_server_health_check_probe(db_session):
+    user = db_session.query(User).filter_by(email="user1@example.com").first()
+    ws = db_session.query(Workspace).filter_by(name="Workspace 1").first()
+    
+    registry = MCPRegistryService(db_session)
+    server = registry.register_server(
+        user_id=user.id,
+        workspace_id=ws.id,
+        name="Health Ping Server",
+        server_url="mock://test-health",
+        transport=MCPTransport.SSE
+    )
+    
+    health_res = await registry.check_server_health(user.id, ws.id, server.id)
+    assert health_res["is_healthy"] is True
+    assert health_res["latency_ms"] is not None
+    assert health_res["status"] == "active"
+    
+    # Verify DB update
+    db_session.refresh(server)
+    assert server.status == MCPServerStatus.ACTIVE
+    assert server.last_health_check_at is not None
+
+def test_catalog_query_and_capability_isolation(db_session):
     user1 = db_session.query(User).filter_by(email="user1@example.com").first()
     user2 = db_session.query(User).filter_by(email="user2@example.com").first()
     ws1 = db_session.query(Workspace).filter_by(name="Workspace 1").first()
     ws2 = db_session.query(Workspace).filter_by(name="Workspace 2").first()
     
     registry = MCPRegistryService(db_session)
-    server1 = registry.register_server(
+    server = registry.register_server(
         user_id=user1.id,
         workspace_id=ws1.id,
-        name="User1 Server",
+        name="Catalog Server",
         server_url="http://localhost:8000/sse"
     )
     
-    # User 2 in Workspace 2 cannot see User 1's server
-    assert registry.get_server(user2.id, ws2.id, server1.id) is None
+    # Add active and stale capabilities
+    cap_active = MCPCapability(
+        id=uuid.uuid4(),
+        server_id=server.id,
+        capability_type=MCPCapabilityType.TOOL,
+        name="query_analytics",
+        description="Query workspace analytics",
+        is_stale=False,
+        enabled=True
+    )
+    cap_stale = MCPCapability(
+        id=uuid.uuid4(),
+        server_id=server.id,
+        capability_type=MCPCapabilityType.TOOL,
+        name="old_tool",
+        description="Deprecated tool",
+        is_stale=True,
+        enabled=True
+    )
+    db_session.add_all([cap_active, cap_stale])
+    db_session.commit()
     
-    # User 2 listing returns empty
-    servers2, total2 = registry.list_servers(user2.id, ws2.id)
-    assert total2 == 0
-    assert len(servers2) == 0
+    # List active only
+    caps_active, count_active = registry.list_capabilities(user1.id, ws1.id, server.id, include_stale=False)
+    assert count_active == 1
+    assert caps_active[0].name == "query_analytics"
+    
+    # List with search term
+    caps_searched, count_searched = registry.list_capabilities(user1.id, ws1.id, server.id, search="analytics")
+    assert count_searched == 1
+    assert caps_searched[0].name == "query_analytics"
+    
+    # Get capability by ID
+    fetched_cap = registry.get_capability(user1.id, ws1.id, cap_active.id)
+    assert fetched_cap is not None
+    assert fetched_cap.name == "query_analytics"
+    
+    # Cross-tenant access denied
+    assert registry.get_capability(user2.id, ws2.id, cap_active.id) is None

@@ -29,6 +29,8 @@ def mock_get_current_user():
     user = User(
         id=MOCK_USER_ID,
         email="mcp_tester@aegis.ai",
+        username="mcp_tester",
+        password_hash="pw",
         is_active=True,
         role=role,
         settings={"default_workspace_id": str(MOCK_WS_ID)}
@@ -45,6 +47,8 @@ def override_get_db():
 def override_get_redis():
     class MockRedis:
         async def ping(self): return True
+        async def set(self, key, val, ex=None, nx=None): return True
+        async def delete(self, key): return True
     return MockRedis()
 
 @pytest.fixture(scope="module", autouse=True)
@@ -137,20 +141,48 @@ def test_mcp_api_crud_and_discovery_e2e(client):
     assert patch_res.status_code == 200
     assert patch_res.json()["description"] == "Updated mock description"
     
-    # 5. Discover Capabilities
-    disc_res = client.post(f"/api/v1/mcp/servers/{server_id}/discover")
+    # 5. Health Check Probe Endpoint
+    health_res = client.get(f"/api/v1/mcp/servers/{server_id}/health")
+    assert health_res.status_code == 200
+    health_data = health_res.json()
+    assert health_data["is_healthy"] is True
+    assert health_data["latency_ms"] is not None
+
+    # 6. Discover / Refresh Capabilities Endpoint
+    disc_res = client.post(f"/api/v1/mcp/servers/{server_id}/refresh")
     assert disc_res.status_code == 200
     disc_data = disc_res.json()
     assert disc_data["total_tools"] == 3
     assert disc_data["status"] == "active"
+    assert disc_data["tools_added"] == 3
     
-    # 6. List Capabilities
+    # 7. List Capabilities
     caps_res = client.get(f"/api/v1/mcp/servers/{server_id}/capabilities")
     assert caps_res.status_code == 200
     caps_data = caps_res.json()
     assert caps_data["total"] == 7
+    sample_cap_id = caps_data["capabilities"][0]["id"]
+
+    # 8. List Specific Typed Endpoints (Tools, Resources, Prompts)
+    tools_res = client.get(f"/api/v1/mcp/servers/{server_id}/tools")
+    assert tools_res.status_code == 200
+    assert tools_res.json()["total"] == 3
+
+    resources_res = client.get(f"/api/v1/mcp/servers/{server_id}/resources")
+    assert resources_res.status_code == 200
+    assert resources_res.json()["total"] == 2
+
+    prompts_res = client.get(f"/api/v1/mcp/servers/{server_id}/prompts")
+    assert prompts_res.status_code == 200
+    assert prompts_res.json()["total"] == 2
+
+    # 9. Get Single Capability Details
+    cap_detail_res = client.get(f"/api/v1/mcp/capabilities/{sample_cap_id}")
+    assert cap_detail_res.status_code == 200
+    assert cap_detail_res.json()["id"] == sample_cap_id
+    assert cap_detail_res.json()["version"] == 1
     
-    # 7. Disable & Enable Server
+    # 10. Disable & Enable Server
     dis_res = client.post(f"/api/v1/mcp/servers/{server_id}/disable")
     assert dis_res.status_code == 200
     assert dis_res.json()["enabled"] is False
@@ -159,10 +191,10 @@ def test_mcp_api_crud_and_discovery_e2e(client):
     assert en_res.status_code == 200
     assert en_res.json()["enabled"] is True
     
-    # 8. Delete Server
+    # 11. Delete Server
     del_res = client.delete(f"/api/v1/mcp/servers/{server_id}")
     assert del_res.status_code == 204
     
-    # 9. Verify 404 after delete
+    # 12. Verify 404 after delete
     get_404 = client.get(f"/api/v1/mcp/servers/{server_id}")
     assert get_404.status_code == 404

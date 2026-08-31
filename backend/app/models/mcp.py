@@ -1,7 +1,7 @@
 import uuid
 import enum
 import datetime
-from sqlalchemy import String, Boolean, ForeignKey, Text, JSON, DateTime, Enum, UniqueConstraint
+from sqlalchemy import String, Boolean, ForeignKey, Text, JSON, DateTime, Enum, Integer, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from typing import List, Optional, Dict, Any
 from app.database.base_class import Base, AuditMixin
@@ -36,7 +36,7 @@ class MCPServer(Base, AuditMixin):
     
     name: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    server_url: Mapped[str] = mapped_column(String(512), nullable=False)
+    server_url: Mapped[str] = mapped_column(String(512), nullable=False, index=True)
     
     transport: Mapped[MCPTransport] = mapped_column(
         Enum(MCPTransport, native_enum=False, values_callable=lambda x: [e.value for e in x]),
@@ -58,7 +58,12 @@ class MCPServer(Base, AuditMixin):
     auth_config: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON, nullable=True)
     meta_data: Mapped[Optional[Dict[str, Any]]] = mapped_column("metadata", JSON, nullable=True)
     
+    server_version: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    protocol_version: Mapped[Optional[str]] = mapped_column(String(50), default="2024-11-05", nullable=True)
     last_connected_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_health_check_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_discovery_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     
     # Relationships
     capabilities = relationship("MCPCapability", back_populates="server", cascade="all, delete-orphan")
@@ -84,6 +89,21 @@ class MCPCapability(Base, AuditMixin):
     input_schema: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON, nullable=True)
     meta_data: Mapped[Optional[Dict[str, Any]]] = mapped_column("metadata", JSON, nullable=True)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    
+    definition_hash: Mapped[Optional[str]] = mapped_column(String(64), index=True, nullable=True)
+    is_stale: Mapped[bool] = mapped_column(Boolean, default=False, index=True, nullable=False)
+    stale_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    first_discovered_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.datetime.now(datetime.timezone.utc),
+        nullable=False
+    )
+    last_discovered_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.datetime.now(datetime.timezone.utc),
+        nullable=False
+    )
+    version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     
     # Relationships
     server = relationship("MCPServer", back_populates="capabilities")

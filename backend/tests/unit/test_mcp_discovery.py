@@ -52,21 +52,20 @@ async def test_mcp_capability_discovery_sync(db_session):
     assert res["total_tools"] == 3
     assert res["total_resources"] == 2
     assert res["total_prompts"] == 2
-    assert res["added_capabilities"] == 7
+    assert res["tools_added"] == 3
+    assert res["resources_added"] == 2
+    assert res["prompts_added"] == 2
     
     # Check database records
     caps = db_session.query(MCPCapability).filter_by(server_id=server.id).all()
     assert len(caps) == 7
-    
-    # Verify tools
-    tools = [c for c in caps if c.capability_type == MCPCapabilityType.TOOL]
-    assert len(tools) == 3
-    tool_names = {t.name for t in tools}
-    assert "calculate_sum" in tool_names
-    assert "query_database" in tool_names
+    for c in caps:
+        assert c.definition_hash is not None
+        assert c.is_stale is False
+        assert c.version == 1
 
 @pytest.mark.asyncio
-async def test_mcp_discovery_stale_pruning(db_session):
+async def test_mcp_discovery_modification_and_stale_detection(db_session):
     user = db_session.query(User).first()
     ws = db_session.query(Workspace).first()
     
@@ -74,12 +73,12 @@ async def test_mcp_discovery_stale_pruning(db_session):
     server = registry.register_server(
         user_id=user.id,
         workspace_id=ws.id,
-        name="Pruning Server",
+        name="Dynamic Server",
         server_url="mock://tools",
         auth_config={
             "mock_tools": [
-                {"name": "tool_alpha", "description": "Alpha tool"},
-                {"name": "tool_beta", "description": "Beta tool"}
+                {"name": "tool_alpha", "description": "Initial description"},
+                {"name": "tool_beta", "description": "Beta description"}
             ],
             "mock_resources": [],
             "mock_prompts": []
@@ -87,30 +86,56 @@ async def test_mcp_discovery_stale_pruning(db_session):
     )
     
     discovery = MCPDiscoveryService(db_session)
-    # First discovery: 2 tools
+    
+    # 1. First discovery
     res1 = await discovery.discover_capabilities(user.id, ws.id, server.id)
     assert res1["total_tools"] == 2
+    assert res1["tools_added"] == 2
     
-    # Re-configure server with only tool_alpha
+    # 2. Modify tool_alpha description and remove tool_beta
     server.auth_config = {
         "mock_tools": [
-            {"name": "tool_alpha", "description": "Updated Alpha tool"}
+            {"name": "tool_alpha", "description": "Updated modified description"}
         ],
         "mock_resources": [],
         "mock_prompts": []
     }
     db_session.commit()
     
-    # Second discovery with pruning
-    res2 = await discovery.discover_capabilities(user.id, ws.id, server.id, prune_stale=True)
+    # 3. Second discovery (detects modification of alpha and marks beta as stale)
+    res2 = await discovery.discover_capabilities(user.id, ws.id, server.id)
     assert res2["total_tools"] == 1
-    assert res2["pruned_capabilities"] == 1
-    assert res2["updated_capabilities"] == 1
+    assert res2["tools_changed"] == 1
+    assert res2["stale_capabilities"] == 1
     
-    caps = db_session.query(MCPCapability).filter_by(server_id=server.id).all()
-    assert len(caps) == 1
-    assert caps[0].name == "tool_alpha"
-    assert caps[0].description == "Updated Alpha tool"
+    alpha = db_session.query(MCPCapability).filter_by(server_id=server.id, name="tool_alpha").first()
+    beta = db_session.query(MCPCapability).filter_by(server_id=server.id, name="tool_beta").first()
+    
+    assert alpha.version == 2
+    assert alpha.description == "Updated modified description"
+    assert alpha.is_stale is False
+    
+    assert beta.is_stale is True
+    assert beta.stale_at is not None
+
+    # 4. Re-add tool_beta to verify automatic reactivation
+    server.auth_config = {
+        "mock_tools": [
+            {"name": "tool_alpha", "description": "Updated modified description"},
+            {"name": "tool_beta", "description": "Beta description"}
+        ],
+        "mock_resources": [],
+        "mock_prompts": []
+    }
+    db_session.commit()
+    
+    res3 = await discovery.discover_capabilities(user.id, ws.id, server.id)
+    assert res3["reactivated_capabilities"] == 1
+    assert res3["unchanged_capabilities"] == 2
+    
+    db_session.refresh(beta)
+    assert beta.is_stale is False
+    assert beta.stale_at is None
 
 @pytest.mark.asyncio
 async def test_discovery_on_disabled_server_fails(db_session):

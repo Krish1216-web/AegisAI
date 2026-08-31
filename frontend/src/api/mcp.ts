@@ -16,7 +16,12 @@ export interface MCPServer {
   authentication_type: MCPAuthenticationType;
   auth_config?: Record<string, any>;
   metadata?: Record<string, any>;
+  server_version?: string;
+  protocol_version?: string;
   last_connected_at?: string;
+  last_health_check_at?: string;
+  last_discovery_at?: string;
+  last_error?: string;
   capabilities_count: number;
   created_at: string;
   updated_at: string;
@@ -31,6 +36,12 @@ export interface MCPCapability {
   input_schema?: Record<string, any>;
   metadata?: Record<string, any>;
   enabled: boolean;
+  definition_hash?: string;
+  is_stale: boolean;
+  stale_at?: string;
+  first_discovered_at?: string;
+  last_discovered_at?: string;
+  version: number;
   created_at: string;
   updated_at: string;
 }
@@ -39,14 +50,34 @@ export interface MCPDiscoveryResult {
   server_id: string;
   server_name: string;
   status: string;
-  protocol_version: string;
+  server_version?: string;
+  protocol_version?: string;
   total_tools: number;
   total_resources: number;
   total_prompts: number;
-  added_capabilities: number;
-  updated_capabilities: number;
-  pruned_capabilities: number;
+  tools_added: number;
+  tools_changed: number;
+  resources_added: number;
+  resources_changed: number;
+  prompts_added: number;
+  prompts_changed: number;
+  stale_capabilities: number;
+  reactivated_capabilities: number;
+  unchanged_capabilities: number;
+  discovered_at: string;
   discovery_latency_ms: number;
+}
+
+export interface MCPHealthCheckResult {
+  server_id: string;
+  server_name: string;
+  status: string;
+  is_healthy: boolean;
+  latency_ms?: number;
+  last_health_check_at: string;
+  server_version?: string;
+  protocol_version?: string;
+  error?: string;
 }
 
 const API_BASE = '/api/v1/mcp';
@@ -138,25 +169,79 @@ export async function deleteMCPServer(serverId: string): Promise<void> {
 
 export async function discoverServerCapabilities(
   serverId: string,
-  pruneStale: boolean = true
+  forceRefresh: boolean = false
 ): Promise<MCPDiscoveryResult> {
-  return request(`/servers/${serverId}/discover?prune_stale=${pruneStale}`, {
+  return request(`/servers/${serverId}/discover?force_refresh=${forceRefresh}`, {
     method: 'POST',
   });
+}
+
+export async function refreshServerDiscovery(
+  serverId: string,
+  forceRefresh: boolean = true
+): Promise<MCPDiscoveryResult> {
+  return request(`/servers/${serverId}/refresh?force_refresh=${forceRefresh}`, {
+    method: 'POST',
+  });
+}
+
+export async function checkServerHealth(serverId: string): Promise<MCPHealthCheckResult> {
+  return request(`/servers/${serverId}/health`);
 }
 
 export async function listServerCapabilities(
   serverId: string,
   type?: MCPCapabilityType,
+  search?: string,
+  includeStale: boolean = true,
   limit: number = 100,
   offset: number = 0
 ): Promise<{ capabilities: MCPCapability[]; total: number }> {
   const query = new URLSearchParams();
   if (type) query.append('type', type);
+  if (search) query.append('search', search);
+  if (includeStale !== undefined) query.append('include_stale', includeStale.toString());
   query.append('limit', limit.toString());
   query.append('offset', offset.toString());
 
   return request(`/servers/${serverId}/capabilities?${query.toString()}`);
+}
+
+export async function listServerTools(
+  serverId: string,
+  search?: string,
+  includeStale: boolean = false
+): Promise<{ capabilities: MCPCapability[]; total: number }> {
+  const query = new URLSearchParams();
+  if (search) query.append('search', search);
+  if (includeStale) query.append('include_stale', 'true');
+  return request(`/servers/${serverId}/tools?${query.toString()}`);
+}
+
+export async function listServerResources(
+  serverId: string,
+  search?: string,
+  includeStale: boolean = false
+): Promise<{ capabilities: MCPCapability[]; total: number }> {
+  const query = new URLSearchParams();
+  if (search) query.append('search', search);
+  if (includeStale) query.append('include_stale', 'true');
+  return request(`/servers/${serverId}/resources?${query.toString()}`);
+}
+
+export async function listServerPrompts(
+  serverId: string,
+  search?: string,
+  includeStale: boolean = false
+): Promise<{ capabilities: MCPCapability[]; total: number }> {
+  const query = new URLSearchParams();
+  if (search) query.append('search', search);
+  if (includeStale) query.append('include_stale', 'true');
+  return request(`/servers/${serverId}/prompts?${query.toString()}`);
+}
+
+export async function getCapabilityDetails(capabilityId: string): Promise<MCPCapability> {
+  return request(`/capabilities/${capabilityId}`);
 }
 
 export async function enableMCPServer(serverId: string): Promise<MCPServer> {

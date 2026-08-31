@@ -22,6 +22,8 @@ from app.core.mcp.base import (
 from app.core.mcp.validation import MCPValidator
 from app.core.mcp.security import CredentialStore
 from app.core.mcp.factory import MCPClientFactory, MockMCPClient
+from app.core.mcp.connection import MCPConnectionManager
+from app.core.mcp.normalization import MCPNormalizer
 
 __all__ = [
     "MCPTransport",
@@ -45,4 +47,6 @@ __all__ = [
     "CredentialStore",
     "MCPClientFactory",
     "MockMCPClient",
+    "MCPConnectionManager",
+    "MCPNormalizer",
 ]

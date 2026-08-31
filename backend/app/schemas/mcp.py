@@ -39,6 +39,12 @@ class MCPCapabilityResponse(BaseModel):
     input_schema: Optional[Dict[str, Any]] = None
     metadata: Optional[Dict[str, Any]] = Field(default=None, alias="meta_data")
     enabled: bool
+    definition_hash: Optional[str] = None
+    is_stale: bool = False
+    stale_at: Optional[datetime.datetime] = None
+    first_discovered_at: Optional[datetime.datetime] = None
+    last_discovered_at: Optional[datetime.datetime] = None
+    version: int = 1
     created_at: datetime.datetime
     updated_at: datetime.datetime
 
@@ -57,7 +63,12 @@ class MCPServerResponse(BaseModel):
     authentication_type: MCPAuthenticationType
     auth_config: Optional[Dict[str, Any]] = None
     metadata: Optional[Dict[str, Any]] = Field(default=None, alias="meta_data")
+    server_version: Optional[str] = None
+    protocol_version: Optional[str] = "2024-11-05"
     last_connected_at: Optional[datetime.datetime] = None
+    last_health_check_at: Optional[datetime.datetime] = None
+    last_discovery_at: Optional[datetime.datetime] = None
+    last_error: Optional[str] = None
     capabilities_count: int = 0
     created_at: datetime.datetime
     updated_at: datetime.datetime
@@ -81,11 +92,30 @@ class MCPDiscoveryResponse(BaseModel):
     server_id: str
     server_name: str
     status: str
-    protocol_version: str
+    server_version: Optional[str] = None
+    protocol_version: Optional[str] = "2024-11-05"
     total_tools: int
     total_resources: int
     total_prompts: int
-    added_capabilities: int
-    updated_capabilities: int
-    pruned_capabilities: int
+    tools_added: int = 0
+    tools_changed: int = 0
+    resources_added: int = 0
+    resources_changed: int = 0
+    prompts_added: int = 0
+    prompts_changed: int = 0
+    stale_capabilities: int = 0
+    reactivated_capabilities: int = 0
+    unchanged_capabilities: int = 0
+    discovered_at: str
     discovery_latency_ms: float
+
+class MCPHealthCheckResponse(BaseModel):
+    server_id: str
+    server_name: str
+    status: str
+    is_healthy: bool
+    latency_ms: Optional[float] = None
+    last_health_check_at: str
+    server_version: Optional[str] = None
+    protocol_version: Optional[str] = None
+    error: Optional[str] = None

@@ -17,7 +17,11 @@ import {
   ExternalLink,
   ShieldCheck,
   ChevronRight,
-  Code
+  Code,
+  Activity,
+  GitCommit,
+  Tag,
+  AlertTriangle
 } from 'lucide-react';
 import {
   listMCPServers,
@@ -25,6 +29,8 @@ import {
   updateMCPServer,
   deleteMCPServer,
   discoverServerCapabilities,
+  refreshServerDiscovery,
+  checkServerHealth,
   listServerCapabilities,
   enableMCPServer,
   disableMCPServer
@@ -50,11 +56,17 @@ export default function UserMcpMarket({ triggerNotification }) {
   const [selectedServer, setSelectedServer] = useState(null);
   const [capabilities, setCapabilities] = useState([]);
   const [activeTab, setActiveTab] = useState('tool');
+  const [capSearch, setCapSearch] = useState('');
   const [isLoadingCaps, setIsLoadingCaps] = useState(false);
   const [selectedCap, setSelectedCap] = useState(null);
 
-  // Discovering State per server ID
+  // Discovery Summary Modal
+  const [discoverySummary, setDiscoverySummary] = useState(null);
+
+  // In-flight state trackers
   const [discoveringIds, setDiscoveringIds] = useState(new Set());
+  const [healthCheckingIds, setHealthCheckingIds] = useState(new Set());
+  const [healthMetrics, setHealthMetrics] = useState({});
 
   const fetchServers = async () => {
     setIsLoading(true);
@@ -129,13 +141,37 @@ export default function UserMcpMarket({ triggerNotification }) {
     }
   };
 
-  const handleDiscover = async (server) => {
+  const handleHealthCheck = async (server) => {
+    setHealthCheckingIds(prev => new Set(prev).add(server.id));
+    try {
+      const res = await checkServerHealth(server.id);
+      setHealthMetrics(prev => ({ ...prev, [server.id]: res }));
+      triggerNotification?.(
+        res.is_healthy ? 'Health Check Passed' : 'Health Check Failed',
+        res.is_healthy 
+          ? `Server '${server.name}' is healthy (${res.latency_ms}ms latency)` 
+          : `Server '${server.name}' returned error: ${res.error}`
+      );
+      fetchServers();
+    } catch (err) {
+      triggerNotification?.('Health Check Error', err.message || 'Failed to complete health check.');
+    } finally {
+      setHealthCheckingIds(prev => {
+        const next = new Set(prev);
+        next.delete(server.id);
+        return next;
+      });
+    }
+  };
+
+  const handleRefreshDiscovery = async (server, force = true) => {
     setDiscoveringIds(prev => new Set(prev).add(server.id));
     try {
-      const res = await discoverServerCapabilities(server.id);
+      const res = await refreshServerDiscovery(server.id, force);
+      setDiscoverySummary(res);
       triggerNotification?.(
-        'Discovery Completed', 
-        `Discovered ${res.total_tools} tools, ${res.total_resources} resources, ${res.total_prompts} prompts for '${server.name}'`
+        'Discovery Refreshed', 
+        `Synchronized ${res.total_tools} tools (+${res.tools_added}, ~${res.tools_changed}), ${res.total_resources} resources, ${res.total_prompts} prompts.`
       );
       fetchServers();
     } catch (err) {
@@ -154,8 +190,9 @@ export default function UserMcpMarket({ triggerNotification }) {
     setShowCapabilitiesModal(true);
     setIsLoadingCaps(true);
     setSelectedCap(null);
+    setCapSearch('');
     try {
-      const res = await listServerCapabilities(server.id);
+      const res = await listServerCapabilities(server.id, undefined, undefined, true);
       setCapabilities(res.capabilities || []);
     } catch (err) {
       triggerNotification?.('Error', err.message || 'Failed to load capabilities.');
@@ -170,9 +207,15 @@ export default function UserMcpMarket({ triggerNotification }) {
     item.transport.toLowerCase().includes(search.toLowerCase())
   );
 
-  const toolsList = capabilities.filter(c => c.capability_type === 'tool');
-  const resourcesList = capabilities.filter(c => c.capability_type === 'resource');
-  const promptsList = capabilities.filter(c => c.capability_type === 'prompt');
+  const filterCapabilities = (list) => {
+    if (!capSearch.trim()) return list;
+    const term = capSearch.toLowerCase();
+    return list.filter(c => c.name.toLowerCase().includes(term) || (c.description && c.description.toLowerCase().includes(term)));
+  };
+
+  const toolsList = filterCapabilities(capabilities.filter(c => c.capability_type === 'tool'));
+  const resourcesList = filterCapabilities(capabilities.filter(c => c.capability_type === 'resource'));
+  const promptsList = filterCapabilities(capabilities.filter(c => c.capability_type === 'prompt'));
 
   return (
     <div className="flex flex-col gap-6 animate-fade-in p-2">
@@ -182,9 +225,9 @@ export default function UserMcpMarket({ triggerNotification }) {
         <div>
           <h2 className="text-xl font-bold text-white tracking-wide flex items-center gap-2">
             <Server className="w-5 h-5 text-indigo-400" />
-            Model Context Protocol (MCP) Registry
+            Model Context Protocol (MCP) Server Registry
           </h2>
-          <p className="text-xs text-slate-400 mt-1">Register external tool servers, discover dynamic capabilities, and expand agent tooling safely.</p>
+          <p className="text-xs text-slate-400 mt-1">Register external tool servers, discover dynamic capabilities with version tracking, and monitor connection health.</p>
         </div>
 
         <div className="flex items-center gap-3 w-full md:w-auto">
@@ -213,9 +256,9 @@ export default function UserMcpMarket({ triggerNotification }) {
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         {[
           { label: 'Registered Servers', value: servers.length.toString(), color: 'text-white' },
-          { label: 'Active Servers', value: servers.filter(s => s.status === 'active' && s.enabled).length.toString(), color: 'text-emerald-400' },
+          { label: 'Healthy & Active', value: servers.filter(s => s.status === 'active' && s.enabled).length.toString(), color: 'text-emerald-400' },
           { label: 'SSE / HTTP Links', value: servers.filter(s => s.transport !== 'stdio').length.toString(), color: 'text-indigo-400' },
-          { label: 'Discovered Capabilities', value: servers.reduce((acc, s) => acc + (s.capabilities_count || 0), 0).toString(), color: 'text-purple-400' }
+          { label: 'Active Capabilities', value: servers.reduce((acc, s) => acc + (s.capabilities_count || 0), 0).toString(), color: 'text-purple-400' }
         ].map((stat, idx) => (
           <div key={idx} className="bg-slate-900/60 border border-slate-800 p-4 rounded-xl flex flex-col gap-1 backdrop-blur-sm">
             <span className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">{stat.label}</span>
@@ -249,6 +292,9 @@ export default function UserMcpMarket({ triggerNotification }) {
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {filtered.map((server) => {
             const isDiscovering = discoveringIds.has(server.id);
+            const isHealthChecking = healthCheckingIds.has(server.id);
+            const health = healthMetrics[server.id];
+
             const statusBg = 
               server.status === 'active' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' :
               server.status === 'error' ? 'bg-rose-500/10 text-rose-400 border-rose-500/20' :
@@ -277,11 +323,24 @@ export default function UserMcpMarket({ triggerNotification }) {
                           <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border uppercase ${statusBg}`}>
                             {server.enabled ? server.status : 'DISABLED'}
                           </span>
+                          {server.server_version && (
+                            <span className="text-[9px] font-mono text-slate-400 bg-slate-950 px-1.5 py-0.5 rounded border border-slate-800">
+                              v{server.server_version}
+                            </span>
+                          )}
                         </div>
                       </div>
                     </div>
 
                     <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => handleHealthCheck(server)}
+                        disabled={isHealthChecking || !server.enabled}
+                        title="Run Health Ping"
+                        className="p-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 hover:text-white hover:bg-slate-700 transition"
+                      >
+                        <Activity className={`w-3.5 h-3.5 ${isHealthChecking ? 'animate-pulse text-indigo-400' : ''}`} />
+                      </button>
                       <button
                         onClick={() => handleToggleEnable(server)}
                         title={server.enabled ? 'Disable Server' : 'Enable Server'}
@@ -310,21 +369,29 @@ export default function UserMcpMarket({ triggerNotification }) {
                   <div className="mt-3 p-2 rounded-lg bg-slate-950/60 border border-slate-800/80 text-[11px] font-mono text-slate-400 truncate">
                     {server.server_url}
                   </div>
+
+                  {/* Health Latency indicator if checked */}
+                  {health && (
+                    <div className="mt-2 text-[10px] flex items-center justify-between text-slate-400 px-1">
+                      <span>Latency: <strong className="text-slate-200 font-mono">{health.latency_ms ? `${health.latency_ms}ms` : 'N/A'}</strong></span>
+                      <span>Health: <strong className={health.is_healthy ? 'text-emerald-400' : 'text-rose-400'}>{health.is_healthy ? 'ONLINE' : 'ERROR'}</strong></span>
+                    </div>
+                  )}
                 </div>
 
                 <div className="mt-4 pt-4 border-t border-slate-800/80 flex items-center justify-between">
                   <div className="text-[11px] text-slate-400">
-                    <span className="font-semibold text-indigo-300">{server.capabilities_count || 0}</span> capabilities
+                    <span className="font-semibold text-indigo-300">{server.capabilities_count || 0}</span> active capabilities
                   </div>
 
                   <div className="flex items-center gap-2">
                     <button
-                      onClick={() => handleDiscover(server)}
+                      onClick={() => handleRefreshDiscovery(server, true)}
                       disabled={isDiscovering || !server.enabled}
                       className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700/80 disabled:opacity-50 text-slate-200 text-xs font-medium rounded-lg flex items-center gap-1.5 transition"
                     >
                       <RefreshCw className={`w-3.5 h-3.5 ${isDiscovering ? 'animate-spin text-indigo-400' : ''}`} />
-                      <span>{isDiscovering ? 'Discovering...' : 'Discover'}</span>
+                      <span>{isDiscovering ? 'Refreshing...' : 'Refresh'}</span>
                     </button>
                     <button
                       onClick={() => handleViewCapabilities(server)}
@@ -339,6 +406,64 @@ export default function UserMcpMarket({ triggerNotification }) {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Discovery Summary Modal */}
+      {discoverySummary && (
+        <div className="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <CheckCircle className="w-4 h-4 text-emerald-400" />
+                Discovery Synchronization Result
+              </h3>
+              <button onClick={() => setDiscoverySummary(null)} className="text-slate-400 hover:text-white p-1">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-2.5 text-xs text-slate-300">
+              <div className="flex justify-between py-1 border-b border-slate-800/60">
+                <span className="text-slate-400">Server:</span>
+                <span className="font-semibold text-white font-mono">{discoverySummary.server_name}</span>
+              </div>
+              <div className="flex justify-between py-1 border-b border-slate-800/60">
+                <span className="text-slate-400">Protocol / Server Version:</span>
+                <span className="font-mono text-indigo-300">v{discoverySummary.protocol_version} (Server v{discoverySummary.server_version || '1.0.0'})</span>
+              </div>
+              <div className="grid grid-cols-2 gap-2 pt-1">
+                <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800">
+                  <span className="text-[10px] text-slate-400 block">Tools (+Added / ~Changed)</span>
+                  <strong className="text-sm text-emerald-400">+{discoverySummary.tools_added}</strong> / <span className="text-amber-400 font-semibold">~{discoverySummary.tools_changed}</span>
+                </div>
+                <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800">
+                  <span className="text-[10px] text-slate-400 block">Resources (+Added / ~Changed)</span>
+                  <strong className="text-sm text-emerald-400">+{discoverySummary.resources_added}</strong> / <span className="text-amber-400 font-semibold">~{discoverySummary.resources_changed}</span>
+                </div>
+                <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800">
+                  <span className="text-[10px] text-slate-400 block">Prompts (+Added / ~Changed)</span>
+                  <strong className="text-sm text-emerald-400">+{discoverySummary.prompts_added}</strong> / <span className="text-amber-400 font-semibold">~{discoverySummary.prompts_changed}</span>
+                </div>
+                <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800">
+                  <span className="text-[10px] text-slate-400 block">Stale / Reactivated</span>
+                  <strong className="text-sm text-rose-400">{discoverySummary.stale_capabilities}</strong> / <span className="text-indigo-400 font-semibold">{discoverySummary.reactivated_capabilities}</span>
+                </div>
+              </div>
+              <div className="text-[11px] text-slate-500 pt-1 text-right">
+                Latency: {discoverySummary.discovery_latency_ms}ms • Unchanged: {discoverySummary.unchanged_capabilities}
+              </div>
+            </div>
+
+            <div className="pt-2 flex justify-end">
+              <button
+                onClick={() => setDiscoverySummary(null)}
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-semibold text-xs"
+              >
+                Close
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -462,7 +587,7 @@ export default function UserMcpMarket({ triggerNotification }) {
                 </div>
                 <div>
                   <h3 className="text-base font-bold text-white tracking-wide">{selectedServer.name} Capabilities</h3>
-                  <p className="text-xs text-slate-400">{capabilities.length} total discovered capabilities</p>
+                  <p className="text-xs text-slate-400">{capabilities.length} discovered capabilities across catalog</p>
                 </div>
               </div>
               <button onClick={() => setShowCapabilitiesModal(false)} className="text-slate-400 hover:text-white p-1">
@@ -470,35 +595,48 @@ export default function UserMcpMarket({ triggerNotification }) {
               </button>
             </div>
 
-            {/* Capability Type Tabs */}
-            <div className="flex items-center gap-2 border-b border-slate-800 pb-2 text-xs">
-              <button
-                onClick={() => { setActiveTab('tool'); setSelectedCap(null); }}
-                className={`px-3 py-1.5 rounded-lg font-medium flex items-center gap-1.5 transition ${
-                  activeTab === 'tool' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-white hover:bg-slate-800'
-                }`}
-              >
-                <Wrench className="w-3.5 h-3.5" />
-                <span>Tools ({toolsList.length})</span>
-              </button>
-              <button
-                onClick={() => { setActiveTab('resource'); setSelectedCap(null); }}
-                className={`px-3 py-1.5 rounded-lg font-medium flex items-center gap-1.5 transition ${
-                  activeTab === 'resource' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-white hover:bg-slate-800'
-                }`}
-              >
-                <FileCode className="w-3.5 h-3.5" />
-                <span>Resources ({resourcesList.length})</span>
-              </button>
-              <button
-                onClick={() => { setActiveTab('prompt'); setSelectedCap(null); }}
-                className={`px-3 py-1.5 rounded-lg font-medium flex items-center gap-1.5 transition ${
-                  activeTab === 'prompt' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-white hover:bg-slate-800'
-                }`}
-              >
-                <MessageSquare className="w-3.5 h-3.5" />
-                <span>Prompts ({promptsList.length})</span>
-              </button>
+            {/* Filter & Search Bar */}
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 border-b border-slate-800 pb-2 text-xs">
+              <div className="flex items-center gap-2 w-full sm:w-auto">
+                <button
+                  onClick={() => { setActiveTab('tool'); setSelectedCap(null); }}
+                  className={`px-3 py-1.5 rounded-lg font-medium flex items-center gap-1.5 transition ${
+                    activeTab === 'tool' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                  }`}
+                >
+                  <Wrench className="w-3.5 h-3.5" />
+                  <span>Tools ({capabilities.filter(c => c.capability_type === 'tool').length})</span>
+                </button>
+                <button
+                  onClick={() => { setActiveTab('resource'); setSelectedCap(null); }}
+                  className={`px-3 py-1.5 rounded-lg font-medium flex items-center gap-1.5 transition ${
+                    activeTab === 'resource' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                  }`}
+                >
+                  <FileCode className="w-3.5 h-3.5" />
+                  <span>Resources ({capabilities.filter(c => c.capability_type === 'resource').length})</span>
+                </button>
+                <button
+                  onClick={() => { setActiveTab('prompt'); setSelectedCap(null); }}
+                  className={`px-3 py-1.5 rounded-lg font-medium flex items-center gap-1.5 transition ${
+                    activeTab === 'prompt' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                  }`}
+                >
+                  <MessageSquare className="w-3.5 h-3.5" />
+                  <span>Prompts ({capabilities.filter(c => c.capability_type === 'prompt').length})</span>
+                </button>
+              </div>
+
+              <div className="relative w-full sm:w-56">
+                <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500" />
+                <input
+                  type="text"
+                  value={capSearch}
+                  onChange={(e) => setCapSearch(e.target.value)}
+                  placeholder={`Search ${activeTab}s...`}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-lg py-1.5 pl-8 pr-3 text-[11px] text-slate-200 focus:outline-none focus:border-indigo-500"
+                />
+              </div>
             </div>
 
             {/* Main Content Area */}
@@ -514,7 +652,7 @@ export default function UserMcpMarket({ triggerNotification }) {
                 ) : (
                   (activeTab === 'tool' ? toolsList : activeTab === 'resource' ? resourcesList : promptsList).length === 0 ? (
                     <div className="text-center py-12 text-slate-500 text-xs">
-                      No {activeTab}s discovered. Click "Discover" on server card to synchronize.
+                      No matching {activeTab}s found. Click "Refresh" on server card to synchronize.
                     </div>
                   ) : (
                     (activeTab === 'tool' ? toolsList : activeTab === 'resource' ? resourcesList : promptsList).map((cap) => (
@@ -524,11 +662,24 @@ export default function UserMcpMarket({ triggerNotification }) {
                         className={`p-3 rounded-xl border text-xs cursor-pointer transition flex items-center justify-between ${
                           selectedCap?.id === cap.id 
                             ? 'bg-indigo-950/40 border-indigo-500 text-white' 
+                            : cap.is_stale
+                            ? 'bg-slate-950 border-amber-500/20 text-slate-400 opacity-60'
                             : 'bg-slate-950 border-slate-800 hover:border-slate-700 text-slate-300'
                         }`}
                       >
                         <div className="space-y-1 truncate pr-2">
-                          <div className="font-semibold font-mono text-indigo-300">{cap.name}</div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-semibold font-mono text-indigo-300">{cap.name}</span>
+                            {cap.is_stale ? (
+                              <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                                STALE
+                              </span>
+                            ) : (
+                              <span className="text-[9px] px-1.5 py-0.2 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                                v{cap.version || 1}
+                              </span>
+                            )}
+                          </div>
                           <p className="text-[11px] text-slate-400 truncate">{cap.description || 'No description'}</p>
                         </div>
                         <ChevronRight className="w-4 h-4 text-slate-600 shrink-0" />
@@ -543,12 +694,28 @@ export default function UserMcpMarket({ triggerNotification }) {
                 {selectedCap ? (
                   <div className="space-y-3 text-xs">
                     <div>
-                      <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
-                        {selectedCap.capability_type}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                          {selectedCap.capability_type}
+                        </span>
+                        {selectedCap.is_stale && (
+                          <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-1">
+                            <AlertTriangle className="w-3 h-3" />
+                            Stale / Disappeared
+                          </span>
+                        )}
+                      </div>
                       <h4 className="text-sm font-bold text-white font-mono mt-2">{selectedCap.name}</h4>
                       <p className="text-slate-400 text-xs mt-1 leading-relaxed">{selectedCap.description || 'No description provided.'}</p>
                     </div>
+
+                    {selectedCap.definition_hash && (
+                      <div className="p-2 rounded-lg bg-slate-900/60 border border-slate-800 text-[10px] text-slate-400 flex items-center gap-1.5 font-mono">
+                        <Tag className="w-3 h-3 text-indigo-400" />
+                        <span>Hash: {selectedCap.definition_hash.slice(0, 16)}...</span>
+                        <span className="ml-auto">Rev: {selectedCap.version || 1}</span>
+                      </div>
+                    )}
 
                     {selectedCap.input_schema && (
                       <div className="space-y-1">
@@ -571,7 +738,7 @@ export default function UserMcpMarket({ triggerNotification }) {
                 ) : (
                   <div className="flex flex-col items-center justify-center h-full text-slate-500 text-xs text-center py-12">
                     <Code className="w-6 h-6 mb-2 text-slate-600" />
-                    <span>Select a capability from the list to inspect its schema and metadata.</span>
+                    <span>Select a capability from the catalog to inspect its JSON schema, hash, and versioning details.</span>
                   </div>
                 )}
               </div>
