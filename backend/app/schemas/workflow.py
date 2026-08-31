@@ -1,30 +1,282 @@
-from pydantic import BaseModel
 import uuid
-from typing import List, Optional
+import datetime
+from typing import Dict, Any, List, Optional
+from pydantic import BaseModel, Field
+from app.models.workflow import (
+    WorkflowStatus,
+    WorkflowExecutionStatus,
+    WorkflowNodeStatus,
+    WorkflowNodeType
+)
 
-class WorkflowBase(BaseModel):
+# ---------------------------------------------------------
+# Node Configuration Schemas
+# ---------------------------------------------------------
+
+class BaseNodeConfig(BaseModel):
+    class Config:
+        extra = "allow"
+
+class StartNodeConfig(BaseNodeConfig):
+    input_schema: Optional[Dict[str, Any]] = Field(default_factory=dict)
+
+class EndNodeConfig(BaseNodeConfig):
+    output_schema: Optional[Dict[str, Any]] = Field(default_factory=dict)
+    output_template: Optional[str] = None
+
+class AgentNodeConfig(BaseNodeConfig):
+    agent_type: str = "orchestrator"
+    prompt: Optional[str] = None
+    model: Optional[str] = None
+    temperature: Optional[float] = 0.7
+
+class RAGNodeConfig(BaseNodeConfig):
+    query: Optional[str] = None
+    top_k: int = 5
+    similarity_threshold: float = 0.5
+    collection_name: Optional[str] = None
+
+class GraphNodeConfig(BaseNodeConfig):
+    query: Optional[str] = None
+    max_hops: int = 2
+    relationship_types: Optional[List[str]] = None
+
+class MemoryNodeConfig(BaseNodeConfig):
+    action: str = "retrieve"  # retrieve, store, delete
+    query: Optional[str] = None
+    key: Optional[str] = None
+
+class MCPToolNodeConfig(BaseNodeConfig):
+    tool_id: Optional[str] = None
+    server_id: Optional[str] = None
+    tool_name: Optional[str] = None
+    arguments: Optional[Dict[str, Any]] = Field(default_factory=dict)
+
+class MCPResourceNodeConfig(BaseNodeConfig):
+    resource_id: Optional[str] = None
+    server_id: Optional[str] = None
+    uri: Optional[str] = None
+
+class MCPPromptNodeConfig(BaseNodeConfig):
+    prompt_id: Optional[str] = None
+    server_id: Optional[str] = None
+    prompt_name: Optional[str] = None
+    arguments: Optional[Dict[str, Any]] = Field(default_factory=dict)
+
+class LocalToolNodeConfig(BaseNodeConfig):
+    tool_name: str
+    arguments: Optional[Dict[str, Any]] = Field(default_factory=dict)
+
+class ConditionNodeConfig(BaseNodeConfig):
+    expression: str
+    true_target: Optional[str] = None
+    false_target: Optional[str] = None
+
+class HumanApprovalNodeConfig(BaseNodeConfig):
+    prompt: str = "Please review and approve this step."
+    timeout_seconds: int = 86400
+    approver_roles: Optional[List[str]] = Field(default_factory=lambda: ["admin"])
+
+class TransformNodeConfig(BaseNodeConfig):
+    mapping: Optional[Dict[str, Any]] = Field(default_factory=dict)
+    template: Optional[str] = None
+
+# ---------------------------------------------------------
+# Workflow Node Schemas
+# ---------------------------------------------------------
+
+class WorkflowNodeCreate(BaseModel):
+    node_key: str
+    node_type: WorkflowNodeType
+    name: str
+    config: Optional[Dict[str, Any]] = Field(default_factory=dict)
+    position: Optional[Dict[str, Any]] = Field(default_factory=lambda: {"x": 0, "y": 0})
+    is_enabled: bool = True
+
+class WorkflowNodeUpdate(BaseModel):
+    node_key: Optional[str] = None
+    node_type: Optional[WorkflowNodeType] = None
+    name: Optional[str] = None
+    config: Optional[Dict[str, Any]] = None
+    position: Optional[Dict[str, Any]] = None
+    is_enabled: Optional[bool] = None
+
+class WorkflowNodeResponse(BaseModel):
+    id: uuid.UUID
+    workflow_id: uuid.UUID
+    node_key: str
+    node_type: WorkflowNodeType
+    name: str
+    config: Dict[str, Any]
+    position: Dict[str, Any]
+    is_enabled: bool
+    created_at: datetime.datetime
+    updated_at: datetime.datetime
+
+    class Config:
+        from_attributes = True
+
+# ---------------------------------------------------------
+# Workflow Edge Schemas
+# ---------------------------------------------------------
+
+class WorkflowEdgeCreate(BaseModel):
+    source_node_key: Optional[str] = None
+    target_node_key: Optional[str] = None
+    source_node_id: Optional[uuid.UUID] = None
+    target_node_id: Optional[uuid.UUID] = None
+    condition: Optional[Dict[str, Any]] = None
+    priority: int = 0
+
+class WorkflowEdgeResponse(BaseModel):
+    id: uuid.UUID
+    workflow_id: uuid.UUID
+    source_node_id: uuid.UUID
+    target_node_id: uuid.UUID
+    condition: Optional[Dict[str, Any]] = None
+    priority: int
+    created_at: datetime.datetime
+
+    class Config:
+        from_attributes = True
+
+# ---------------------------------------------------------
+# Workflow Variable Schemas
+# ---------------------------------------------------------
+
+class WorkflowVariableCreate(BaseModel):
+    name: str
+    value: Optional[str] = None
+    value_type: str = "string"  # string, number, boolean, json
+    is_secret: bool = False
+
+class WorkflowVariableResponse(BaseModel):
+    id: uuid.UUID
+    workflow_id: uuid.UUID
+    name: str
+    value: Optional[str] = None
+    value_type: str
+    is_secret: bool
+    created_at: datetime.datetime
+    updated_at: datetime.datetime
+
+    class Config:
+        from_attributes = True
+
+# ---------------------------------------------------------
+# Workflow Validation Schemas
+# ---------------------------------------------------------
+
+class WorkflowValidationItem(BaseModel):
+    code: str
+    message: str
+    node_key: Optional[str] = None
+    edge_id: Optional[str] = None
+
+class WorkflowValidationResult(BaseModel):
+    valid: bool
+    errors: List[WorkflowValidationItem] = Field(default_factory=list)
+    warnings: List[WorkflowValidationItem] = Field(default_factory=list)
+
+# ---------------------------------------------------------
+# Workflow CRUD Schemas
+# ---------------------------------------------------------
+
+class WorkflowCreate(BaseModel):
     name: str
     description: Optional[str] = None
+    nodes: Optional[List[WorkflowNodeCreate]] = Field(default_factory=list)
+    edges: Optional[List[WorkflowEdgeCreate]] = Field(default_factory=list)
+    variables: Optional[List[WorkflowVariableCreate]] = Field(default_factory=list)
 
-class WorkflowCreate(WorkflowBase):
-    workspace_id: uuid.UUID
+class WorkflowUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    status: Optional[WorkflowStatus] = None
+    is_active: Optional[bool] = None
+    nodes: Optional[List[WorkflowNodeCreate]] = None
+    edges: Optional[List[WorkflowEdgeCreate]] = None
+    variables: Optional[List[WorkflowVariableCreate]] = None
 
-class WorkflowResponse(WorkflowBase):
+class WorkflowResponse(BaseModel):
     id: uuid.UUID
+    user_id: uuid.UUID
     workspace_id: uuid.UUID
-    class Config:
-        from_attributes = True
-
-class WorkflowNodeBase(BaseModel):
     name: str
-    node_type: str
-    config_data: Optional[str] = None
+    description: Optional[str] = None
+    status: WorkflowStatus
+    version: int
+    is_active: bool
+    node_count: int = 0
+    edge_count: int = 0
+    created_at: datetime.datetime
+    updated_at: datetime.datetime
 
-class WorkflowNodeCreate(WorkflowNodeBase):
-    workflow_id: uuid.UUID
-
-class WorkflowNodeResponse(WorkflowNodeBase):
-    id: uuid.UUID
-    workflow_id: uuid.UUID
     class Config:
         from_attributes = True
+
+class WorkflowDetailResponse(BaseModel):
+    id: uuid.UUID
+    user_id: uuid.UUID
+    workspace_id: uuid.UUID
+    name: str
+    description: Optional[str] = None
+    status: WorkflowStatus
+    version: int
+    is_active: bool
+    nodes: List[WorkflowNodeResponse] = Field(default_factory=list)
+    edges: List[WorkflowEdgeResponse] = Field(default_factory=list)
+    variables: List[WorkflowVariableResponse] = Field(default_factory=list)
+    created_at: datetime.datetime
+    updated_at: datetime.datetime
+
+    class Config:
+        from_attributes = True
+
+class WorkflowListResponse(BaseModel):
+    workflows: List[WorkflowResponse]
+    total: int
+    limit: int
+    offset: int
+
+# ---------------------------------------------------------
+# Workflow Execution Schemas
+# ---------------------------------------------------------
+
+class WorkflowExecutionCreate(BaseModel):
+    input_data: Optional[Dict[str, Any]] = Field(default_factory=dict)
+
+class WorkflowExecutionNodeResponse(BaseModel):
+    id: uuid.UUID
+    execution_id: uuid.UUID
+    node_id: Optional[uuid.UUID] = None
+    node_key: str
+    status: WorkflowNodeStatus
+    input_data: Optional[Dict[str, Any]] = None
+    output_data: Optional[Dict[str, Any]] = None
+    error: Optional[str] = None
+    started_at: Optional[datetime.datetime] = None
+    completed_at: Optional[datetime.datetime] = None
+
+    class Config:
+        from_attributes = True
+
+class WorkflowExecutionResponse(BaseModel):
+    id: uuid.UUID
+    workflow_id: uuid.UUID
+    workflow_version: int
+    user_id: uuid.UUID
+    workspace_id: uuid.UUID
+    status: WorkflowExecutionStatus
+    input_data: Dict[str, Any]
+    output_data: Optional[Dict[str, Any]] = None
+    error: Optional[str] = None
+    started_at: Optional[datetime.datetime] = None
+    completed_at: Optional[datetime.datetime] = None
+    created_at: datetime.datetime
+
+    class Config:
+        from_attributes = True
+
+class WorkflowExecutionDetailResponse(WorkflowExecutionResponse):
+    execution_nodes: List[WorkflowExecutionNodeResponse] = Field(default_factory=list)

@@ -17,7 +17,7 @@ from app.models.ai import Agent, AgentExecution, AgentLog, AIRequestLog, Provide
 from app.models.memory import Memory, MemoryEmbedding, MemoryCategory, AgentMemory  # noqa
 
 # Workflows
-from app.models.workflow import Workflow, WorkflowNode, WorkflowExecution, WorkflowLog  # noqa
+from app.models.workflow import Workflow, WorkflowNode, WorkflowEdge, WorkflowVariable, WorkflowExecution, WorkflowExecutionNode, WorkflowLog  # noqa
 
 # Documents
 from app.models.document import Document, DocumentChunk, DocumentEmbedding  # noqa
