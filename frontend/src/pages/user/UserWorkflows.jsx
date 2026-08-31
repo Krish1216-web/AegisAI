@@ -39,10 +39,11 @@ import {
   cloneWorkflow
 } from '../../api/workflows';
 import UserWorkflowApprovals from './UserWorkflowApprovals';
+import UserWorkflowSchedules from './UserWorkflowSchedules';
 
 export default function UserWorkflows({ addLog, triggerNotification }) {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState('workflows'); // 'workflows' | 'approvals'
+  const [activeTab, setActiveTab] = useState('workflows'); // 'workflows' | 'approvals' | 'schedules'
   const [workflows, setWorkflows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedWorkflow, setSelectedWorkflow] = useState(null);
@@ -281,6 +282,16 @@ export default function UserWorkflows({ addLog, triggerNotification }) {
             >
               Approval Center
             </button>
+            <button
+              onClick={() => setActiveTab('schedules')}
+              className={`px-3.5 py-1.5 rounded-lg font-semibold transition ${
+                activeTab === 'schedules'
+                  ? 'bg-indigo-600 text-white shadow'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              Schedules
+            </button>
           </div>
 
           {activeTab === 'workflows' && (
@@ -307,6 +318,8 @@ export default function UserWorkflows({ addLog, triggerNotification }) {
       {/* RENDER ACTIVE TAB */}
       {activeTab === 'approvals' ? (
         <UserWorkflowApprovals addLog={addLog} triggerNotification={triggerNotification} />
+      ) : activeTab === 'schedules' ? (
+        <UserWorkflowSchedules addLog={addLog} triggerNotification={triggerNotification} />
       ) : (
         <>
           {/* Validation Banner if active */}

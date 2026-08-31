@@ -32,7 +32,11 @@ from app.schemas.workflow import (
     WorkflowApproveRequest,
     WorkflowApprovalDecisionRequest,
     WorkflowApprovalResponse,
-    WorkflowApprovalListResponse
+    WorkflowApprovalListResponse,
+    WorkflowScheduleCreate,
+    WorkflowScheduleUpdate,
+    WorkflowScheduleResponse,
+    WorkflowScheduleListResponse
 )
 from app.services.workflow import (
     WorkflowService,
@@ -41,6 +45,7 @@ from app.services.workflow import (
 )
 from app.services.workflow_execution import WorkflowExecutionService
 from app.services.workflow_approval import WorkflowApprovalService
+from app.services.workflow_scheduler import WorkflowSchedulerService
 
 router = APIRouter(prefix="/workflows", tags=["Workflows Engine"])
 
@@ -517,6 +522,166 @@ async def reject_workflow_approval(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=str(e)
         )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+
+# ---------------------------------------------------------
+# Scheduling & Recurring Execution Endpoints
+# ---------------------------------------------------------
+
+@router.get("/schedules", response_model=WorkflowScheduleListResponse, dependencies=[Depends(check_rate_limit)])
+async def list_workflow_schedules(
+    workflow_id: Optional[uuid.UUID] = Query(None, description="Filter by workflow ID"),
+    status: Optional[str] = Query(None, description="Filter by status: active, paused, completed, disabled, expired, error"),
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Lists all workflow execution schedules within the active workspace.
+    """
+    workspace_id = resolve_workspace_id(current_user, db)
+    service = WorkflowSchedulerService(db)
+    schedules, total = service.list_schedules(workspace_id, workflow_id=workflow_id, status=status, limit=limit, offset=offset)
+    return WorkflowScheduleListResponse(schedules=schedules, total=total, limit=limit, offset=offset)
+
+@router.post("/schedules", response_model=WorkflowScheduleResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(check_rate_limit)])
+async def create_workflow_schedule(
+    payload: WorkflowScheduleCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Creates a new recurring cron or one-time scheduled workflow trigger.
+    """
+    workspace_id = resolve_workspace_id(current_user, db)
+    service = WorkflowSchedulerService(db)
+    try:
+        schedule = service.create_schedule(current_user.id, workspace_id, payload)
+        return schedule
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+
+@router.get("/schedules/{schedule_id}", response_model=WorkflowScheduleResponse, dependencies=[Depends(check_rate_limit)])
+async def get_workflow_schedule(
+    schedule_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Retrieves details for a specific workflow schedule under tenant isolation.
+    """
+    workspace_id = resolve_workspace_id(current_user, db)
+    service = WorkflowSchedulerService(db)
+    schedule = service.get_schedule(schedule_id, workspace_id)
+    if not schedule:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Schedule '{schedule_id}' not found."
+        )
+    return schedule
+
+@router.put("/schedules/{schedule_id}", response_model=WorkflowScheduleResponse, dependencies=[Depends(check_rate_limit)])
+async def update_workflow_schedule(
+    schedule_id: uuid.UUID,
+    payload: WorkflowScheduleUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Updates workflow schedule configuration, expression, or status.
+    """
+    workspace_id = resolve_workspace_id(current_user, db)
+    service = WorkflowSchedulerService(db)
+    try:
+        schedule = service.update_schedule(current_user.id, workspace_id, schedule_id, payload)
+        return schedule
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+
+@router.delete("/schedules/{schedule_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(check_rate_limit)])
+async def delete_workflow_schedule(
+    schedule_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Soft deletes a workflow schedule.
+    """
+    workspace_id = resolve_workspace_id(current_user, db)
+    service = WorkflowSchedulerService(db)
+    deleted = service.delete_schedule(current_user.id, workspace_id, schedule_id)
+    if not deleted:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Schedule '{schedule_id}' not found."
+        )
+    return None
+
+@router.post("/schedules/{schedule_id}/pause", response_model=WorkflowScheduleResponse, dependencies=[Depends(check_rate_limit)])
+async def pause_workflow_schedule(
+    schedule_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Pauses an active workflow schedule.
+    """
+    workspace_id = resolve_workspace_id(current_user, db)
+    service = WorkflowSchedulerService(db)
+    try:
+        schedule = service.pause_schedule(current_user.id, workspace_id, schedule_id)
+        return schedule
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+
+@router.post("/schedules/{schedule_id}/resume", response_model=WorkflowScheduleResponse, dependencies=[Depends(check_rate_limit)])
+async def resume_workflow_schedule(
+    schedule_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Resumes a paused workflow schedule and recalculates next_run_at.
+    """
+    workspace_id = resolve_workspace_id(current_user, db)
+    service = WorkflowSchedulerService(db)
+    try:
+        schedule = service.resume_schedule(current_user.id, workspace_id, schedule_id)
+        return schedule
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+
+@router.post("/schedules/{schedule_id}/trigger", response_model=WorkflowExecutionResponse, dependencies=[Depends(check_rate_limit)])
+async def trigger_workflow_schedule_manual(
+    schedule_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Manually triggers an immediate execution of the scheduled workflow.
+    """
+    workspace_id = resolve_workspace_id(current_user, db)
+    service = WorkflowSchedulerService(db)
+    try:
+        execution = service.trigger_schedule(current_user.id, workspace_id, schedule_id, is_manual=True)
+        return execution
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

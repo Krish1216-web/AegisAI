@@ -310,3 +310,96 @@ export const rejectWorkflowApproval = async (
     body: JSON.stringify({ decision: 'rejected', reason })
   });
 };
+
+export interface WorkflowSchedule {
+  id: string;
+  workflow_id: string;
+  workspace_id: string;
+  created_by: string;
+  name: string;
+  description?: string | null;
+  schedule_type: 'cron' | 'one_time' | 'delayed';
+  cron_expression?: string | null;
+  run_at?: string | null;
+  timezone: string;
+  status: 'active' | 'paused' | 'completed' | 'disabled' | 'expired' | 'error';
+  is_enabled: boolean;
+  workflow_version: number;
+  concurrency_policy: 'skip' | 'allow' | 'queue';
+  misfire_policy: 'run_once' | 'skip' | 'run_latest';
+  input_data: Record<string, any>;
+  next_run_at?: string | null;
+  last_run_at?: string | null;
+  last_execution_id?: string | null;
+  total_runs: number;
+  failure_count: number;
+  last_error?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export const getWorkflowSchedules = async (params?: {
+  workflow_id?: string;
+  status?: string;
+  limit?: number;
+  offset?: number;
+}): Promise<{ schedules: WorkflowSchedule[]; total: number }> => {
+  const query = new URLSearchParams();
+  if (params?.workflow_id) query.set('workflow_id', params.workflow_id);
+  if (params?.status) query.set('status', params.status);
+  if (params?.limit) query.set('limit', String(params.limit));
+  if (params?.offset) query.set('offset', String(params.offset));
+  const qStr = query.toString();
+  return request<{ schedules: WorkflowSchedule[]; total: number }>(`/workflows/schedules${qStr ? `?${qStr}` : ''}`, {
+    method: 'GET'
+  });
+};
+
+export const getWorkflowSchedule = async (scheduleId: string): Promise<WorkflowSchedule> => {
+  return request<WorkflowSchedule>(`/workflows/schedules/${scheduleId}`, { method: 'GET' });
+};
+
+export const createWorkflowSchedule = async (payload: {
+  workflow_id: string;
+  name: string;
+  description?: string;
+  schedule_type?: string;
+  cron_expression?: string;
+  run_at?: string;
+  timezone?: string;
+  is_enabled?: boolean;
+  concurrency_policy?: string;
+  misfire_policy?: string;
+  input_data?: Record<string, any>;
+}): Promise<WorkflowSchedule> => {
+  return request<WorkflowSchedule>('/workflows/schedules', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+};
+
+export const updateWorkflowSchedule = async (
+  scheduleId: string,
+  payload: Partial<WorkflowSchedule>
+): Promise<WorkflowSchedule> => {
+  return request<WorkflowSchedule>(`/workflows/schedules/${scheduleId}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload)
+  });
+};
+
+export const deleteWorkflowSchedule = async (scheduleId: string): Promise<void> => {
+  return request<void>(`/workflows/schedules/${scheduleId}`, { method: 'DELETE' });
+};
+
+export const pauseWorkflowSchedule = async (scheduleId: string): Promise<WorkflowSchedule> => {
+  return request<WorkflowSchedule>(`/workflows/schedules/${scheduleId}/pause`, { method: 'POST' });
+};
+
+export const resumeWorkflowSchedule = async (scheduleId: string): Promise<WorkflowSchedule> => {
+  return request<WorkflowSchedule>(`/workflows/schedules/${scheduleId}/resume`, { method: 'POST' });
+};
+
+export const triggerWorkflowSchedule = async (scheduleId: string): Promise<WorkflowExecutionSummary> => {
+  return request<WorkflowExecutionSummary>(`/workflows/schedules/${scheduleId}/trigger`, { method: 'POST' });
+};

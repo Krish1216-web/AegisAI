@@ -346,3 +346,63 @@ class WorkflowApprovalListResponse(BaseModel):
     total: int
     limit: int
     offset: int
+
+class WorkflowScheduleCreate(BaseModel):
+    workflow_id: uuid.UUID
+    name: str = Field(..., max_length=100)
+    description: Optional[str] = None
+    schedule_type: str = "cron"  # "cron", "one_time", "delayed"
+    cron_expression: Optional[str] = None
+    run_at: Optional[datetime.datetime] = None
+    timezone: str = "UTC"
+    is_enabled: bool = True
+    concurrency_policy: str = "skip"  # "skip", "allow", "queue"
+    misfire_policy: str = "run_once"  # "run_once", "skip", "run_latest"
+    input_data: Optional[Dict[str, Any]] = Field(default_factory=dict)
+
+class WorkflowScheduleUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    schedule_type: Optional[str] = None
+    cron_expression: Optional[str] = None
+    run_at: Optional[datetime.datetime] = None
+    timezone: Optional[str] = None
+    is_enabled: Optional[bool] = None
+    concurrency_policy: Optional[str] = None
+    misfire_policy: Optional[str] = None
+    input_data: Optional[Dict[str, Any]] = None
+
+class WorkflowScheduleResponse(BaseModel):
+    id: uuid.UUID
+    workflow_id: uuid.UUID
+    workspace_id: uuid.UUID
+    created_by: uuid.UUID
+    name: str
+    description: Optional[str] = None
+    schedule_type: str
+    cron_expression: Optional[str] = None
+    run_at: Optional[datetime.datetime] = None
+    timezone: str
+    status: str
+    is_enabled: bool
+    workflow_version: int
+    concurrency_policy: str
+    misfire_policy: str
+    input_data: Dict[str, Any]
+    next_run_at: Optional[datetime.datetime] = None
+    last_run_at: Optional[datetime.datetime] = None
+    last_execution_id: Optional[uuid.UUID] = None
+    total_runs: int
+    failure_count: int
+    last_error: Optional[str] = None
+    created_at: datetime.datetime
+    updated_at: datetime.datetime
+
+    class Config:
+        from_attributes = True
+
+class WorkflowScheduleListResponse(BaseModel):
+    schedules: List[WorkflowScheduleResponse]
+    total: int
+    limit: int
+    offset: int

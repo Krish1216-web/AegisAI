@@ -66,6 +66,7 @@ class Workflow(Base, AuditMixin):
     edges = relationship("WorkflowEdge", back_populates="workflow", cascade="all, delete-orphan")
     variables = relationship("WorkflowVariable", back_populates="workflow", cascade="all, delete-orphan")
     executions = relationship("WorkflowExecution", back_populates="workflow", cascade="all, delete-orphan")
+    schedules = relationship("WorkflowSchedule", back_populates="workflow", cascade="all, delete-orphan")
 
     __table_args__ = (
         UniqueConstraint("workspace_id", "name", "deleted_at", name="uq_workspace_workflow_name"),
@@ -245,4 +246,87 @@ class WorkflowApprovalRequest(Base, AuditMixin):
     node = relationship("WorkflowNode", foreign_keys=[workflow_node_id])
     requester = relationship("User", foreign_keys=[requested_by])
     decider = relationship("User", foreign_keys=[decided_by])
+
+
+class WorkflowScheduleType(str, enum.Enum):
+    ONE_TIME = "one_time"
+    DELAYED = "delayed"
+    CRON = "cron"
+
+
+class WorkflowScheduleStatus(str, enum.Enum):
+    ACTIVE = "active"
+    PAUSED = "paused"
+    COMPLETED = "completed"
+    DISABLED = "disabled"
+    EXPIRED = "expired"
+    ERROR = "error"
+
+
+class WorkflowScheduleConcurrencyPolicy(str, enum.Enum):
+    ALLOW = "allow"
+    SKIP = "skip"
+    QUEUE = "queue"
+
+
+class WorkflowScheduleMisfirePolicy(str, enum.Enum):
+    SKIP = "skip"
+    RUN_ONCE = "run_once"
+    RUN_LATEST = "run_latest"
+
+
+class WorkflowSchedule(Base, AuditMixin):
+    __tablename__ = "workflow_schedules"
+
+    workflow_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workflows.id", ondelete="CASCADE"), nullable=False, index=True)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False, index=True)
+    created_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    name: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    schedule_type: Mapped[WorkflowScheduleType] = mapped_column(
+        Enum(WorkflowScheduleType, native_enum=False, values_callable=lambda x: [e.value for e in x]),
+        default=WorkflowScheduleType.CRON,
+        nullable=False,
+        index=True
+    )
+    cron_expression: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    run_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    timezone: Mapped[str] = mapped_column(String(50), default="UTC", nullable=False)
+
+    status: Mapped[WorkflowScheduleStatus] = mapped_column(
+        Enum(WorkflowScheduleStatus, native_enum=False, values_callable=lambda x: [e.value for e in x]),
+        default=WorkflowScheduleStatus.ACTIVE,
+        nullable=False,
+        index=True
+    )
+    is_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    workflow_version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+
+    concurrency_policy: Mapped[WorkflowScheduleConcurrencyPolicy] = mapped_column(
+        Enum(WorkflowScheduleConcurrencyPolicy, native_enum=False, values_callable=lambda x: [e.value for e in x]),
+        default=WorkflowScheduleConcurrencyPolicy.SKIP,
+        nullable=False
+    )
+    misfire_policy: Mapped[WorkflowScheduleMisfirePolicy] = mapped_column(
+        Enum(WorkflowScheduleMisfirePolicy, native_enum=False, values_callable=lambda x: [e.value for e in x]),
+        default=WorkflowScheduleMisfirePolicy.RUN_ONCE,
+        nullable=False
+    )
+
+    input_data: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+    next_run_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    last_run_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_execution_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("workflow_executions.id", ondelete="SET NULL"), nullable=True, index=True)
+
+    total_runs: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    failure_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    last_error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # Relationships
+    workflow = relationship("Workflow", foreign_keys=[workflow_id], back_populates="schedules")
+    creator = relationship("User", foreign_keys=[created_by])
+    last_execution = relationship("WorkflowExecution", foreign_keys=[last_execution_id])
+
 
