@@ -17,6 +17,7 @@ import UserAiMarket from './pages/user/UserAiMarket';
 import UserDocuments from './pages/user/UserDocuments';
 import UserReports from './pages/user/UserReports';
 import UserPlatform from './pages/user/UserPlatform';
+import UserTeams from './pages/user/UserTeams';
 
 // Admin Portal Pages
 import AdminDashboard from './pages/admin/AdminDashboard';
@@ -151,6 +152,7 @@ function AppContent() {
           <Route path="/user/documents" element={<UserDocuments triggerNotification={triggerNotification} />} />
           <Route path="/user/reports" element={<UserReports triggerNotification={triggerNotification} />} />
           <Route path="/user/platform" element={<UserPlatform triggerNotification={triggerNotification} />} />
+          <Route path="/user/teams" element={<UserTeams triggerNotification={triggerNotification} />} />
           <Route path="/platform" element={<Navigate to="/user/platform" replace />} />
         </Route>
 
@@ -195,6 +197,7 @@ function UserLayout({ auth, onLogout, logs, addLog, notification, triggerNotific
   const menuItems = [
     { path: '/user/dashboard', label: 'Dashboard', icon: <LayoutDashboard size={18} /> },
     { path: '/user/platform', label: 'Platform Engine', icon: <BrainCircuit size={18} /> },
+    { path: '/user/teams', label: 'Teams & Collab', icon: <Users size={18} /> },
     { path: '/user/chat', label: 'AI Workspace', icon: <Bot size={18} /> },
     { path: '/user/workflows', label: 'Workflow Builder', icon: <Workflow size={18} /> },
     { path: '/user/mcp-marketplace', label: 'MCP Marketplace', icon: <Server size={18} /> },

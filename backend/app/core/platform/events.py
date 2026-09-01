@@ -16,6 +16,7 @@ class PlatformEventType(str, enum.Enum):
     INTELLIGENCE_EVENT = "intelligence_event"
     LIFECYCLE_EVENT = "lifecycle_event"
     SYSTEM_EVENT = "system_event"
+    COLLABORATION_EVENT = "collaboration_event"
 
 class PlatformEvent(BaseModel):
     """

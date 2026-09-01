@@ -16,6 +16,7 @@ class Workspace(Base, AuditMixin):
     
     organization = relationship("Organization", back_populates="workspaces")
     members = relationship("WorkspaceMember", back_populates="workspace", cascade="all, delete-orphan")
+    teams = relationship("Team", back_populates="workspace", cascade="all, delete-orphan")
 
 class WorkspaceMember(Base, AuditMixin):
     __tablename__ = "workspace_members"
