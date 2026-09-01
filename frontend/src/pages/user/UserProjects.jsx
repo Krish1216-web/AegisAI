@@ -33,6 +33,7 @@ import {
   unlinkProjectResource
 } from '../../api/projects';
 import { getWorkspaceMembers } from '../../api/workspaces';
+import { realtimeClient } from '../../api/realtime';
 
 export default function UserProjects() {
   const [projects, setProjects] = useState([]);
@@ -43,6 +44,7 @@ export default function UserProjects() {
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('active');
+  const [rtStatus, setRtStatus] = useState('disconnected');
 
   // Modal states
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -64,12 +66,25 @@ export default function UserProjects() {
 
   useEffect(() => {
     loadProjects();
+    const token = localStorage.getItem('token');
+    if (token) realtimeClient.connect(token);
+    const unsubStatus = realtimeClient.onStatusChange(setRtStatus);
+    return () => unsubStatus();
   }, [statusFilter]);
 
   useEffect(() => {
     if (selectedProject) {
       if (activeTab === 'members') loadMembers(selectedProject.id);
       if (activeTab === 'resources') loadResources(selectedProject.id);
+      const pChannel = `project:${selectedProject.id}`;
+      const handler = (evt) => {
+        if (evt.channel === pChannel || evt.scope === 'project') {
+          loadMembers(selectedProject.id);
+          loadResources(selectedProject.id);
+        }
+      };
+      realtimeClient.subscribe(pChannel, handler);
+      return () => realtimeClient.unsubscribe(pChannel, handler);
     }
   }, [selectedProject, activeTab]);
 
@@ -189,7 +204,21 @@ export default function UserProjects() {
             <FolderKanban className="w-7 h-7 text-indigo-400" />
             Shared Projects & Resources
           </h1>
-          <p className="text-sm text-gray-400">Collaborate on shared documents, workflows, and agents.</p>
+          <p className="text-sm text-gray-400 flex items-center gap-2">
+            Collaborate on shared documents, workflows, and agents.
+            <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
+              rtStatus === 'connected' ? 'bg-emerald-950 text-emerald-400 border border-emerald-800' :
+              rtStatus === 'connecting' || rtStatus === 'reconnecting' ? 'bg-amber-950 text-amber-400 border border-amber-800' :
+              'bg-gray-800 text-gray-400'
+            }`}>
+              <span className={`w-1.5 h-1.5 rounded-full mr-1.5 ${
+                rtStatus === 'connected' ? 'bg-emerald-400' :
+                rtStatus === 'connecting' || rtStatus === 'reconnecting' ? 'bg-amber-400 animate-pulse' :
+                'bg-gray-500'
+              }`}></span>
+              {rtStatus === 'connected' ? 'Realtime Connected' : rtStatus === 'reconnecting' ? 'Reconnecting' : 'Realtime Offline'}
+            </span>
+          </p>
         </div>
         <button
           onClick={() => setShowCreateModal(true)}

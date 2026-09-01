@@ -23,6 +23,7 @@ from app.schemas.team import (
 )
 from app.core.mcp.security import CredentialStore
 from app.core.platform.events import PlatformEventDispatcher, PlatformEvent, PlatformEventType
+from app.core.collaboration.realtime import RealtimeConnectionManager
 
 class TeamService:
     """
@@ -552,6 +553,10 @@ class TeamService:
         )
         self.db.add(audit)
         self.db.commit()
+        try:
+            RealtimeConnectionManager.get_instance().revoke_user_channel(team.workspace_id, user_id, f"team:{team_id}")
+        except Exception:
+            pass
         return True
 
     def list_members(
@@ -978,4 +983,8 @@ class TeamService:
         )
         self.db.add(audit)
         self.db.commit()
+        try:
+            RealtimeConnectionManager.get_instance().revoke_user_channel(team.workspace_id, user_id, f"team:{team_id}")
+        except Exception:
+            pass
         return True

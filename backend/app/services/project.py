@@ -12,6 +12,7 @@ from app.models.document import Document
 from app.models.workflow import Workflow
 from app.models.audit import AuditLog
 from app.core.platform.events import PlatformEventDispatcher, PlatformEvent, PlatformEventType
+from app.core.collaboration.realtime import RealtimeConnectionManager
 from app.schemas.project import (
     ProjectResponse,
     ProjectListResponse,
@@ -99,6 +100,16 @@ class ProjectService:
         )
         self.db.add(audit)
         self.db.commit()
+        try:
+            RealtimeConnectionManager.get_instance().revoke_user_channel(workspace_id, user_id, f"project:{project_id}")
+            PlatformEventDispatcher.get_instance().dispatch(PlatformEvent(
+                event_type=PlatformEventType.COLLABORATION_EVENT,
+                workspace_id=workspace_id,
+                user_id=actor_id,
+                payload={"action": "PROJECT_MEMBER_REMOVED", "project_id": str(project_id), "user_id": str(user_id)}
+            ))
+        except Exception:
+            pass
         self.db.refresh(project)
 
         # Platform Event
@@ -236,6 +247,16 @@ class ProjectService:
         )
         self.db.add(audit)
         self.db.commit()
+        try:
+            RealtimeConnectionManager.get_instance().revoke_user_channel(workspace_id, user_id, f"project:{project_id}")
+            PlatformEventDispatcher.get_instance().dispatch(PlatformEvent(
+                event_type=PlatformEventType.COLLABORATION_EVENT,
+                workspace_id=workspace_id,
+                user_id=actor_id,
+                payload={"action": "PROJECT_MEMBER_REMOVED", "project_id": str(project_id), "user_id": str(user_id)}
+            ))
+        except Exception:
+            pass
         return self.get_project(workspace_id=workspace_id, project_id=project.id, actor_id=actor_id)
 
     def archive_project(self, workspace_id: uuid.UUID, project_id: uuid.UUID, actor_id: uuid.UUID) -> ProjectResponse:
@@ -256,6 +277,16 @@ class ProjectService:
         )
         self.db.add(audit)
         self.db.commit()
+        try:
+            RealtimeConnectionManager.get_instance().revoke_user_channel(workspace_id, user_id, f"project:{project_id}")
+            PlatformEventDispatcher.get_instance().dispatch(PlatformEvent(
+                event_type=PlatformEventType.COLLABORATION_EVENT,
+                workspace_id=workspace_id,
+                user_id=actor_id,
+                payload={"action": "PROJECT_MEMBER_REMOVED", "project_id": str(project_id), "user_id": str(user_id)}
+            ))
+        except Exception:
+            pass
         return self.get_project(workspace_id=workspace_id, project_id=project.id, actor_id=actor_id)
 
     def restore_project(self, workspace_id: uuid.UUID, project_id: uuid.UUID, actor_id: uuid.UUID) -> ProjectResponse:
@@ -276,6 +307,16 @@ class ProjectService:
         )
         self.db.add(audit)
         self.db.commit()
+        try:
+            RealtimeConnectionManager.get_instance().revoke_user_channel(workspace_id, user_id, f"project:{project_id}")
+            PlatformEventDispatcher.get_instance().dispatch(PlatformEvent(
+                event_type=PlatformEventType.COLLABORATION_EVENT,
+                workspace_id=workspace_id,
+                user_id=actor_id,
+                payload={"action": "PROJECT_MEMBER_REMOVED", "project_id": str(project_id), "user_id": str(user_id)}
+            ))
+        except Exception:
+            pass
         return self.get_project(workspace_id=workspace_id, project_id=project.id, actor_id=actor_id)
 
     def transfer_ownership(
@@ -313,6 +354,16 @@ class ProjectService:
         )
         self.db.add(audit)
         self.db.commit()
+        try:
+            RealtimeConnectionManager.get_instance().revoke_user_channel(workspace_id, user_id, f"project:{project_id}")
+            PlatformEventDispatcher.get_instance().dispatch(PlatformEvent(
+                event_type=PlatformEventType.COLLABORATION_EVENT,
+                workspace_id=workspace_id,
+                user_id=actor_id,
+                payload={"action": "PROJECT_MEMBER_REMOVED", "project_id": str(project_id), "user_id": str(user_id)}
+            ))
+        except Exception:
+            pass
         return self.get_project(workspace_id=workspace_id, project_id=project_id, actor_id=actor_id)
 
     # MEMBERSHIP
@@ -403,6 +454,16 @@ class ProjectService:
         )
         self.db.add(audit)
         self.db.commit()
+        try:
+            RealtimeConnectionManager.get_instance().revoke_user_channel(workspace_id, user_id, f"project:{project_id}")
+            PlatformEventDispatcher.get_instance().dispatch(PlatformEvent(
+                event_type=PlatformEventType.COLLABORATION_EVENT,
+                workspace_id=workspace_id,
+                user_id=actor_id,
+                payload={"action": "PROJECT_MEMBER_REMOVED", "project_id": str(project_id), "user_id": str(user_id)}
+            ))
+        except Exception:
+            pass
         self.db.refresh(membership)
 
         return ProjectMemberResponse(
@@ -456,6 +517,16 @@ class ProjectService:
         )
         self.db.add(audit)
         self.db.commit()
+        try:
+            RealtimeConnectionManager.get_instance().revoke_user_channel(workspace_id, user_id, f"project:{project_id}")
+            PlatformEventDispatcher.get_instance().dispatch(PlatformEvent(
+                event_type=PlatformEventType.COLLABORATION_EVENT,
+                workspace_id=workspace_id,
+                user_id=actor_id,
+                payload={"action": "PROJECT_MEMBER_REMOVED", "project_id": str(project_id), "user_id": str(user_id)}
+            ))
+        except Exception:
+            pass
         self.db.refresh(member)
 
         user = self.db.query(User).filter(User.id == user_id).first()
@@ -500,6 +571,16 @@ class ProjectService:
         )
         self.db.add(audit)
         self.db.commit()
+        try:
+            RealtimeConnectionManager.get_instance().revoke_user_channel(workspace_id, user_id, f"project:{project_id}")
+            PlatformEventDispatcher.get_instance().dispatch(PlatformEvent(
+                event_type=PlatformEventType.COLLABORATION_EVENT,
+                workspace_id=workspace_id,
+                user_id=actor_id,
+                payload={"action": "PROJECT_MEMBER_REMOVED", "project_id": str(project_id), "user_id": str(user_id)}
+            ))
+        except Exception:
+            pass
 
     # RESOURCES
     def list_resources(
@@ -625,6 +706,16 @@ class ProjectService:
         )
         self.db.add(audit)
         self.db.commit()
+        try:
+            RealtimeConnectionManager.get_instance().revoke_user_channel(workspace_id, user_id, f"project:{project_id}")
+            PlatformEventDispatcher.get_instance().dispatch(PlatformEvent(
+                event_type=PlatformEventType.COLLABORATION_EVENT,
+                workspace_id=workspace_id,
+                user_id=actor_id,
+                payload={"action": "PROJECT_MEMBER_REMOVED", "project_id": str(project_id), "user_id": str(user_id)}
+            ))
+        except Exception:
+            pass
         self.db.refresh(link)
 
         return ProjectResourceResponse(
@@ -667,3 +758,13 @@ class ProjectService:
         )
         self.db.add(audit)
         self.db.commit()
+        try:
+            RealtimeConnectionManager.get_instance().revoke_user_channel(workspace_id, user_id, f"project:{project_id}")
+            PlatformEventDispatcher.get_instance().dispatch(PlatformEvent(
+                event_type=PlatformEventType.COLLABORATION_EVENT,
+                workspace_id=workspace_id,
+                user_id=actor_id,
+                payload={"action": "PROJECT_MEMBER_REMOVED", "project_id": str(project_id), "user_id": str(user_id)}
+            ))
+        except Exception:
+            pass
