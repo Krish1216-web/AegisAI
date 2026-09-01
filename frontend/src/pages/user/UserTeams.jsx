@@ -8,21 +8,33 @@ import {
   UserPlus, 
   Trash2, 
   Archive, 
+  RotateCcw,
   Edit2, 
+  Mail,
+  Clock,
+  Crown,
   CheckCircle, 
   AlertCircle,
   X,
   Lock,
-  Layers
+  Layers,
+  Send,
+  UserCheck
 } from 'lucide-react';
 import { 
   getTeams, 
   createTeam, 
   updateTeam, 
   archiveTeam, 
+  restoreTeam,
+  transferTeamOwnership,
   getTeamMembers, 
+  getEligibleMembers,
   addTeamMember, 
-  removeTeamMember 
+  removeTeamMember,
+  createTeamInvitation,
+  getTeamInvitations,
+  revokeTeamInvitation
 } from '../../api/teams';
 
 export default function UserTeams({ triggerNotification }) {
@@ -31,19 +43,29 @@ export default function UserTeams({ triggerNotification }) {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('active');
   const [selectedTeam, setSelectedTeam] = useState(null);
+  const [activeTab, setActiveTab] = useState('members'); // 'members' | 'invitations'
+
+  // Members & Invitations
   const [members, setMembers] = useState([]);
   const [loadingMembers, setLoadingMembers] = useState(false);
+  const [invitations, setInvitations] = useState([]);
+  const [loadingInvitations, setLoadingInvitations] = useState(false);
+  const [eligibleMembers, setEligibleMembers] = useState([]);
+  const [loadingEligible, setLoadingEligible] = useState(false);
 
   // Modals
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
-  const [showAddMemberModal, setShowAddMemberModal] = useState(false);
+  const [showInviteModal, setShowInviteModal] = useState(false);
+  const [showTransferModal, setShowTransferModal] = useState(false);
 
   // Form states
   const [teamName, setTeamName] = useState('');
   const [teamDesc, setTeamDesc] = useState('');
-  const [memberUserId, setMemberUserId] = useState('');
-  const [memberRole, setMemberRole] = useState('member');
+  const [selectedEligibleUserId, setSelectedEligibleUserId] = useState('');
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteRole, setInviteRole] = useState('member');
+  const [transferTargetUserId, setTransferTargetUserId] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const fetchTeamsList = async () => {
@@ -78,6 +100,32 @@ export default function UserTeams({ triggerNotification }) {
     }
   };
 
+  const fetchInvitationsList = async (teamId) => {
+    try {
+      setLoadingInvitations(true);
+      const res = await getTeamInvitations(teamId);
+      setInvitations(res.invitations || []);
+    } catch (err) {
+      if (triggerNotification) {
+        triggerNotification('Error', err.response?.data?.detail || 'Failed to load invitations');
+      }
+    } finally {
+      setLoadingInvitations(false);
+    }
+  };
+
+  const fetchEligibleList = async (teamId) => {
+    try {
+      setLoadingEligible(true);
+      const res = await getEligibleMembers(teamId);
+      setEligibleMembers(res.members || []);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoadingEligible(false);
+    }
+  };
+
   useEffect(() => {
     fetchTeamsList();
   }, [statusFilter]);
@@ -90,6 +138,7 @@ export default function UserTeams({ triggerNotification }) {
   const handleSelectTeam = (team) => {
     setSelectedTeam(team);
     fetchMembersList(team.id);
+    fetchInvitationsList(team.id);
   };
 
   const handleCreateTeam = async (e) => {
@@ -141,13 +190,10 @@ export default function UserTeams({ triggerNotification }) {
     try {
       await archiveTeam(team.id);
       if (triggerNotification) {
-        triggerNotification('Team Archived', `Team '${team.name}' is now archived.`);
+        triggerNotification('Team Archived', `Team '${team.name}' archived.`);
       }
       fetchTeamsList();
-      if (selectedTeam?.id === team.id) {
-        setSelectedTeam(null);
-        setMembers([]);
-      }
+      setSelectedTeam(null);
     } catch (err) {
       if (triggerNotification) {
         triggerNotification('Error', err.response?.data?.detail || 'Failed to archive team');
@@ -155,31 +201,92 @@ export default function UserTeams({ triggerNotification }) {
     }
   };
 
-  const handleAddMember = async (e) => {
+  const handleRestoreTeam = async (team) => {
+    try {
+      const restored = await restoreTeam(team.id);
+      if (triggerNotification) {
+        triggerNotification('Team Restored', `Team '${restored.name}' is now active.`);
+      }
+      fetchTeamsList();
+      setSelectedTeam(restored);
+    } catch (err) {
+      if (triggerNotification) {
+        triggerNotification('Error', err.response?.data?.detail || 'Failed to restore team');
+      }
+    }
+  };
+
+  const handleTransferOwnership = async (e) => {
     e.preventDefault();
-    if (!selectedTeam || !memberUserId.trim()) return;
+    if (!selectedTeam || !transferTargetUserId) return;
+    if (!window.confirm('Transferring ownership will demote you to member. Proceed?')) return;
     try {
       setIsSubmitting(true);
-      await addTeamMember(selectedTeam.id, { user_id: memberUserId.trim(), role: memberRole });
+      const updated = await transferTeamOwnership(selectedTeam.id, transferTargetUserId);
       if (triggerNotification) {
-        triggerNotification('Member Added', `User invited to team.`);
+        triggerNotification('Ownership Transferred', `Team ownership transferred successfully.`);
       }
-      setShowAddMemberModal(false);
-      setMemberUserId('');
-      setMemberRole('member');
+      setShowTransferModal(false);
+      setSelectedTeam(updated);
       fetchMembersList(selectedTeam.id);
       fetchTeamsList();
     } catch (err) {
       if (triggerNotification) {
-        triggerNotification('Error', err.response?.data?.detail || 'Failed to add member');
+        triggerNotification('Error', err.response?.data?.detail || 'Failed to transfer ownership');
       }
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const handleRemoveMember = async (userId, username) => {
+  const handleSendInvite = async (e) => {
+    e.preventDefault();
     if (!selectedTeam) return;
+    try {
+      setIsSubmitting(true);
+      await createTeamInvitation(selectedTeam.id, {
+        invited_user_id: selectedEligibleUserId || undefined,
+        invited_email: !selectedEligibleUserId && inviteEmail.trim() ? inviteEmail.trim() : undefined,
+        role: inviteRole
+      });
+      if (triggerNotification) {
+        triggerNotification('Invitation Sent', `Team invitation sent successfully.`);
+      }
+      setShowInviteModal(false);
+      setSelectedEligibleUserId('');
+      setInviteEmail('');
+      setInviteRole('member');
+      fetchInvitationsList(selectedTeam.id);
+    } catch (err) {
+      if (triggerNotification) {
+        triggerNotification('Error', err.response?.data?.detail || 'Failed to send invitation');
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleRevokeInvite = async (invitationId) => {
+    if (!window.confirm('Revoke this pending invitation?')) return;
+    try {
+      await revokeTeamInvitation(invitationId);
+      if (triggerNotification) {
+        triggerNotification('Invitation Revoked', `Invitation cancelled.`);
+      }
+      fetchInvitationsList(selectedTeam.id);
+    } catch (err) {
+      if (triggerNotification) {
+        triggerNotification('Error', err.response?.data?.detail || 'Failed to revoke invitation');
+      }
+    }
+  };
+
+  const handleRemoveMember = async (userId, username, role) => {
+    if (!selectedTeam) return;
+    if (role === 'owner') {
+      alert('Cannot remove team owner. Transfer ownership before removal.');
+      return;
+    }
     if (!window.confirm(`Remove '${username}' from team?`)) return;
     try {
       await removeTeamMember(selectedTeam.id, userId);
@@ -206,10 +313,10 @@ export default function UserTeams({ triggerNotification }) {
             </div>
             <div>
               <h1 className="text-lg font-bold text-slate-100 flex items-center gap-2">
-                Team Collaboration & Workspace Access
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 font-mono">PHASE 9.1</span>
+                Team Collaboration & Membership Hub
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 font-mono">PHASE 9.2</span>
               </h1>
-              <p className="text-xs text-slate-400">Manage workspace-scoped teams, access boundaries, and shared collaboration roles.</p>
+              <p className="text-xs text-slate-400">Manage workspace teams, invitations, ownership, and role assignments.</p>
             </div>
           </div>
         </div>
@@ -277,7 +384,7 @@ export default function UserTeams({ triggerNotification }) {
             ) : teams.length === 0 ? (
               <div className="p-12 text-center text-slate-500 text-xs flex flex-col items-center gap-2">
                 <Layers size={24} className="text-slate-600" />
-                No {statusFilter} teams found in this workspace.
+                No {statusFilter} teams found.
               </div>
             ) : (
               teams.map((t) => {
@@ -293,7 +400,14 @@ export default function UserTeams({ triggerNotification }) {
                         {t.name.substring(0, 2).toUpperCase()}
                       </div>
                       <div>
-                        <div className="font-semibold text-xs text-slate-100">{t.name}</div>
+                        <div className="font-semibold text-xs text-slate-100 flex items-center gap-2">
+                          {t.name}
+                          {t.owner_name && (
+                            <span className="text-[10px] text-indigo-300 flex items-center gap-1 font-mono font-normal">
+                              <Crown size={10} className="text-amber-400" /> {t.owner_name}
+                            </span>
+                          )}
+                        </div>
                         <div className="text-[11px] text-slate-400 line-clamp-1">{t.description || 'No description provided'}</div>
                       </div>
                     </div>
@@ -313,7 +427,7 @@ export default function UserTeams({ triggerNotification }) {
           </div>
         </div>
 
-        {/* Right Column: Team Inspector & Membership (7 cols) */}
+        {/* Right Column: Team Inspector (7 cols) */}
         <div className="col-span-7 flex flex-col bg-[#0b0e14] border border-[rgba(255,255,255,0.06)] rounded-xl overflow-hidden shadow-xl">
           {selectedTeam ? (
             <div className="flex-1 flex flex-col overflow-hidden">
@@ -330,8 +444,18 @@ export default function UserTeams({ triggerNotification }) {
                 </div>
 
                 <div className="flex items-center gap-2">
-                  {selectedTeam.status === 'active' && (
+                  {selectedTeam.status === 'active' ? (
                     <>
+                      <button
+                        onClick={() => {
+                          setTransferTargetUserId('');
+                          setShowTransferModal(true);
+                        }}
+                        className="p-1.5 rounded-md bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/20 transition-all text-xs flex items-center gap-1.5 cursor-pointer"
+                        title="Transfer Ownership"
+                      >
+                        <Crown size={12} /> Transfer
+                      </button>
                       <button
                         onClick={() => {
                           setTeamName(selectedTeam.name);
@@ -344,76 +468,145 @@ export default function UserTeams({ triggerNotification }) {
                       </button>
                       <button
                         onClick={() => handleArchiveTeam(selectedTeam)}
-                        className="p-1.5 rounded-md bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/20 transition-all text-xs flex items-center gap-1.5 cursor-pointer"
+                        className="p-1.5 rounded-md bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/20 transition-all text-xs flex items-center gap-1.5 cursor-pointer"
                       >
                         <Archive size={12} /> Archive
                       </button>
                     </>
+                  ) : (
+                    <button
+                      onClick={() => handleRestoreTeam(selectedTeam)}
+                      className="p-1.5 rounded-md bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border border-emerald-500/20 transition-all text-xs flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <RotateCcw size={12} /> Restore Team
+                    </button>
                   )}
                 </div>
               </div>
 
-              {/* Members Header */}
-              <div className="px-5 py-3 border-b border-[rgba(255,255,255,0.04)] bg-[#0a0d12] flex items-center justify-between">
+              {/* Navigation Tabs (Members / Invitations) */}
+              <div className="px-5 py-2 border-b border-[rgba(255,255,255,0.04)] bg-[#0a0d12] flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <Shield size={14} className="text-indigo-400" />
-                  <span className="text-xs font-semibold text-slate-200">Team Membership ({members.length})</span>
+                  <button
+                    onClick={() => setActiveTab('members')}
+                    className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all flex items-center gap-1.5 ${activeTab === 'members' ? 'bg-indigo-600/20 text-indigo-300 border border-indigo-500/30' : 'text-slate-400 hover:text-slate-200'}`}
+                  >
+                    <Shield size={12} /> Active Members ({members.length})
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('invitations')}
+                    className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all flex items-center gap-1.5 ${activeTab === 'invitations' ? 'bg-indigo-600/20 text-indigo-300 border border-indigo-500/30' : 'text-slate-400 hover:text-slate-200'}`}
+                  >
+                    <Mail size={12} /> Invitations ({invitations.length})
+                  </button>
                 </div>
 
                 {selectedTeam.status === 'active' && (
                   <button
                     onClick={() => {
-                      setMemberUserId('');
-                      setMemberRole('member');
-                      setShowAddMemberModal(true);
+                      fetchEligibleList(selectedTeam.id);
+                      setSelectedEligibleUserId('');
+                      setInviteEmail('');
+                      setInviteRole('member');
+                      setShowInviteModal(true);
                     }}
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-indigo-600/80 hover:bg-indigo-600 text-white text-[11px] font-semibold transition-all cursor-pointer"
                   >
-                    <UserPlus size={12} /> Add Member
+                    <UserPlus size={12} /> Invite Member
                   </button>
                 )}
               </div>
 
-              {/* Members Table */}
+              {/* Tab Contents */}
               <div className="flex-1 overflow-y-auto p-4">
-                {loadingMembers ? (
-                  <div className="p-8 text-center text-slate-500 text-xs">Loading membership records...</div>
-                ) : members.length === 0 ? (
-                  <div className="p-8 text-center text-slate-500 text-xs">No active members in this team.</div>
-                ) : (
-                  <div className="space-y-2">
-                    {members.map((m) => (
-                      <div
-                        key={m.id}
-                        className="p-3 rounded-lg bg-white/2 border border-[rgba(255,255,255,0.04)] flex items-center justify-between"
-                      >
-                        <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center font-bold text-xs text-slate-300">
-                            {m.username.substring(0, 2).toUpperCase()}
-                          </div>
-                          <div>
-                            <div className="font-semibold text-xs text-slate-100 flex items-center gap-2">
-                              {m.username}
-                              <span className={`text-[9px] px-1.5 py-0.2 rounded font-mono uppercase ${m.role === 'owner' ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30' : 'bg-slate-700 text-slate-300'}`}>
-                                {m.role}
-                              </span>
+                {activeTab === 'members' ? (
+                  loadingMembers ? (
+                    <div className="p-8 text-center text-slate-500 text-xs">Loading membership records...</div>
+                  ) : members.length === 0 ? (
+                    <div className="p-8 text-center text-slate-500 text-xs">No active members in this team.</div>
+                  ) : (
+                    <div className="space-y-2">
+                      {members.map((m) => (
+                        <div
+                          key={m.id}
+                          className="p-3 rounded-lg bg-white/2 border border-[rgba(255,255,255,0.04)] flex items-center justify-between"
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center font-bold text-xs text-slate-300">
+                              {m.username.substring(0, 2).toUpperCase()}
                             </div>
-                            <div className="text-[11px] text-slate-500">{m.email}</div>
+                            <div>
+                              <div className="font-semibold text-xs text-slate-100 flex items-center gap-2">
+                                {m.username}
+                                {m.role === 'owner' ? (
+                                  <span className="text-[9px] px-1.5 py-0.2 rounded font-mono uppercase bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-1">
+                                    <Crown size={9} /> Owner
+                                  </span>
+                                ) : (
+                                  <span className="text-[9px] px-1.5 py-0.2 rounded font-mono uppercase bg-slate-700 text-slate-300">
+                                    Member
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-[11px] text-slate-500">{m.email}</div>
+                            </div>
                           </div>
-                        </div>
 
-                        {selectedTeam.status === 'active' && (
-                          <button
-                            onClick={() => handleRemoveMember(m.user_id, m.username)}
-                            className="p-1.5 rounded-md bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 transition-all cursor-pointer"
-                            title="Remove Member"
-                          >
-                            <Trash2 size={13} />
-                          </button>
-                        )}
-                      </div>
-                    ))}
-                  </div>
+                          {selectedTeam.status === 'active' && m.role !== 'owner' && (
+                            <button
+                              onClick={() => handleRemoveMember(m.user_id, m.username, m.role)}
+                              className="p-1.5 rounded-md bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 transition-all cursor-pointer"
+                              title="Remove Member"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )
+                ) : (
+                  loadingInvitations ? (
+                    <div className="p-8 text-center text-slate-500 text-xs">Loading team invitations...</div>
+                  ) : invitations.length === 0 ? (
+                    <div className="p-8 text-center text-slate-500 text-xs">No pending invitations.</div>
+                  ) : (
+                    <div className="space-y-2">
+                      {invitations.map((inv) => (
+                        <div
+                          key={inv.id}
+                          className="p-3 rounded-lg bg-white/2 border border-[rgba(255,255,255,0.04)] flex items-center justify-between"
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-full bg-indigo-950/40 border border-indigo-500/20 flex items-center justify-center text-indigo-400">
+                              <Mail size={14} />
+                            </div>
+                            <div>
+                              <div className="font-semibold text-xs text-slate-100 flex items-center gap-2">
+                                {inv.invited_email || 'Direct User Invite'}
+                                <span className={`text-[9px] px-1.5 py-0.2 rounded font-mono uppercase ${inv.status === 'pending' ? 'bg-amber-500/20 text-amber-300' : 'bg-slate-700 text-slate-300'}`}>
+                                  {inv.status}
+                                </span>
+                              </div>
+                              <div className="text-[11px] text-slate-500 flex items-center gap-2 mt-0.5">
+                                <Clock size={10} /> Expires: {new Date(inv.expires_at).toLocaleDateString()}
+                              </div>
+                            </div>
+                          </div>
+
+                          {inv.status === 'pending' && selectedTeam.status === 'active' && (
+                            <button
+                              onClick={() => handleRevokeInvite(inv.id)}
+                              className="p-1.5 rounded-md bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 transition-all text-xs cursor-pointer"
+                              title="Revoke Invitation"
+                            >
+                              Revoke
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )
                 )}
               </div>
             </div>
@@ -421,7 +614,7 @@ export default function UserTeams({ triggerNotification }) {
             <div className="flex-1 flex flex-col items-center justify-center text-slate-500 p-8">
               <Users size={36} className="text-slate-700 mb-3" />
               <div className="text-sm font-semibold text-slate-300">Select a Team</div>
-              <p className="text-xs text-slate-500 mt-1 text-center max-w-sm">Choose a team from the left directory to view members, collaboration roles, and workspace access rules.</p>
+              <p className="text-xs text-slate-500 mt-1 text-center max-w-sm">Choose a team from the left directory to view members, invitations, and manage workspace collaboration.</p>
             </div>
           )}
         </div>
@@ -541,36 +734,55 @@ export default function UserTeams({ triggerNotification }) {
         </div>
       )}
 
-      {/* Modal: Add Member */}
-      {showAddMemberModal && (
+      {/* Modal: Invite Member */}
+      {showInviteModal && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-[#0f131a] border border-[rgba(255,255,255,0.1)] rounded-xl w-full max-w-md p-6 shadow-2xl">
             <div className="flex items-center justify-between pb-4 border-b border-[rgba(255,255,255,0.06)]">
               <h3 className="text-sm font-bold text-slate-100 flex items-center gap-2">
-                <UserPlus size={16} className="text-indigo-400" /> Add Team Member
+                <Mail size={16} className="text-indigo-400" /> Invite to {selectedTeam?.name}
               </h3>
-              <button onClick={() => setShowAddMemberModal(false)} className="text-slate-400 hover:text-white"><X size={16} /></button>
+              <button onClick={() => setShowInviteModal(false)} className="text-slate-400 hover:text-white"><X size={16} /></button>
             </div>
 
-            <form onSubmit={handleAddMember} className="mt-4 space-y-4">
+            <form onSubmit={handleSendInvite} className="mt-4 space-y-4">
               <div>
-                <label className="text-[11px] font-semibold text-slate-300 block mb-1">User UUID *</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="Paste workspace user ID (e.g. 550e8400-e29b-41d4-a716-446655440000)"
-                  value={memberUserId}
-                  onChange={(e) => setMemberUserId(e.target.value)}
-                  className="w-full bg-white/5 border border-[rgba(255,255,255,0.08)] rounded-lg px-3 py-2 text-xs text-slate-100 outline-none focus:border-indigo-500 font-mono"
-                />
-                <span className="text-[10px] text-slate-500 mt-1 block">User must already be a member of this workspace.</span>
+                <label className="text-[11px] font-semibold text-slate-300 block mb-1">Select Workspace Member</label>
+                <select
+                  value={selectedEligibleUserId}
+                  onChange={(e) => {
+                    setSelectedEligibleUserId(e.target.value);
+                    if (e.target.value) setInviteEmail('');
+                  }}
+                  className="w-full bg-[#141822] border border-[rgba(255,255,255,0.08)] rounded-lg px-3 py-2 text-xs text-slate-100 outline-none focus:border-indigo-500"
+                >
+                  <option value="">-- Choose from Workspace Members --</option>
+                  {eligibleMembers.map((em) => (
+                    <option key={em.user_id} value={em.user_id}>
+                      {em.username} ({em.email}) — Role: {em.workspace_role}
+                    </option>
+                  ))}
+                </select>
               </div>
 
+              {!selectedEligibleUserId && (
+                <div>
+                  <label className="text-[11px] font-semibold text-slate-300 block mb-1">Or Invite by Email</label>
+                  <input
+                    type="email"
+                    placeholder="user@workspace.internal"
+                    value={inviteEmail}
+                    onChange={(e) => setInviteEmail(e.target.value)}
+                    className="w-full bg-white/5 border border-[rgba(255,255,255,0.08)] rounded-lg px-3 py-2 text-xs text-slate-100 outline-none focus:border-indigo-500"
+                  />
+                </div>
+              )}
+
               <div>
-                <label className="text-[11px] font-semibold text-slate-300 block mb-1">Team Role</label>
+                <label className="text-[11px] font-semibold text-slate-300 block mb-1">Assigned Role</label>
                 <select
-                  value={memberRole}
-                  onChange={(e) => setMemberRole(e.target.value)}
+                  value={inviteRole}
+                  onChange={(e) => setInviteRole(e.target.value)}
                   className="w-full bg-[#141822] border border-[rgba(255,255,255,0.08)] rounded-lg px-3 py-2 text-xs text-slate-100 outline-none focus:border-indigo-500"
                 >
                   <option value="member">Member</option>
@@ -581,17 +793,71 @@ export default function UserTeams({ triggerNotification }) {
               <div className="flex items-center justify-end gap-2 pt-2 border-t border-[rgba(255,255,255,0.06)]">
                 <button
                   type="button"
-                  onClick={() => setShowAddMemberModal(false)}
+                  onClick={() => setShowInviteModal(false)}
                   className="px-3 py-1.5 rounded-lg bg-white/5 text-slate-300 hover:bg-white/10 text-xs font-semibold"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  disabled={isSubmitting}
-                  className="px-4 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold disabled:opacity-50"
+                  disabled={isSubmitting || (!selectedEligibleUserId && !inviteEmail.trim())}
+                  className="px-4 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold disabled:opacity-50 flex items-center gap-1.5"
                 >
-                  {isSubmitting ? 'Adding...' : 'Add Member'}
+                  <Send size={12} /> {isSubmitting ? 'Sending...' : 'Send Invitation'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Transfer Ownership */}
+      {showTransferModal && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-[#0f131a] border border-[rgba(255,255,255,0.1)] rounded-xl w-full max-w-md p-6 shadow-2xl">
+            <div className="flex items-center justify-between pb-4 border-b border-[rgba(255,255,255,0.06)]">
+              <h3 className="text-sm font-bold text-slate-100 flex items-center gap-2">
+                <Crown size={16} className="text-amber-400" /> Transfer Team Ownership
+              </h3>
+              <button onClick={() => setShowTransferModal(false)} className="text-slate-400 hover:text-white"><X size={16} /></button>
+            </div>
+
+            <form onSubmit={handleTransferOwnership} className="mt-4 space-y-4">
+              <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 text-xs text-amber-200">
+                Warning: Transferring ownership will make the selected active member the new primary owner. You will remain as a regular member.
+              </div>
+
+              <div>
+                <label className="text-[11px] font-semibold text-slate-300 block mb-1">Select New Owner *</label>
+                <select
+                  required
+                  value={transferTargetUserId}
+                  onChange={(e) => setTransferTargetUserId(e.target.value)}
+                  className="w-full bg-[#141822] border border-[rgba(255,255,255,0.08)] rounded-lg px-3 py-2 text-xs text-slate-100 outline-none focus:border-indigo-500"
+                >
+                  <option value="">-- Choose an Active Member --</option>
+                  {members.filter(m => m.role !== 'owner').map((m) => (
+                    <option key={m.user_id} value={m.user_id}>
+                      {m.username} ({m.email})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-[rgba(255,255,255,0.06)]">
+                <button
+                  type="button"
+                  onClick={() => setShowTransferModal(false)}
+                  className="px-3 py-1.5 rounded-lg bg-white/5 text-slate-300 hover:bg-white/10 text-xs font-semibold"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmitting || !transferTargetUserId}
+                  className="px-4 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-xs font-semibold disabled:opacity-50"
+                >
+                  {isSubmitting ? 'Transferring...' : 'Confirm Transfer'}
                 </button>
               </div>
             </form>

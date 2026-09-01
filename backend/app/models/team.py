@@ -1,5 +1,6 @@
 import uuid
-from sqlalchemy import String, ForeignKey, UniqueConstraint
+import datetime
+from sqlalchemy import String, ForeignKey, UniqueConstraint, DateTime
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from typing import List, Optional
 from app.database.base_class import Base, AuditMixin
@@ -25,6 +26,7 @@ class Team(Base, AuditMixin):
 
     workspace = relationship("Workspace", back_populates="teams")
     memberships = relationship("TeamMembership", back_populates="team", cascade="all, delete-orphan")
+    invitations = relationship("TeamInvitation", back_populates="team", cascade="all, delete-orphan")
     creator = relationship("User", foreign_keys=[created_by])
 
 class TeamMembership(Base, AuditMixin):
@@ -48,3 +50,37 @@ class TeamMembership(Base, AuditMixin):
 
     team = relationship("Team", back_populates="memberships")
     user = relationship("User")
+
+class TeamInvitation(Base, AuditMixin):
+    __tablename__ = "team_invitations"
+
+    team_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("teams.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True
+    )
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True
+    )
+    invited_user_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True
+    )
+    invited_email: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, index=True)
+    invited_by: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True
+    )
+    token_hash: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
+    role: Mapped[str] = mapped_column(String(50), default="member", nullable=False)
+    status: Mapped[str] = mapped_column(String(20), default="pending", nullable=False, index=True) # pending, accepted, expired, revoked
+    expires_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    accepted_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    team = relationship("Team", back_populates="invitations")
+    workspace = relationship("Workspace")
+    invited_user = relationship("User", foreign_keys=[invited_user_id])
+    inviter = relationship("User", foreign_keys=[invited_by])

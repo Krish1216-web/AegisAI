@@ -15,20 +15,20 @@ from app.schemas.team import (
     TeamListResponse,
     TeamMemberAdd,
     TeamMemberResponse,
-    TeamMemberListResponse
+    TeamMemberListResponse,
+    TeamOwnershipTransferRequest,
+    EligibleMemberListResponse,
+    TeamInvitationCreate,
+    TeamInvitationResponse,
+    TeamInvitationListResponse
 )
 
-router = APIRouter(prefix="/teams", tags=["Team Collaboration"])
+router = APIRouter(prefix="", tags=["Team Collaboration & Membership"])
 
 def _get_active_workspace_id(user: User, db: Session) -> uuid.UUID:
-    """
-    Resolves the caller's active workspace ID authoritatively from server-side state.
-    """
-    # 1. Check user.workspace_id attribute if present
     if hasattr(user, "workspace_id") and user.workspace_id:
         return user.workspace_id
 
-    # 2. Check first active workspace membership
     membership = db.query(WorkspaceMember).filter(
         WorkspaceMember.user_id == user.id
     ).first()
@@ -46,9 +46,6 @@ def _assert_can_manage_team(
     team_id: Optional[uuid.UUID],
     db: Session
 ) -> None:
-    """
-    Verifies RBAC: system admin, workspace owner/admin, or team owner.
-    """
     if user.role and user.role.name == "admin":
         return
 
@@ -76,7 +73,7 @@ def _assert_can_manage_team(
         detail="Action requires team manager or workspace administrator permissions."
     )
 
-@router.post("", response_model=TeamResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/teams", response_model=TeamResponse, status_code=status.HTTP_201_CREATED)
 def create_team(
     payload: TeamCreate,
     current_user: User = Depends(get_current_user),
@@ -91,7 +88,7 @@ def create_team(
         creator_id=current_user.id
     )
 
-@router.get("", response_model=TeamListResponse)
+@router.get("/teams", response_model=TeamListResponse)
 def list_teams(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
@@ -110,7 +107,7 @@ def list_teams(
         search=search
     )
 
-@router.get("/{team_id}", response_model=TeamResponse)
+@router.get("/teams/{team_id}", response_model=TeamResponse)
 def get_team(
     team_id: uuid.UUID,
     current_user: User = Depends(get_current_user),
@@ -120,7 +117,7 @@ def get_team(
     service = TeamService(db)
     return service.get_team(workspace_id=workspace_id, team_id=team_id)
 
-@router.put("/{team_id}", response_model=TeamResponse)
+@router.put("/teams/{team_id}", response_model=TeamResponse)
 def update_team(
     team_id: uuid.UUID,
     payload: TeamUpdate,
@@ -138,7 +135,7 @@ def update_team(
         actor_id=current_user.id
     )
 
-@router.post("/{team_id}/archive", response_model=TeamResponse)
+@router.post("/teams/{team_id}/archive", response_model=TeamResponse)
 def archive_team(
     team_id: uuid.UUID,
     current_user: User = Depends(get_current_user),
@@ -153,7 +150,56 @@ def archive_team(
         actor_id=current_user.id
     )
 
-@router.get("/{team_id}/members", response_model=TeamMemberListResponse)
+@router.post("/teams/{team_id}/restore", response_model=TeamResponse)
+def restore_team(
+    team_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    workspace_id = _get_active_workspace_id(current_user, db)
+    _assert_can_manage_team(workspace_id, current_user, team_id, db)
+    service = TeamService(db)
+    return service.restore_team(
+        workspace_id=workspace_id,
+        team_id=team_id,
+        actor_id=current_user.id
+    )
+
+@router.post("/teams/{team_id}/transfer-ownership", response_model=TeamResponse)
+def transfer_ownership(
+    team_id: uuid.UUID,
+    payload: TeamOwnershipTransferRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    workspace_id = _get_active_workspace_id(current_user, db)
+    _assert_can_manage_team(workspace_id, current_user, team_id, db)
+    service = TeamService(db)
+    return service.transfer_ownership(
+        workspace_id=workspace_id,
+        team_id=team_id,
+        target_user_id=payload.target_user_id,
+        actor_id=current_user.id
+    )
+
+@router.get("/teams/{team_id}/eligible-members", response_model=EligibleMemberListResponse)
+def get_eligible_members(
+    team_id: uuid.UUID,
+    search: Optional[str] = Query(None),
+    limit: int = Query(50, ge=1, le=100),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    workspace_id = _get_active_workspace_id(current_user, db)
+    service = TeamService(db)
+    return service.get_eligible_members(
+        workspace_id=workspace_id,
+        team_id=team_id,
+        search=search,
+        limit=limit
+    )
+
+@router.get("/teams/{team_id}/members", response_model=TeamMemberListResponse)
 def list_team_members(
     team_id: uuid.UUID,
     page: int = Query(1, ge=1),
@@ -170,7 +216,7 @@ def list_team_members(
         page_size=page_size
     )
 
-@router.post("/{team_id}/members", response_model=TeamMemberResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/teams/{team_id}/members", response_model=TeamMemberResponse, status_code=status.HTTP_201_CREATED)
 def add_team_member(
     team_id: uuid.UUID,
     payload: TeamMemberAdd,
@@ -188,7 +234,7 @@ def add_team_member(
         actor_id=current_user.id
     )
 
-@router.delete("/{team_id}/members/{user_id}", status_code=status.HTTP_200_OK)
+@router.delete("/teams/{team_id}/members/{user_id}", status_code=status.HTTP_200_OK)
 def remove_team_member(
     team_id: uuid.UUID,
     user_id: uuid.UUID,
@@ -205,3 +251,68 @@ def remove_team_member(
         actor_id=current_user.id
     )
     return {"message": f"User '{user_id}' removed from team successfully."}
+
+@router.post("/teams/{team_id}/invitations", response_model=TeamInvitationResponse, status_code=status.HTTP_201_CREATED)
+def create_team_invitation(
+    team_id: uuid.UUID,
+    payload: TeamInvitationCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    workspace_id = _get_active_workspace_id(current_user, db)
+    _assert_can_manage_team(workspace_id, current_user, team_id, db)
+    service = TeamService(db)
+    return service.create_invitation(
+        workspace_id=workspace_id,
+        team_id=team_id,
+        invited_user_id=payload.invited_user_id,
+        invited_email=payload.invited_email,
+        role=payload.role,
+        invited_by=current_user.id
+    )
+
+@router.get("/teams/{team_id}/invitations", response_model=TeamInvitationListResponse)
+def list_team_invitations(
+    team_id: uuid.UUID,
+    status: Optional[str] = Query("pending"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    workspace_id = _get_active_workspace_id(current_user, db)
+    service = TeamService(db)
+    return service.list_invitations(
+        workspace_id=workspace_id,
+        team_id=team_id,
+        status_filter=status,
+        page=page,
+        page_size=page_size
+    )
+
+@router.post("/team-invitations/{invitation_id}/accept", response_model=TeamMemberResponse)
+def accept_team_invitation(
+    invitation_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    service = TeamService(db)
+    return service.accept_invitation(
+        invitation_id=invitation_id,
+        user_id=current_user.id
+    )
+
+@router.post("/team-invitations/{invitation_id}/revoke", status_code=status.HTTP_200_OK)
+def revoke_team_invitation(
+    invitation_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    workspace_id = _get_active_workspace_id(current_user, db)
+    service = TeamService(db)
+    service.revoke_invitation(
+        workspace_id=workspace_id,
+        invitation_id=invitation_id,
+        actor_id=current_user.id
+    )
+    return {"message": "Invitation revoked successfully."}
