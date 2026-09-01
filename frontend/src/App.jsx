@@ -19,6 +19,7 @@ import UserReports from './pages/user/UserReports';
 import UserPlatform from './pages/user/UserPlatform';
 import UserTeams from './pages/user/UserTeams';
 import UserProjects from './pages/user/UserProjects';
+import UserNotifications from './pages/user/UserNotifications';
 
 // Admin Portal Pages
 import AdminDashboard from './pages/admin/AdminDashboard';
@@ -310,7 +311,7 @@ function UserLayout({ auth, onLogout, logs, addLog, notification, triggerNotific
             </div>
 
             <button 
-              onClick={() => triggerNotification('System Status', 'All active MCP links connected. Handshakes normal.')}
+              onClick={() => navigate('/user/notifications')}
               className="relative p-2 text-slate-400 hover:text-white rounded-lg bg-white/5 border border-[rgba(255,255,255,0.06)] cursor-pointer"
             >
               <Bell size={14} />
