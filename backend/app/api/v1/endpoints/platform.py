@@ -170,15 +170,15 @@ def execute_intelligence(
     if not current_user.workspace_id:
         raise HTTPException(status_code=400, detail="User is not associated with an active workspace.")
 
-    user_role = current_user.role.name if current_user.role else "viewer"
-    user_perms = {p.name for p in current_user.role.permissions} if current_user.role and current_user.role.permissions else set()
+    user_role = current_user.role.name if (current_user.role and hasattr(current_user.role, "name")) else "viewer"
+    user_perms = {p.name for p in current_user.role.permissions} if (current_user.role and hasattr(current_user.role, "permissions") and current_user.role.permissions) else set()
 
     sec_ctx = SecurityContext(
         user_id=current_user.id,
         workspace_id=current_user.workspace_id,
         user_role=user_role,
         permissions=user_perms,
-        trust_level=TrustLevel.AUTHENTICATED
+        trust_level=TrustLevel.HIGH if user_role == "admin" else TrustLevel.MEDIUM
     )
     context = PlatformContext(
         user_id=current_user.id,
@@ -189,11 +189,18 @@ def execute_intelligence(
     from app.core.platform.intelligence.engine import AdvancedIntelligenceService
     from app.core.platform.intelligence.models import ExecutionMode
 
-    mode = ExecutionMode.ADAPTIVE
-    if payload.mode.lower() == "sequential":
-        mode = ExecutionMode.SEQUENTIAL
-    elif payload.mode.lower() == "parallel":
-        mode = ExecutionMode.PARALLEL
+    valid_modes = {
+        "adaptive": ExecutionMode.ADAPTIVE,
+        "sequential": ExecutionMode.SEQUENTIAL,
+        "parallel": ExecutionMode.PARALLEL
+    }
+    mode_key = (payload.mode or "").lower()
+    if mode_key not in valid_modes:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Invalid execution mode '{payload.mode}'. Valid modes: {list(valid_modes.keys())}"
+        )
+    mode = valid_modes[mode_key]
 
     service = AdvancedIntelligenceService(db)
     result = service.execute_intelligent_query(

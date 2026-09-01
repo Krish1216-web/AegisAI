@@ -55,6 +55,13 @@ class AdvancedIntelligenceService:
         all_provenance: List[ProvenanceItem] = []
         step_outputs: List[Dict[str, Any]] = []
 
+        if isinstance(mode, str):
+            try:
+                mode = ExecutionMode(mode.lower())
+            except ValueError:
+                mode = ExecutionMode.ADAPTIVE
+        mode_val = mode.value
+
         # 1. Emit Initial Event
         PlatformEventDispatcher.emit(
             PlatformEvent(
@@ -63,7 +70,7 @@ class AdvancedIntelligenceService:
                 workspace_id=context.workspace_id,
                 user_id=context.user_id,
                 source_component="advanced_intelligence_service",
-                payload={"action": "intelligence_requested", "query": query, "mode": mode.value}
+                payload={"action": "intelligence_requested", "query": query, "mode": mode_val}
             )
         )
 
@@ -89,7 +96,7 @@ class AdvancedIntelligenceService:
                 workspace_id=context.workspace_id,
                 user_id=context.user_id,
                 source_component="intelligence_planner",
-                payload={"action": "intelligence_plan_created", "total_steps": len(plan.steps), "mode": mode.value}
+                payload={"action": "intelligence_plan_created", "total_steps": len(plan.steps), "mode": mode_val}
             )
         )
 
@@ -271,7 +278,7 @@ class AdvancedIntelligenceService:
                 confidence=evidence_eval.confidence_score,
                 workspace_id=context.workspace_id,
                 metadata={
-                    "mode": mode.value,
+                    "mode": mode_val,
                     "confidence_level": evidence_eval.confidence_level.value,
                     "total_steps": len(plan.steps)
                 }
@@ -289,11 +296,30 @@ class AdvancedIntelligenceService:
             )
         )
 
+        exec_id = f"exec_intel_{uuid.uuid4().hex[:12]}"
+        import datetime
+        from app.core.platform.execution_result import PlatformExecutionResult
+        from app.services.platform_execution import PlatformExecutionService
+        now_dt = datetime.datetime.now(datetime.timezone.utc)
+        intel_exec_res = PlatformExecutionResult(
+            execution_id=exec_id,
+            capability_id="intelligence.orchestrator",
+            status=current_status,
+            output={"response": final_answer, "step_results": step_results},
+            provenance=all_provenance,
+            duration_ms=duration_ms,
+            correlation_id=correlation_id,
+            started_at=now_dt,
+            completed_at=now_dt,
+            metadata={"workspace_id": str(context.workspace_id), "user_id": str(context.user_id), "mode": mode_val}
+        )
+        PlatformExecutionService._executions[exec_id] = intel_exec_res
+
         return {
-            "execution_id": f"exec_intel_{uuid.uuid4().hex[:12]}",
+            "execution_id": exec_id,
             "query": query,
             "status": current_status.value,
-            "mode": mode.value,
+            "mode": mode_val,
             "plan": plan.dict(),
             "decisions": [d.dict() for d in decisions],
             "evidence_evaluation": evidence_eval.dict(),

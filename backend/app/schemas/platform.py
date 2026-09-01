@@ -65,5 +65,5 @@ class PlatformIntelligenceResponse(BaseModel):
     confidence_level: str
     output: Dict[str, Any] = Field(default_factory=dict)
     provenance: List[Dict[str, Any]] = Field(default_factory=list)
-    duration_ms: int
+    duration_ms: float = 0.0
     correlation_id: str

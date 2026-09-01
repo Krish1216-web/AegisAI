@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ListTodo, CheckCircle, Clock, AlertCircle, Play, Sparkles, ChevronRight, RefreshCw, ChevronLeft, Calendar, FileText, Database, ShieldAlert, Cpu } from 'lucide-react';
+import { ListTodo, CheckCircle, Clock, AlertCircle, Play, Sparkles, ChevronRight, RefreshCw, ChevronLeft, Calendar, FileText, Database, ShieldAlert, Cpu, Terminal } from 'lucide-react';
 import { getExecutionHistory, getExecutionDetails } from '../../api/agent';
 
 export default function UserTasks({ triggerNotification }) {
