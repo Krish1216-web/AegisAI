@@ -169,6 +169,85 @@ class PlatformService:
                 tags=["memory", "facts", "recall"]
             ),
             CapabilityMetadata(
+                capability_id="mcp.tool",
+                capability_type=CapabilityType.MCP,
+                name="MCP Tool Execution",
+                description="Deterministic execution of external Model Context Protocol tools with risk gating and single-use confirmation.",
+                version="1.0.0",
+                enabled=True,
+                input_schema={
+                    "type": "object",
+                    "required": ["tool_name"],
+                    "properties": {
+                        "tool_name": {"type": "string", "description": "Name or identifier of the MCP tool"},
+                        "arguments": {"type": "object", "description": "JSON arguments payload"},
+                        "confirmation_token": {"type": "string", "description": "Single-use cryptographic confirmation token"}
+                    }
+                },
+                output_schema={
+                    "type": "object",
+                    "properties": {
+                        "tool_name": {"type": "string"},
+                        "server_id": {"type": "string"},
+                        "output": {"type": "object"},
+                        "status": {"type": "string"},
+                        "confirmation_required": {"type": "boolean"},
+                        "confirmation_token": {"type": "string"}
+                    }
+                },
+                tags=["mcp", "tool", "executor", "risk_policy", "confirmation"]
+            ),
+            CapabilityMetadata(
+                capability_id="mcp.resource",
+                capability_type=CapabilityType.MCP,
+                name="MCP Resource Provider",
+                description="Secure reading of external MCP resources with SSRF protection, size bounds, and untrusted data isolation.",
+                version="1.0.0",
+                enabled=True,
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "resource_id": {"type": "string", "description": "Resource identifier"},
+                        "uri": {"type": "string", "description": "Resource URI"}
+                    }
+                },
+                output_schema={
+                    "type": "object",
+                    "properties": {
+                        "resource_uri": {"type": "string"},
+                        "server_id": {"type": "string"},
+                        "content": {"type": "string"},
+                        "truncated": {"type": "boolean"}
+                    }
+                },
+                tags=["mcp", "resource", "reader", "ssrf_protection"]
+            ),
+            CapabilityMetadata(
+                capability_id="mcp.prompt",
+                capability_type=CapabilityType.MCP,
+                name="MCP Prompt Template Engine",
+                description="Rendering of external MCP prompt templates with argument validation and injection protection.",
+                version="1.0.0",
+                enabled=True,
+                input_schema={
+                    "type": "object",
+                    "required": ["prompt_name"],
+                    "properties": {
+                        "prompt_name": {"type": "string", "description": "Name of the prompt template"},
+                        "arguments": {"type": "object", "description": "Template variables map"}
+                    }
+                },
+                output_schema={
+                    "type": "object",
+                    "properties": {
+                        "prompt_name": {"type": "string"},
+                        "server_id": {"type": "string"},
+                        "messages": {"type": "array"}
+                    }
+                },
+                tags=["mcp", "prompt", "template", "rendering"]
+            ),
+            CapabilityMetadata(
                 capability_id="mcp.platform",
                 capability_type=CapabilityType.MCP,
                 name="Model Context Protocol Platform",

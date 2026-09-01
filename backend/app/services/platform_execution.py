@@ -35,6 +35,9 @@ from app.core.platform.adapter import (
     GraphCapabilityAdapter,
     MemoryCapabilityAdapter,
     MCPCapabilityAdapter,
+    MCPToolCapabilityAdapter,
+    MCPResourceCapabilityAdapter,
+    MCPPromptCapabilityAdapter,
     WorkflowCapabilityAdapter
 )
 from app.core.platform.agent_adapter import AgentCapabilityAdapter
@@ -78,6 +81,9 @@ class PlatformExecutionService:
             ("knowledge.rag", RAGCapabilityAdapter),
             ("knowledge.hybrid_rag", HybridRAGCapabilityAdapter),
             ("knowledge.graph", GraphCapabilityAdapter),
+            ("mcp.tool", MCPToolCapabilityAdapter),
+            ("mcp.resource", MCPResourceCapabilityAdapter),
+            ("mcp.prompt", MCPPromptCapabilityAdapter),
             ("rag.retriever", RAGCapabilityAdapter),
             ("knowledge_graph.engine", GraphCapabilityAdapter),
             ("memory.manager", MemoryCapabilityAdapter),

@@ -134,17 +134,12 @@ class MemoryCapabilityAdapter(BaseCapabilityExecutor):
             "facts": [{"fact": f"Memory fact for key '{key}'", "confidence": 0.88}]
         }
 
-class MCPCapabilityAdapter(BaseCapabilityExecutor):
-    """Adapter wrapping MCP Tool / Resource invocation."""
-    def execute(self, context: PlatformContext, input_data: Dict[str, Any]) -> Dict[str, Any]:
-        tool_name = input_data.get("tool_name", "generic_tool")
-        arguments = input_data.get("arguments", {})
-        return {
-            "tool": tool_name,
-            "arguments": arguments,
-            "result": "MCP Tool executed successfully",
-            "provenance": "UNTRUSTED_MCP"
-        }
+from app.core.platform.mcp_adapters import (
+    MCPToolCapabilityAdapter,
+    MCPResourceCapabilityAdapter,
+    MCPPromptCapabilityAdapter,
+    MCPCapabilityAdapter
+)
 
 class WorkflowCapabilityAdapter(BaseCapabilityExecutor):
     """Adapter wrapping Workflow execution trigger."""

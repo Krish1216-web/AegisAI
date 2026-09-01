@@ -36,6 +36,13 @@ from app.core.platform.knowledge_adapters import (
     HybridRAGCapabilityAdapter,
     GraphCapabilityAdapter
 )
+from app.core.platform.mcp_bridge import MCPContextBridge
+from app.core.platform.mcp_adapters import (
+    MCPToolCapabilityAdapter,
+    MCPResourceCapabilityAdapter,
+    MCPPromptCapabilityAdapter,
+    MCPCapabilityAdapter
+)
 
 __all__ = [
     "TrustLevel",
@@ -64,5 +71,10 @@ __all__ = [
     "KnowledgeContextBridge",
     "RAGCapabilityAdapter",
     "HybridRAGCapabilityAdapter",
-    "GraphCapabilityAdapter"
+    "GraphCapabilityAdapter",
+    "MCPContextBridge",
+    "MCPToolCapabilityAdapter",
+    "MCPResourceCapabilityAdapter",
+    "MCPPromptCapabilityAdapter",
+    "MCPCapabilityAdapter"
 ]
