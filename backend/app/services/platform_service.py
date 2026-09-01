@@ -31,10 +31,29 @@ class PlatformService:
                 capability_id="agent.orchestrator",
                 capability_type=CapabilityType.AGENT,
                 name="Multi-Agent Orchestrator",
-                description="Deterministic multi-agent reasoning, planning, and critic execution pipeline.",
+                description="Deterministic LangGraph multi-agent cognitive pipeline orchestrating Planner, Tool Executor, Critic, and Response Generator.",
                 version="1.0.0",
                 enabled=True,
-                tags=["agent", "planner", "critic", "executor"]
+                input_schema={
+                    "type": "object",
+                    "required": ["query"],
+                    "properties": {
+                        "query": {"type": "string", "description": "User prompt or task instruction"},
+                        "provider": {"type": "string", "default": "openai"},
+                        "model": {"type": "string", "default": "gpt-4o-mini"},
+                        "session_id": {"type": "string"}
+                    }
+                },
+                output_schema={
+                    "type": "object",
+                    "properties": {
+                        "response": {"type": "string"},
+                        "plan": {"type": "array"},
+                        "critic_decision": {"type": "string"},
+                        "confidence_score": {"type": "number"}
+                    }
+                },
+                tags=["agent", "planner", "critic", "executor", "langgraph"]
             ),
             CapabilityMetadata(
                 capability_id="rag.retriever",

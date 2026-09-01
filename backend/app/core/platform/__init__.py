@@ -28,6 +28,8 @@ from app.core.platform.capability import (
     platform_capability_registry
 )
 from app.core.platform.config import PlatformSettings, get_platform_settings
+from app.core.platform.agent_bridge import AgentContextBridge
+from app.core.platform.agent_adapter import AgentCapabilityAdapter
 
 __all__ = [
     "TrustLevel",
@@ -50,5 +52,7 @@ __all__ = [
     "CapabilityRegistry",
     "platform_capability_registry",
     "PlatformSettings",
-    "get_platform_settings"
+    "get_platform_settings",
+    "AgentContextBridge",
+    "AgentCapabilityAdapter"
 ]

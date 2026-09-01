@@ -31,12 +31,12 @@ from app.core.platform.adapter import (
     platform_dispatcher,
     EchoCapabilityAdapter,
     RAGCapabilityAdapter,
-    AgentCapabilityAdapter,
     GraphCapabilityAdapter,
     MemoryCapabilityAdapter,
     MCPCapabilityAdapter,
     WorkflowCapabilityAdapter
 )
+from app.core.platform.agent_adapter import AgentCapabilityAdapter
 from app.core.platform.errors import (
     PlatformExecutionError,
     CapabilityNotFound,
@@ -94,8 +94,7 @@ class PlatformExecutionService:
             else:
                 cap_meta = meta.metadata
 
-            if not platform_dispatcher.get_executor(cap_id):
-                platform_dispatcher.register_executor(adapter_cls(cap_meta))
+            platform_dispatcher.register_executor(adapter_cls(cap_meta))
 
     def execute(
         self,

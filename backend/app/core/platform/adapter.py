@@ -138,17 +138,6 @@ class RAGCapabilityAdapter(BaseCapabilityExecutor):
             "citations": [f"doc_{context.workspace_id}_verified"]
         }
 
-class AgentCapabilityAdapter(BaseCapabilityExecutor):
-    """Adapter wrapping multi-agent orchestrator reasoning."""
-    def execute(self, context: PlatformContext, input_data: Dict[str, Any]) -> Dict[str, Any]:
-        prompt = input_data.get("prompt", input_data.get("query", ""))
-        return {
-            "plan": ["Analyze prompt", "Synthesize findings", "Verify result"],
-            "response": f"Agent synthesis for: {prompt}",
-            "confidence": 0.92,
-            "status": "COMPLETED"
-        }
-
 class GraphCapabilityAdapter(BaseCapabilityExecutor):
     """Adapter wrapping Knowledge Graph queries."""
     def execute(self, context: PlatformContext, input_data: Dict[str, Any]) -> Dict[str, Any]:

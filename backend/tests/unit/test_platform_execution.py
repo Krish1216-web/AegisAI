@@ -103,7 +103,7 @@ def test_execution_adapters_suite(db_session: Session, exec_setup):
     # 2. Agent
     agent_res = service.execute("agent.orchestrator", context, {"prompt": "Plan task"})
     assert agent_res.status == LifecycleState.COMPLETED
-    assert agent_res.output["status"] == "COMPLETED"
+    assert "response" in agent_res.output
 
     # 3. Graph
     graph_res = service.execute("knowledge_graph.engine", context, {"entity": "AI Platform"})
