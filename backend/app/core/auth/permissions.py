@@ -43,6 +43,13 @@ class Permissions:
     PROJECT_RESOURCE_ADD = "project:resource:add"
     PROJECT_RESOURCE_REMOVE = "project:resource:remove"
 
+    # Comments & Mentions
+    COMMENT_VIEW = "collaboration:comment:view"
+    COMMENT_CREATE = "collaboration:comment:create"
+    COMMENT_UPDATE = "collaboration:comment:update"
+    COMMENT_DELETE = "collaboration:comment:delete"
+    MENTION_VIEW = "collaboration:mention:view"
+
     # Document
     DOCUMENT_VIEW = "document:view"
     DOCUMENT_CREATE = "document:create"
@@ -91,6 +98,11 @@ ALL_PERMISSIONS: Set[str] = {
     Permissions.PROJECT_RESOURCE_VIEW,
     Permissions.PROJECT_RESOURCE_ADD,
     Permissions.PROJECT_RESOURCE_REMOVE,
+    Permissions.COMMENT_VIEW,
+    Permissions.COMMENT_CREATE,
+    Permissions.COMMENT_UPDATE,
+    Permissions.COMMENT_DELETE,
+    Permissions.MENTION_VIEW,
     Permissions.DOCUMENT_VIEW,
     Permissions.DOCUMENT_CREATE,
     Permissions.DOCUMENT_UPDATE,
@@ -108,80 +120,9 @@ ALL_PERMISSIONS: Set[str] = {
 }
 
 WORKSPACE_ROLE_PERMISSIONS: Dict[str, Set[str]] = {
-    "owner": {
-        Permissions.WORKSPACE_VIEW,
-        Permissions.WORKSPACE_UPDATE,
-        Permissions.WORKSPACE_MEMBERS_VIEW,
-        Permissions.WORKSPACE_MEMBERS_MANAGE,
-        Permissions.WORKSPACE_ROLES_MANAGE,
-        Permissions.WORKSPACE_TRANSFER_OWNERSHIP,
-        Permissions.TEAM_VIEW,
-        Permissions.TEAM_CREATE,
-        Permissions.TEAM_UPDATE,
-        Permissions.TEAM_MANAGE,
-        Permissions.MEMBER_VIEW,
-        Permissions.MEMBER_ADD,
-        Permissions.MEMBER_REMOVE,
-        Permissions.INVITE_MANAGE,
-        Permissions.PROJECT_VIEW,
-        Permissions.PROJECT_CREATE,
-        Permissions.PROJECT_UPDATE,
-        Permissions.PROJECT_MANAGE,
-        Permissions.PROJECT_ARCHIVE,
-        Permissions.PROJECT_RESTORE,
-        Permissions.PROJECT_MEMBER_VIEW,
-        Permissions.PROJECT_MEMBER_MANAGE,
-        Permissions.PROJECT_RESOURCE_VIEW,
-        Permissions.PROJECT_RESOURCE_ADD,
-        Permissions.PROJECT_RESOURCE_REMOVE,
-        Permissions.DOCUMENT_VIEW,
-        Permissions.DOCUMENT_CREATE,
-        Permissions.DOCUMENT_UPDATE,
-        Permissions.DOCUMENT_DELETE,
-        Permissions.WORKFLOW_VIEW,
-        Permissions.WORKFLOW_CREATE,
-        Permissions.WORKFLOW_EXECUTE,
-        Permissions.WORKFLOW_MANAGE,
-        Permissions.MCP_VIEW,
-        Permissions.MCP_EXECUTE,
-        Permissions.MCP_MANAGE,
-    },
+    "owner": ALL_PERMISSIONS,
     "admin": {
-        Permissions.WORKSPACE_VIEW,
-        Permissions.WORKSPACE_UPDATE,
-        Permissions.WORKSPACE_MEMBERS_VIEW,
-        Permissions.WORKSPACE_MEMBERS_MANAGE,
-        Permissions.WORKSPACE_ROLES_MANAGE,
-        Permissions.TEAM_VIEW,
-        Permissions.TEAM_CREATE,
-        Permissions.TEAM_UPDATE,
-        Permissions.TEAM_MANAGE,
-        Permissions.MEMBER_VIEW,
-        Permissions.MEMBER_ADD,
-        Permissions.MEMBER_REMOVE,
-        Permissions.INVITE_MANAGE,
-        Permissions.PROJECT_VIEW,
-        Permissions.PROJECT_CREATE,
-        Permissions.PROJECT_UPDATE,
-        Permissions.PROJECT_MANAGE,
-        Permissions.PROJECT_ARCHIVE,
-        Permissions.PROJECT_RESTORE,
-        Permissions.PROJECT_MEMBER_VIEW,
-        Permissions.PROJECT_MEMBER_MANAGE,
-        Permissions.PROJECT_RESOURCE_VIEW,
-        Permissions.PROJECT_RESOURCE_ADD,
-        Permissions.PROJECT_RESOURCE_REMOVE,
-        Permissions.DOCUMENT_VIEW,
-        Permissions.DOCUMENT_CREATE,
-        Permissions.DOCUMENT_UPDATE,
-        Permissions.DOCUMENT_DELETE,
-        Permissions.WORKFLOW_VIEW,
-        Permissions.WORKFLOW_CREATE,
-        Permissions.WORKFLOW_EXECUTE,
-        Permissions.WORKFLOW_MANAGE,
-        Permissions.MCP_VIEW,
-        Permissions.MCP_EXECUTE,
-        Permissions.MCP_MANAGE,
+        p for p in ALL_PERMISSIONS if p != Permissions.WORKSPACE_TRANSFER_OWNERSHIP
     },
     "member": {
         Permissions.WORKSPACE_VIEW,
@@ -192,6 +133,11 @@ WORKSPACE_ROLE_PERMISSIONS: Dict[str, Set[str]] = {
         Permissions.PROJECT_CREATE,
         Permissions.PROJECT_MEMBER_VIEW,
         Permissions.PROJECT_RESOURCE_VIEW,
+        Permissions.COMMENT_VIEW,
+        Permissions.COMMENT_CREATE,
+        Permissions.COMMENT_UPDATE,
+        Permissions.COMMENT_DELETE,
+        Permissions.MENTION_VIEW,
         Permissions.DOCUMENT_VIEW,
         Permissions.DOCUMENT_CREATE,
         Permissions.DOCUMENT_UPDATE,
@@ -209,6 +155,8 @@ WORKSPACE_ROLE_PERMISSIONS: Dict[str, Set[str]] = {
         Permissions.PROJECT_VIEW,
         Permissions.PROJECT_MEMBER_VIEW,
         Permissions.PROJECT_RESOURCE_VIEW,
+        Permissions.COMMENT_VIEW,
+        Permissions.MENTION_VIEW,
         Permissions.DOCUMENT_VIEW,
         Permissions.WORKFLOW_VIEW,
         Permissions.MCP_VIEW,
@@ -222,10 +170,16 @@ TEAM_ROLE_OVERLAY: Dict[str, Set[str]] = {
         Permissions.MEMBER_ADD,
         Permissions.MEMBER_REMOVE,
         Permissions.INVITE_MANAGE,
+        Permissions.COMMENT_VIEW,
+        Permissions.COMMENT_CREATE,
+        Permissions.COMMENT_UPDATE,
+        Permissions.COMMENT_DELETE,
     },
     "member": {
         Permissions.TEAM_VIEW,
         Permissions.MEMBER_VIEW,
+        Permissions.COMMENT_VIEW,
+        Permissions.COMMENT_CREATE,
     }
 }
 
@@ -241,6 +195,11 @@ PROJECT_ROLE_OVERLAY: Dict[str, Set[str]] = {
         Permissions.PROJECT_RESOURCE_VIEW,
         Permissions.PROJECT_RESOURCE_ADD,
         Permissions.PROJECT_RESOURCE_REMOVE,
+        Permissions.COMMENT_VIEW,
+        Permissions.COMMENT_CREATE,
+        Permissions.COMMENT_UPDATE,
+        Permissions.COMMENT_DELETE,
+        Permissions.MENTION_VIEW,
     },
     "editor": {
         Permissions.PROJECT_VIEW,
@@ -249,10 +208,17 @@ PROJECT_ROLE_OVERLAY: Dict[str, Set[str]] = {
         Permissions.PROJECT_RESOURCE_VIEW,
         Permissions.PROJECT_RESOURCE_ADD,
         Permissions.PROJECT_RESOURCE_REMOVE,
+        Permissions.COMMENT_VIEW,
+        Permissions.COMMENT_CREATE,
+        Permissions.COMMENT_UPDATE,
+        Permissions.COMMENT_DELETE,
+        Permissions.MENTION_VIEW,
     },
     "viewer": {
         Permissions.PROJECT_VIEW,
         Permissions.PROJECT_MEMBER_VIEW,
         Permissions.PROJECT_RESOURCE_VIEW,
+        Permissions.COMMENT_VIEW,
+        Permissions.MENTION_VIEW,
     }
 }

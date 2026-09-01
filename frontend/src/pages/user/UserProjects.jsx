@@ -34,6 +34,8 @@ import {
 } from '../../api/projects';
 import { getWorkspaceMembers } from '../../api/workspaces';
 import { realtimeClient } from '../../api/realtime';
+import CommentsPanel from '../../components/collaboration/CommentsPanel';
+import { getProjectActivity } from '../../api/comments';
 
 export default function UserProjects() {
   const [projects, setProjects] = useState([]);
@@ -41,6 +43,7 @@ export default function UserProjects() {
   const [activeTab, setActiveTab] = useState('resources');
   const [members, setMembers] = useState([]);
   const [resources, setResources] = useState([]);
+  const [activities, setActivities] = useState([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('active');
@@ -76,6 +79,7 @@ export default function UserProjects() {
     if (selectedProject) {
       if (activeTab === 'members') loadMembers(selectedProject.id);
       if (activeTab === 'resources') loadResources(selectedProject.id);
+      if (activeTab === 'activity') getProjectActivity(selectedProject.id).then(r => setActivities(r.activities || []));
       const pChannel = `project:${selectedProject.id}`;
       const handler = (evt) => {
         if (evt.channel === pChannel || evt.scope === 'project') {
@@ -353,6 +357,26 @@ export default function UserProjects() {
                 >
                   Project Members ({members.length})
                 </button>
+                <button
+                  onClick={() => setActiveTab('comments')}
+                  className={`px-4 py-2 text-sm font-medium border-b-2 transition ${
+                    activeTab === 'comments'
+                      ? 'border-indigo-500 text-indigo-400'
+                      : 'border-transparent text-gray-400 hover:text-gray-200'
+                  }`}
+                >
+                  Comments
+                </button>
+                <button
+                  onClick={() => setActiveTab('activity')}
+                  className={`px-4 py-2 text-sm font-medium border-b-2 transition ${
+                    activeTab === 'activity'
+                      ? 'border-indigo-500 text-indigo-400'
+                      : 'border-transparent text-gray-400 hover:text-gray-200'
+                  }`}
+                >
+                  Activity
+                </button>
               </div>
 
               {/* Resources Tab Content */}
@@ -391,6 +415,32 @@ export default function UserProjects() {
                     ))}
                     {resources.length === 0 && (
                       <div className="text-center py-6 text-gray-500 text-sm">No resources linked to this project.</div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Comments Tab Content */}
+              {activeTab === 'comments' && (
+                <CommentsPanel projectId={selectedProject.id} />
+              )}
+
+              {/* Activity Tab Content */}
+              {activeTab === 'activity' && (
+                <div className="space-y-4">
+                  <h3 className="text-sm font-medium text-gray-300">Project Activity Timeline</h3>
+                  <div className="divide-y divide-gray-800">
+                    {activities.map((a) => (
+                      <div key={a.id} className="py-2.5 flex justify-between items-center text-xs">
+                        <div>
+                          <p className="font-medium text-white">{a.description}</p>
+                          <span className="text-[10px] text-gray-500 uppercase">{a.activity_type}</span>
+                        </div>
+                        <span className="text-gray-500 text-[10px]">{new Date(a.created_at).toLocaleString()}</span>
+                      </div>
+                    ))}
+                    {activities.length === 0 && (
+                      <div className="text-center py-6 text-gray-500 text-xs">No activity recorded yet.</div>
                     )}
                   </div>
                 </div>
