@@ -1,4 +1,4 @@
-import api from './client';
+import { request } from './client';
 
 export interface PlatformStatus {
   version: string;
@@ -51,6 +51,9 @@ export interface PlatformExecutionResult {
     title?: string;
     trust_level: string;
     workspace_id: string;
+    confidence?: number;
+    snippet?: string;
+    metadata?: Record<string, any>;
   }>;
   warnings: string[];
   errors: Array<{ code: string; message: string }>;
@@ -62,35 +65,33 @@ export interface PlatformExecutionResult {
 }
 
 export async function getPlatformStatus(): Promise<PlatformStatus> {
-  const response = await api.get('/platform/status');
-  return response.data;
+  return request<PlatformStatus>('/platform/status');
 }
 
 export async function getPlatformCapabilities(capabilityType?: string): Promise<PlatformCapabilityListResponse> {
-  const params: Record<string, any> = {};
-  if (capabilityType) {
-    params.capability_type = capabilityType;
-  }
-  const response = await api.get('/platform/capabilities', { params });
-  return response.data;
+  const query = capabilityType ? `?capability_type=${encodeURIComponent(capabilityType)}` : '';
+  return request<PlatformCapabilityListResponse>(`/platform/capabilities${query}`);
 }
 
 export async function getPlatformCapability(capabilityId: string): Promise<{ capability: PlatformCapability }> {
-  const response = await api.get(`/platform/capabilities/${encodeURIComponent(capabilityId)}`);
-  return response.data;
+  return request<{ capability: PlatformCapability }>(`/platform/capabilities/${encodeURIComponent(capabilityId)}`);
 }
 
-export async function executePlatformCapability(request: PlatformExecutionRequest): Promise<PlatformExecutionResult> {
-  const response = await api.post('/platform/execute', request);
-  return response.data;
+export async function executePlatformCapability(payload: PlatformExecutionRequest): Promise<PlatformExecutionResult> {
+  return request<PlatformExecutionResult>('/platform/execute', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
 }
 
 export async function getPlatformExecution(executionId: string): Promise<PlatformExecutionResult> {
-  const response = await api.get(`/platform/executions/${encodeURIComponent(executionId)}`);
-  return response.data;
+  return request<PlatformExecutionResult>(`/platform/executions/${encodeURIComponent(executionId)}`);
 }
 
 export async function cancelPlatformExecution(executionId: string, reason?: string): Promise<PlatformExecutionResult> {
-  const response = await api.post(`/platform/executions/${encodeURIComponent(executionId)}/cancel`, { reason });
-  return response.data;
+  return request<PlatformExecutionResult>(`/platform/executions/${encodeURIComponent(executionId)}/cancel`, {
+    method: 'POST',
+    body: JSON.stringify({ reason })
+  });
 }
+
