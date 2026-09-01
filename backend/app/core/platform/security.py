@@ -1,6 +1,6 @@
 import uuid
 import enum
-from typing import Set, Optional, Dict, Any
+from typing import Set, Optional, Dict, Any, List
 from pydantic import BaseModel, Field
 
 class TrustLevel(str, enum.Enum):
@@ -28,6 +28,12 @@ class SecurityContext(BaseModel):
         if self.user_role == "admin":
             return True
         return permission in self.permissions
+
+    def has_all_permissions(self, required_permissions: List[str]) -> bool:
+        """Check if caller has all required permissions or admin role."""
+        if self.user_role == "admin":
+            return True
+        return all(self.has_permission(p) for p in required_permissions)
 
     def assert_same_tenant(self, target_workspace_id: uuid.UUID) -> None:
         """Enforces that an operation does not cross tenant boundaries."""

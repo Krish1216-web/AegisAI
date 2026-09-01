@@ -13,6 +13,7 @@ class PlatformEventType(str, enum.Enum):
     WORKFLOW_EVENT = "workflow_event"
     SECURITY_EVENT = "security_event"
     REASONING_EVENT = "reasoning_event"
+    INTELLIGENCE_EVENT = "intelligence_event"
     LIFECYCLE_EVENT = "lifecycle_event"
     SYSTEM_EVENT = "system_event"
 

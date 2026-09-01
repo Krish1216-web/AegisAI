@@ -15,6 +15,7 @@ class ProvenanceSourceType(str, enum.Enum):
     MCP_PROMPT = "mcp_prompt"
     WORKFLOW_NODE = "workflow_node"
     AGENT_REASONING = "agent_reasoning"
+    INTELLIGENCE_DECISION = "intelligence_decision"
     EXTERNAL_RESEARCH = "external_research"
 
 class ProvenanceTrustLevel(str, enum.Enum):

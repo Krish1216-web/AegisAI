@@ -46,3 +46,24 @@ class PlatformExecutionResponse(BaseModel):
 
 class PlatformExecutionCancelRequest(BaseModel):
     reason: Optional[str] = "User requested cancellation"
+
+class PlatformIntelligenceRequest(BaseModel):
+    query: str
+    mode: str = "adaptive"
+    input_data: Dict[str, Any] = Field(default_factory=dict)
+    confidence_threshold: float = 0.60
+
+class PlatformIntelligenceResponse(BaseModel):
+    execution_id: str
+    query: str
+    status: str
+    mode: str
+    plan: Dict[str, Any] = Field(default_factory=dict)
+    decisions: List[Dict[str, Any]] = Field(default_factory=list)
+    evidence_evaluation: Dict[str, Any] = Field(default_factory=dict)
+    confidence: float
+    confidence_level: str
+    output: Dict[str, Any] = Field(default_factory=dict)
+    provenance: List[Dict[str, Any]] = Field(default_factory=list)
+    duration_ms: int
+    correlation_id: str

@@ -264,6 +264,34 @@ class PlatformService:
                 version="1.0.0",
                 enabled=True,
                 tags=["workflow", "dag", "parallel", "approvals", "cron"]
+            ),
+            CapabilityMetadata(
+                capability_id="intelligence.orchestrator",
+                capability_type=CapabilityType.INTELLIGENCE,
+                name="Adaptive Intelligence & Orchestration",
+                description="Deterministic intent analysis, DAG planning, and adaptive multi-capability execution.",
+                version="1.0.0",
+                enabled=True,
+                input_schema={
+                    "type": "object",
+                    "required": ["query"],
+                    "properties": {
+                        "query": {"type": "string", "description": "Natural language query or task instruction"},
+                        "mode": {"type": "string", "enum": ["sequential", "parallel", "adaptive"], "default": "adaptive"},
+                        "confidence_threshold": {"type": "number", "default": 0.60}
+                    }
+                },
+                output_schema={
+                    "type": "object",
+                    "properties": {
+                        "response": {"type": "string"},
+                        "plan": {"type": "object"},
+                        "decisions": {"type": "array"},
+                        "evidence_evaluation": {"type": "object"},
+                        "confidence": {"type": "number"}
+                    }
+                },
+                tags=["intelligence", "adaptive", "planner", "orchestrator", "dag"]
             )
         ]
 

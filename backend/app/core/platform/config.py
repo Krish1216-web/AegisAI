@@ -11,6 +11,9 @@ class PlatformSettings(BaseModel):
     max_concurrency_limit: int = Field(default=10, ge=1, le=50)
     max_provenance_items: int = Field(default=100, ge=5, le=500)
     max_subworkflow_depth: int = Field(default=3, ge=1, le=5)
+    max_intelligence_steps: int = Field(default=12, ge=1, le=50)
+    max_plan_depth: int = Field(default=6, ge=1, le=20)
+    max_adaptive_attempts: int = Field(default=3, ge=1, le=10)
     
     # Feature Flags
     feature_flags: Dict[str, bool] = Field(default_factory=lambda: {

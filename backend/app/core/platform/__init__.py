@@ -43,6 +43,20 @@ from app.core.platform.mcp_adapters import (
     MCPPromptCapabilityAdapter,
     MCPCapabilityAdapter
 )
+from app.core.platform.intelligence import (
+    RequirementType,
+    ExecutionMode,
+    AdaptiveDecisionType,
+    ConfidenceLevel,
+    RequirementAnalyzer,
+    CapabilitySelector,
+    IntelligencePlanner,
+    EvidenceEvaluator,
+    ConfidenceEngine,
+    ContradictionDetector,
+    AdvancedIntelligenceService
+)
+from app.core.platform.intelligence_adapter import IntelligenceCapabilityAdapter
 
 __all__ = [
     "TrustLevel",
@@ -76,5 +90,17 @@ __all__ = [
     "MCPToolCapabilityAdapter",
     "MCPResourceCapabilityAdapter",
     "MCPPromptCapabilityAdapter",
-    "MCPCapabilityAdapter"
+    "MCPCapabilityAdapter",
+    "RequirementType",
+    "ExecutionMode",
+    "AdaptiveDecisionType",
+    "ConfidenceLevel",
+    "RequirementAnalyzer",
+    "CapabilitySelector",
+    "IntelligencePlanner",
+    "EvidenceEvaluator",
+    "ConfidenceEngine",
+    "ContradictionDetector",
+    "AdvancedIntelligenceService",
+    "IntelligenceCapabilityAdapter"
 ]

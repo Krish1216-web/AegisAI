@@ -95,3 +95,33 @@ export async function cancelPlatformExecution(executionId: string, reason?: stri
   });
 }
 
+export interface PlatformIntelligenceRequest {
+  query: string;
+  mode?: 'sequential' | 'parallel' | 'adaptive';
+  input_data?: Record<string, any>;
+  confidence_threshold?: number;
+}
+
+export interface PlatformIntelligenceResponse {
+  execution_id: string;
+  query: string;
+  status: string;
+  mode: string;
+  plan: Record<string, any>;
+  decisions: Array<Record<string, any>>;
+  evidence_evaluation: Record<string, any>;
+  confidence: number;
+  confidence_level: string;
+  output: Record<string, any>;
+  provenance: Array<any>;
+  duration_ms: number;
+  correlation_id: string;
+}
+
+export async function executeIntelligentQuery(payload: PlatformIntelligenceRequest): Promise<PlatformIntelligenceResponse> {
+  return request<PlatformIntelligenceResponse>('/platform/intelligence/execute', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+}
+

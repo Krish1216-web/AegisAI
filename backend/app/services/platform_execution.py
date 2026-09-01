@@ -40,6 +40,7 @@ from app.core.platform.adapter import (
     MCPPromptCapabilityAdapter,
     WorkflowCapabilityAdapter
 )
+from app.core.platform.intelligence_adapter import IntelligenceCapabilityAdapter
 from app.core.platform.agent_adapter import AgentCapabilityAdapter
 from app.core.platform.errors import (
     PlatformExecutionError,
@@ -89,6 +90,7 @@ class PlatformExecutionService:
             ("memory.manager", MemoryCapabilityAdapter),
             ("mcp.platform", MCPCapabilityAdapter),
             ("workflow.engine", WorkflowCapabilityAdapter),
+            ("intelligence.orchestrator", IntelligenceCapabilityAdapter),
             ("echo.test", EchoCapabilityAdapter)
         ]
         for cap_id, adapter_cls in default_adapters:

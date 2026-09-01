@@ -108,6 +108,12 @@ export default function PlatformExecutionConsole({
           risk_level: mcpRiskLevel,
           arguments: argsObj
         };
+      case 'intelligence':
+        return {
+          query: agentQuery,
+          mode: 'adaptive',
+          confidence_threshold: 0.60
+        };
       default:
         try {
           return JSON.parse(genericJson);
