@@ -50,6 +50,9 @@ class Permissions:
     COMMENT_DELETE = "collaboration:comment:delete"
     MENTION_VIEW = "collaboration:mention:view"
 
+    # Collaboration Analytics
+    COLLABORATION_ANALYTICS_VIEW = "collaboration:analytics:view"
+
     # Document
     DOCUMENT_VIEW = "document:view"
     DOCUMENT_CREATE = "document:create"
@@ -103,6 +106,7 @@ ALL_PERMISSIONS: Set[str] = {
     Permissions.COMMENT_UPDATE,
     Permissions.COMMENT_DELETE,
     Permissions.MENTION_VIEW,
+    Permissions.COLLABORATION_ANALYTICS_VIEW,
     Permissions.DOCUMENT_VIEW,
     Permissions.DOCUMENT_CREATE,
     Permissions.DOCUMENT_UPDATE,
@@ -138,6 +142,7 @@ WORKSPACE_ROLE_PERMISSIONS: Dict[str, Set[str]] = {
         Permissions.COMMENT_UPDATE,
         Permissions.COMMENT_DELETE,
         Permissions.MENTION_VIEW,
+        Permissions.COLLABORATION_ANALYTICS_VIEW,
         Permissions.DOCUMENT_VIEW,
         Permissions.DOCUMENT_CREATE,
         Permissions.DOCUMENT_UPDATE,
@@ -157,6 +162,7 @@ WORKSPACE_ROLE_PERMISSIONS: Dict[str, Set[str]] = {
         Permissions.PROJECT_RESOURCE_VIEW,
         Permissions.COMMENT_VIEW,
         Permissions.MENTION_VIEW,
+        Permissions.COLLABORATION_ANALYTICS_VIEW,
         Permissions.DOCUMENT_VIEW,
         Permissions.WORKFLOW_VIEW,
         Permissions.MCP_VIEW,
