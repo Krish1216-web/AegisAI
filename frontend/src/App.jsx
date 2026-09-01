@@ -18,6 +18,7 @@ import UserDocuments from './pages/user/UserDocuments';
 import UserReports from './pages/user/UserReports';
 import UserPlatform from './pages/user/UserPlatform';
 import UserTeams from './pages/user/UserTeams';
+import UserProjects from './pages/user/UserProjects';
 
 // Admin Portal Pages
 import AdminDashboard from './pages/admin/AdminDashboard';

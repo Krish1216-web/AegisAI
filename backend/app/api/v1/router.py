@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from app.api.v1.endpoints import auth, users, workspaces, organizations, ai, agent, documents, rag, knowledge_graph, mcp, workflows, platform, admin, teams, permissions
+from app.api.v1.endpoints import auth, users, workspaces, organizations, ai, agent, documents, rag, knowledge_graph, mcp, workflows, platform, admin, teams, permissions, projects
 
 api_router = APIRouter()
 
@@ -22,3 +22,4 @@ api_router.include_router(admin.router)
 
 api_router.include_router(teams.router)
 api_router.include_router(permissions.router)
+api_router.include_router(projects.router)

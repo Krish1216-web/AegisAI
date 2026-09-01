@@ -15,6 +15,18 @@ export const PERMISSIONS = {
   MEMBER_REMOVE: 'collaboration:member:remove',
   INVITE_MANAGE: 'collaboration:invite:manage',
 
+  PROJECT_VIEW: 'project:view',
+  PROJECT_CREATE: 'project:create',
+  PROJECT_UPDATE: 'project:update',
+  PROJECT_MANAGE: 'project:manage',
+  PROJECT_ARCHIVE: 'project:archive',
+  PROJECT_RESTORE: 'project:restore',
+  PROJECT_MEMBER_VIEW: 'project:member:view',
+  PROJECT_MEMBER_MANAGE: 'project:member:manage',
+  PROJECT_RESOURCE_VIEW: 'project:resource:view',
+  PROJECT_RESOURCE_ADD: 'project:resource:add',
+  PROJECT_RESOURCE_REMOVE: 'project:resource:remove',
+
   DOCUMENT_VIEW: 'document:view',
   DOCUMENT_CREATE: 'document:create',
   DOCUMENT_UPDATE: 'document:update',

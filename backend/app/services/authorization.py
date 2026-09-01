@@ -6,19 +6,16 @@ from fastapi import HTTPException, status
 from app.models.user import User
 from app.models.workspace import WorkspaceMember
 from app.models.team import Team, TeamMembership
+from app.models.project import Project, ProjectMembership
 from app.core.auth.permissions import (
     Permissions,
     ALL_PERMISSIONS,
     WORKSPACE_ROLE_PERMISSIONS,
-    TEAM_ROLE_OVERLAY
+    TEAM_ROLE_OVERLAY,
+    PROJECT_ROLE_OVERLAY
 )
 
 class AuthorizationService:
-    """
-    Authoritative Central Authorization Engine for AegisAI (Phase 9.3).
-    Unifies system-level, workspace-level, and team-level permission evaluation.
-    """
-
     def __init__(self, db: Session):
         self.db = db
 
@@ -26,7 +23,8 @@ class AuthorizationService:
         self,
         user_id: uuid.UUID,
         workspace_id: uuid.UUID,
-        team_id: Optional[uuid.UUID] = None
+        team_id: Optional[uuid.UUID] = None,
+        project_id: Optional[uuid.UUID] = None
     ) -> Set[str]:
         user = self.db.query(User).filter(User.id == user_id).first()
         if not user or not user.is_active or user.is_deleted:
@@ -45,6 +43,7 @@ class AuthorizationService:
         ws_role = ws_member.role.lower()
         effective_perms = set(WORKSPACE_ROLE_PERMISSIONS.get(ws_role, set()))
 
+        # Team Role Overlay
         if team_id:
             team = self.db.query(Team).filter(
                 Team.id == team_id,
@@ -59,8 +58,24 @@ class AuthorizationService:
                 ).first()
                 if team_member:
                     team_role = team_member.role.lower()
-                    team_perms = TEAM_ROLE_OVERLAY.get(team_role, set())
-                    effective_perms.update(team_perms)
+                    effective_perms.update(TEAM_ROLE_OVERLAY.get(team_role, set()))
+
+        # Project Role Overlay
+        if project_id:
+            project = self.db.query(Project).filter(
+                Project.id == project_id,
+                Project.workspace_id == workspace_id,
+                Project.status == "active"
+            ).first()
+            if project:
+                proj_member = self.db.query(ProjectMembership).filter(
+                    ProjectMembership.project_id == project.id,
+                    ProjectMembership.user_id == user_id,
+                    ProjectMembership.status == "active"
+                ).first()
+                if proj_member:
+                    proj_role = proj_member.role.lower()
+                    effective_perms.update(PROJECT_ROLE_OVERLAY.get(proj_role, set()))
 
         return effective_perms
 
@@ -70,12 +85,14 @@ class AuthorizationService:
         workspace_id: uuid.UUID,
         permission: str,
         team_id: Optional[uuid.UUID] = None,
+        project_id: Optional[uuid.UUID] = None,
         resource_id: Optional[str] = None
     ) -> bool:
         effective_perms = self.get_effective_permissions(
             user_id=user_id,
             workspace_id=workspace_id,
-            team_id=team_id
+            team_id=team_id,
+            project_id=project_id
         )
         return permission in effective_perms
 
@@ -85,9 +102,10 @@ class AuthorizationService:
         workspace_id: uuid.UUID,
         permission: str,
         team_id: Optional[uuid.UUID] = None,
+        project_id: Optional[uuid.UUID] = None,
         resource_id: Optional[str] = None
     ) -> None:
-        if not self.authorize(user_id, workspace_id, permission, team_id, resource_id):
+        if not self.authorize(user_id, workspace_id, permission, team_id, project_id, resource_id):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"Action forbidden. Requires permission: '{permission}'."

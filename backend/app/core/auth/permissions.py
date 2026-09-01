@@ -4,6 +4,7 @@ from typing import Dict, Set, List
 class PermissionDomain(str, enum.Enum):
     WORKSPACE = "workspace"
     COLLABORATION = "collaboration"
+    PROJECT = "project"
     DOCUMENT = "document"
     WORKFLOW = "workflow"
     MCP = "mcp"
@@ -28,6 +29,19 @@ class Permissions:
     MEMBER_ADD = "collaboration:member:add"
     MEMBER_REMOVE = "collaboration:member:remove"
     INVITE_MANAGE = "collaboration:invite:manage"
+
+    # Project
+    PROJECT_VIEW = "project:view"
+    PROJECT_CREATE = "project:create"
+    PROJECT_UPDATE = "project:update"
+    PROJECT_MANAGE = "project:manage"
+    PROJECT_ARCHIVE = "project:archive"
+    PROJECT_RESTORE = "project:restore"
+    PROJECT_MEMBER_VIEW = "project:member:view"
+    PROJECT_MEMBER_MANAGE = "project:member:manage"
+    PROJECT_RESOURCE_VIEW = "project:resource:view"
+    PROJECT_RESOURCE_ADD = "project:resource:add"
+    PROJECT_RESOURCE_REMOVE = "project:resource:remove"
 
     # Document
     DOCUMENT_VIEW = "document:view"
@@ -66,6 +80,17 @@ ALL_PERMISSIONS: Set[str] = {
     Permissions.MEMBER_ADD,
     Permissions.MEMBER_REMOVE,
     Permissions.INVITE_MANAGE,
+    Permissions.PROJECT_VIEW,
+    Permissions.PROJECT_CREATE,
+    Permissions.PROJECT_UPDATE,
+    Permissions.PROJECT_MANAGE,
+    Permissions.PROJECT_ARCHIVE,
+    Permissions.PROJECT_RESTORE,
+    Permissions.PROJECT_MEMBER_VIEW,
+    Permissions.PROJECT_MEMBER_MANAGE,
+    Permissions.PROJECT_RESOURCE_VIEW,
+    Permissions.PROJECT_RESOURCE_ADD,
+    Permissions.PROJECT_RESOURCE_REMOVE,
     Permissions.DOCUMENT_VIEW,
     Permissions.DOCUMENT_CREATE,
     Permissions.DOCUMENT_UPDATE,
@@ -98,6 +123,17 @@ WORKSPACE_ROLE_PERMISSIONS: Dict[str, Set[str]] = {
         Permissions.MEMBER_ADD,
         Permissions.MEMBER_REMOVE,
         Permissions.INVITE_MANAGE,
+        Permissions.PROJECT_VIEW,
+        Permissions.PROJECT_CREATE,
+        Permissions.PROJECT_UPDATE,
+        Permissions.PROJECT_MANAGE,
+        Permissions.PROJECT_ARCHIVE,
+        Permissions.PROJECT_RESTORE,
+        Permissions.PROJECT_MEMBER_VIEW,
+        Permissions.PROJECT_MEMBER_MANAGE,
+        Permissions.PROJECT_RESOURCE_VIEW,
+        Permissions.PROJECT_RESOURCE_ADD,
+        Permissions.PROJECT_RESOURCE_REMOVE,
         Permissions.DOCUMENT_VIEW,
         Permissions.DOCUMENT_CREATE,
         Permissions.DOCUMENT_UPDATE,
@@ -124,6 +160,17 @@ WORKSPACE_ROLE_PERMISSIONS: Dict[str, Set[str]] = {
         Permissions.MEMBER_ADD,
         Permissions.MEMBER_REMOVE,
         Permissions.INVITE_MANAGE,
+        Permissions.PROJECT_VIEW,
+        Permissions.PROJECT_CREATE,
+        Permissions.PROJECT_UPDATE,
+        Permissions.PROJECT_MANAGE,
+        Permissions.PROJECT_ARCHIVE,
+        Permissions.PROJECT_RESTORE,
+        Permissions.PROJECT_MEMBER_VIEW,
+        Permissions.PROJECT_MEMBER_MANAGE,
+        Permissions.PROJECT_RESOURCE_VIEW,
+        Permissions.PROJECT_RESOURCE_ADD,
+        Permissions.PROJECT_RESOURCE_REMOVE,
         Permissions.DOCUMENT_VIEW,
         Permissions.DOCUMENT_CREATE,
         Permissions.DOCUMENT_UPDATE,
@@ -141,6 +188,10 @@ WORKSPACE_ROLE_PERMISSIONS: Dict[str, Set[str]] = {
         Permissions.WORKSPACE_MEMBERS_VIEW,
         Permissions.TEAM_VIEW,
         Permissions.MEMBER_VIEW,
+        Permissions.PROJECT_VIEW,
+        Permissions.PROJECT_CREATE,
+        Permissions.PROJECT_MEMBER_VIEW,
+        Permissions.PROJECT_RESOURCE_VIEW,
         Permissions.DOCUMENT_VIEW,
         Permissions.DOCUMENT_CREATE,
         Permissions.DOCUMENT_UPDATE,
@@ -155,6 +206,9 @@ WORKSPACE_ROLE_PERMISSIONS: Dict[str, Set[str]] = {
         Permissions.WORKSPACE_MEMBERS_VIEW,
         Permissions.TEAM_VIEW,
         Permissions.MEMBER_VIEW,
+        Permissions.PROJECT_VIEW,
+        Permissions.PROJECT_MEMBER_VIEW,
+        Permissions.PROJECT_RESOURCE_VIEW,
         Permissions.DOCUMENT_VIEW,
         Permissions.WORKFLOW_VIEW,
         Permissions.MCP_VIEW,
@@ -172,5 +226,33 @@ TEAM_ROLE_OVERLAY: Dict[str, Set[str]] = {
     "member": {
         Permissions.TEAM_VIEW,
         Permissions.MEMBER_VIEW,
+    }
+}
+
+PROJECT_ROLE_OVERLAY: Dict[str, Set[str]] = {
+    "owner": {
+        Permissions.PROJECT_VIEW,
+        Permissions.PROJECT_UPDATE,
+        Permissions.PROJECT_MANAGE,
+        Permissions.PROJECT_ARCHIVE,
+        Permissions.PROJECT_RESTORE,
+        Permissions.PROJECT_MEMBER_VIEW,
+        Permissions.PROJECT_MEMBER_MANAGE,
+        Permissions.PROJECT_RESOURCE_VIEW,
+        Permissions.PROJECT_RESOURCE_ADD,
+        Permissions.PROJECT_RESOURCE_REMOVE,
+    },
+    "editor": {
+        Permissions.PROJECT_VIEW,
+        Permissions.PROJECT_UPDATE,
+        Permissions.PROJECT_MEMBER_VIEW,
+        Permissions.PROJECT_RESOURCE_VIEW,
+        Permissions.PROJECT_RESOURCE_ADD,
+        Permissions.PROJECT_RESOURCE_REMOVE,
+    },
+    "viewer": {
+        Permissions.PROJECT_VIEW,
+        Permissions.PROJECT_MEMBER_VIEW,
+        Permissions.PROJECT_RESOURCE_VIEW,
     }
 }
