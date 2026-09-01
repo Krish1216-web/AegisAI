@@ -31,6 +31,7 @@ from app.core.platform.adapter import (
     platform_dispatcher,
     EchoCapabilityAdapter,
     RAGCapabilityAdapter,
+    HybridRAGCapabilityAdapter,
     GraphCapabilityAdapter,
     MemoryCapabilityAdapter,
     MCPCapabilityAdapter,
@@ -74,6 +75,9 @@ class PlatformExecutionService:
         from app.services.platform_service import ConcretePlatformCapability
         default_adapters = [
             ("agent.orchestrator", AgentCapabilityAdapter),
+            ("knowledge.rag", RAGCapabilityAdapter),
+            ("knowledge.hybrid_rag", HybridRAGCapabilityAdapter),
+            ("knowledge.graph", GraphCapabilityAdapter),
             ("rag.retriever", RAGCapabilityAdapter),
             ("knowledge_graph.engine", GraphCapabilityAdapter),
             ("memory.manager", MemoryCapabilityAdapter),

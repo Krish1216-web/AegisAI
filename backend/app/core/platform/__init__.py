@@ -30,6 +30,12 @@ from app.core.platform.capability import (
 from app.core.platform.config import PlatformSettings, get_platform_settings
 from app.core.platform.agent_bridge import AgentContextBridge
 from app.core.platform.agent_adapter import AgentCapabilityAdapter
+from app.core.platform.knowledge_bridge import KnowledgeContextBridge
+from app.core.platform.knowledge_adapters import (
+    RAGCapabilityAdapter,
+    HybridRAGCapabilityAdapter,
+    GraphCapabilityAdapter
+)
 
 __all__ = [
     "TrustLevel",
@@ -54,5 +60,9 @@ __all__ = [
     "PlatformSettings",
     "get_platform_settings",
     "AgentContextBridge",
-    "AgentCapabilityAdapter"
+    "AgentCapabilityAdapter",
+    "KnowledgeContextBridge",
+    "RAGCapabilityAdapter",
+    "HybridRAGCapabilityAdapter",
+    "GraphCapabilityAdapter"
 ]

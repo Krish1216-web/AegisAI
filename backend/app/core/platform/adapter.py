@@ -119,34 +119,11 @@ class EchoCapabilityAdapter(BaseCapabilityExecutor):
             "workspace_id": str(context.workspace_id)
         }
 
-class RAGCapabilityAdapter(BaseCapabilityExecutor):
-    """Adapter wrapping cognitive RAG retrieval."""
-    def execute(self, context: PlatformContext, input_data: Dict[str, Any]) -> Dict[str, Any]:
-        query = input_data.get("query", "")
-        top_k = input_data.get("top_k", 5)
-        # Bounded retrieval simulation / integration adapter
-        return {
-            "query": query,
-            "results_count": 1,
-            "chunks": [
-                {
-                    "chunk_id": "chunk_default_1",
-                    "text": f"Retrieved knowledge context for: {query}",
-                    "score": 0.95
-                }
-            ],
-            "citations": [f"doc_{context.workspace_id}_verified"]
-        }
-
-class GraphCapabilityAdapter(BaseCapabilityExecutor):
-    """Adapter wrapping Knowledge Graph queries."""
-    def execute(self, context: PlatformContext, input_data: Dict[str, Any]) -> Dict[str, Any]:
-        entity_name = input_data.get("entity", "")
-        return {
-            "entity": entity_name,
-            "nodes_found": 1,
-            "relationships": [{"type": "RELATED_TO", "target": "AegisAI Platform"}]
-        }
+from app.core.platform.knowledge_adapters import (
+    RAGCapabilityAdapter,
+    HybridRAGCapabilityAdapter,
+    GraphCapabilityAdapter
+)
 
 class MemoryCapabilityAdapter(BaseCapabilityExecutor):
     """Adapter wrapping Long-Term Memory recall."""

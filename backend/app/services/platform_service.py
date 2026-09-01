@@ -56,9 +56,95 @@ class PlatformService:
                 tags=["agent", "planner", "critic", "executor", "langgraph"]
             ),
             CapabilityMetadata(
-                capability_id="rag.retriever",
+                capability_id="knowledge.rag",
                 capability_type=CapabilityType.RAG,
                 name="Cognitive RAG Pipeline",
+                description="Vector similarity retrieval with cosine distance, reranking, and citation verification.",
+                version="1.0.0",
+                enabled=True,
+                input_schema={
+                    "type": "object",
+                    "required": ["query"],
+                    "properties": {
+                        "query": {"type": "string", "description": "Search query or question"},
+                        "top_k": {"type": "integer", "default": 5, "minimum": 1, "maximum": 50},
+                        "similarity_threshold": {"type": "number", "default": 0.0, "minimum": 0.0, "maximum": 1.0},
+                        "rerank": {"type": "boolean", "default": True},
+                        "metadata_filters": {"type": "object"}
+                    }
+                },
+                output_schema={
+                    "type": "object",
+                    "properties": {
+                        "answer": {"type": "string"},
+                        "chunks_count": {"type": "integer"},
+                        "chunks": {"type": "array"},
+                        "citations": {"type": "array"}
+                    }
+                },
+                tags=["rag", "embeddings", "vector", "citations"]
+            ),
+            CapabilityMetadata(
+                capability_id="knowledge.hybrid_rag",
+                capability_type=CapabilityType.RAG,
+                name="Hybrid Graph + Vector RAG Engine",
+                description="Unified retrieval fusing vector similarity search with Knowledge Graph multi-hop entity traversal.",
+                version="1.0.0",
+                enabled=True,
+                input_schema={
+                    "type": "object",
+                    "required": ["query"],
+                    "properties": {
+                        "query": {"type": "string", "description": "Hybrid search query"},
+                        "top_k": {"type": "integer", "default": 5, "minimum": 1, "maximum": 50},
+                        "include_graph": {"type": "boolean", "default": True},
+                        "graph_depth": {"type": "integer", "default": 2, "minimum": 1, "maximum": 5}
+                    }
+                },
+                output_schema={
+                    "type": "object",
+                    "properties": {
+                        "answer": {"type": "string"},
+                        "document_evidence": {"type": "array"},
+                        "graph_evidence": {"type": "array"},
+                        "relationships": {"type": "array"},
+                        "confidence_score": {"type": "number"}
+                    }
+                },
+                tags=["hybrid", "rag", "graph", "fusion", "evidence"]
+            ),
+            CapabilityMetadata(
+                capability_id="knowledge.graph",
+                capability_type=CapabilityType.KNOWLEDGE_GRAPH,
+                name="Knowledge Graph Intelligence",
+                description="Entity resolution, relationship extraction, neighborhood traversal, and path analytics.",
+                version="1.0.0",
+                enabled=True,
+                input_schema={
+                    "type": "object",
+                    "required": ["entity"],
+                    "properties": {
+                        "entity": {"type": "string", "description": "Entity name or node ID to explore"},
+                        "depth": {"type": "integer", "default": 2, "minimum": 1, "maximum": 5}
+                    }
+                },
+                output_schema={
+                    "type": "object",
+                    "properties": {
+                        "summary": {"type": "string"},
+                        "nodes_count": {"type": "integer"},
+                        "edges_count": {"type": "integer"},
+                        "nodes": {"type": "array"},
+                        "edges": {"type": "array"},
+                        "paths": {"type": "array"}
+                    }
+                },
+                tags=["graph", "entities", "relationships", "intelligence"]
+            ),
+            CapabilityMetadata(
+                capability_id="rag.retriever",
+                capability_type=CapabilityType.RAG,
+                name="Cognitive RAG Pipeline (Legacy Alias)",
                 description="Vector retrieval with cosine similarity, reranking, and citation verification.",
                 version="1.0.0",
                 enabled=True,
@@ -67,7 +153,7 @@ class PlatformService:
             CapabilityMetadata(
                 capability_id="knowledge_graph.engine",
                 capability_type=CapabilityType.KNOWLEDGE_GRAPH,
-                name="Knowledge Graph Intelligence",
+                name="Knowledge Graph Intelligence (Legacy Alias)",
                 description="Entity resolution, relationship extraction, and graph traversal analytics.",
                 version="1.0.0",
                 enabled=True,
