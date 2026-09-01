@@ -7,7 +7,8 @@ import {
   History, 
   ShieldCheck, 
   Activity, 
-  RefreshCw
+  RefreshCw,
+  BarChart3
 } from 'lucide-react';
 
 import { 
@@ -26,6 +27,7 @@ import PlatformResultViewer from '../../components/platform/PlatformResultViewer
 import PlatformEvidenceViewer from '../../components/platform/PlatformEvidenceViewer';
 import PlatformSecurityPanel from '../../components/platform/PlatformSecurityPanel';
 import PlatformExecutionHistory from '../../components/platform/PlatformExecutionHistory';
+import PlatformAnalyticsDashboard from '../../components/platform/PlatformAnalyticsDashboard';
 
 export default function UserPlatform({ triggerNotification }) {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -334,6 +336,18 @@ export default function UserPlatform({ triggerNotification }) {
             <ShieldCheck size={14} />
             <span>Security & Governance</span>
           </button>
+
+          <button
+            onClick={() => setTab('analytics')}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all cursor-pointer ${
+              activeTab === 'analytics'
+                ? 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/30 shadow-sm'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
+            }`}
+          >
+            <BarChart3 size={14} />
+            <span>Observability & Analytics</span>
+          </button>
         </div>
       </div>
 
@@ -412,6 +426,13 @@ export default function UserPlatform({ triggerNotification }) {
             status={status}
             activeWorkspaceId={status?.workspace_id}
             user={user}
+          />
+        )}
+
+        {/* TAB 6: OBSERVABILITY & ANALYTICS */}
+        {activeTab === 'analytics' && (
+          <PlatformAnalyticsDashboard
+            triggerNotification={triggerNotification}
           />
         )}
       </div>

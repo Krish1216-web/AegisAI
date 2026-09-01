@@ -203,3 +203,148 @@ def execute_intelligence(
         input_data=payload.input_data
     )
     return result
+
+# ==================================================
+# Phase 8.8: Observability & Analytics Endpoints
+# ==================================================
+
+from app.core.platform.observability import (
+    TimeWindow,
+    CapabilityHealth,
+    PlatformOverviewMetrics,
+    CapabilityAnalyticsResponse,
+    LifecycleMetrics,
+    BottleneckAnalyticsResponse,
+    IntelligenceAnalytics,
+    ProvenanceAnalytics,
+    FailureAnalytics,
+    AlertAnalyticsResponse,
+    ExecutionTimeline,
+    PlatformObservabilityService
+)
+
+def _validate_analytics_access(user: User) -> None:
+    if not user.workspace_id:
+        raise HTTPException(status_code=400, detail="User is not associated with an active workspace.")
+    # Verify permission / role
+    user_role = user.role.name if (user.role and hasattr(user.role, "name")) else (str(user.role) if user.role else "viewer")
+    user_perms = {p.name for p in user.role.permissions} if (user.role and hasattr(user.role, "permissions") and user.role.permissions) else set()
+    if user_role not in ["admin", "owner", "member", "viewer"] and "platform:analytics:view" not in user_perms:
+        raise HTTPException(status_code=403, detail="Permission denied: platform:analytics:view required.")
+
+def _validate_time_window(window_str: str) -> str:
+    valid = ["1h", "24h", "7d", "30d"]
+    if window_str not in valid:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid time window '{window_str}'. Supported windows: {valid}"
+        )
+    return window_str
+
+@router.get("/analytics/overview", response_model=PlatformOverviewMetrics)
+def get_analytics_overview(
+    time_window: str = Query("24h", description="Time window: 1h, 24h, 7d, 30d"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    _validate_analytics_access(current_user)
+    tw = _validate_time_window(time_window)
+    service = PlatformObservabilityService(db)
+    return service.get_overview_metrics(current_user.workspace_id, time_window=tw)
+
+@router.get("/analytics/capabilities", response_model=CapabilityAnalyticsResponse)
+def get_analytics_capabilities(
+    time_window: str = Query("24h", description="Time window: 1h, 24h, 7d, 30d"),
+    capability_type: Optional[str] = Query(None, description="Optional capability type filter"),
+    health: Optional[CapabilityHealth] = Query(None, description="Optional health filter"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    _validate_analytics_access(current_user)
+    tw = _validate_time_window(time_window)
+    service = PlatformObservabilityService(db)
+    return service.get_capability_performance(
+        workspace_id=current_user.workspace_id,
+        time_window=tw,
+        capability_type=capability_type,
+        health_filter=health
+    )
+
+@router.get("/analytics/lifecycle", response_model=LifecycleMetrics)
+def get_analytics_lifecycle(
+    time_window: str = Query("24h", description="Time window: 1h, 24h, 7d, 30d"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    _validate_analytics_access(current_user)
+    tw = _validate_time_window(time_window)
+    service = PlatformObservabilityService(db)
+    return service.get_lifecycle_metrics(current_user.workspace_id, time_window=tw)
+
+@router.get("/analytics/failures", response_model=FailureAnalytics)
+def get_analytics_failures(
+    time_window: str = Query("24h", description="Time window: 1h, 24h, 7d, 30d"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    _validate_analytics_access(current_user)
+    tw = _validate_time_window(time_window)
+    service = PlatformObservabilityService(db)
+    return service.get_failure_analytics(current_user.workspace_id, time_window=tw)
+
+@router.get("/analytics/intelligence", response_model=IntelligenceAnalytics)
+def get_analytics_intelligence(
+    time_window: str = Query("24h", description="Time window: 1h, 24h, 7d, 30d"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    _validate_analytics_access(current_user)
+    tw = _validate_time_window(time_window)
+    service = PlatformObservabilityService(db)
+    return service.get_intelligence_analytics(current_user.workspace_id, time_window=tw)
+
+@router.get("/analytics/provenance", response_model=ProvenanceAnalytics)
+def get_analytics_provenance(
+    time_window: str = Query("24h", description="Time window: 1h, 24h, 7d, 30d"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    _validate_analytics_access(current_user)
+    tw = _validate_time_window(time_window)
+    service = PlatformObservabilityService(db)
+    return service.get_provenance_analytics(current_user.workspace_id, time_window=tw)
+
+@router.get("/analytics/bottlenecks", response_model=BottleneckAnalyticsResponse)
+def get_analytics_bottlenecks(
+    time_window: str = Query("24h", description="Time window: 1h, 24h, 7d, 30d"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    _validate_analytics_access(current_user)
+    tw = _validate_time_window(time_window)
+    service = PlatformObservabilityService(db)
+    return service.get_bottleneck_analytics(current_user.workspace_id, time_window=tw)
+
+@router.get("/analytics/alerts", response_model=AlertAnalyticsResponse)
+def get_analytics_alerts(
+    time_window: str = Query("24h", description="Time window: 1h, 24h, 7d, 30d"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    _validate_analytics_access(current_user)
+    tw = _validate_time_window(time_window)
+    service = PlatformObservabilityService(db)
+    return service.get_alerts(current_user.workspace_id, time_window=tw)
+
+@router.get("/analytics/executions/{execution_id}/timeline", response_model=ExecutionTimeline)
+def get_execution_timeline(
+    execution_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    _validate_analytics_access(current_user)
+    service = PlatformObservabilityService(db)
+    timeline = service.get_execution_timeline(execution_id, current_user.workspace_id)
+    if not timeline:
+        raise HTTPException(status_code=404, detail=f"Execution timeline for '{execution_id}' not found.")
+    return timeline

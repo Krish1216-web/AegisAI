@@ -58,6 +58,28 @@ from app.core.platform.intelligence import (
 )
 from app.core.platform.intelligence_adapter import IntelligenceCapabilityAdapter
 
+from app.core.platform.observability import (
+    TimeWindow,
+    CapabilityHealth,
+    BottleneckClassification,
+    AlertSeverity,
+    AlertStatus,
+    PlatformOverviewMetrics,
+    CapabilityPerformanceMetric,
+    CapabilityAnalyticsResponse,
+    LifecycleMetrics,
+    BottleneckMetric,
+    BottleneckAnalyticsResponse,
+    IntelligenceAnalytics,
+    ProvenanceAnalytics,
+    FailureAnalytics,
+    PlatformAlert,
+    AlertAnalyticsResponse,
+    ExecutionTimeline,
+    PlatformTelemetryStore,
+    PlatformObservabilityService
+)
+
 __all__ = [
     "TrustLevel",
     "SecurityContext",
@@ -102,5 +124,24 @@ __all__ = [
     "ConfidenceEngine",
     "ContradictionDetector",
     "AdvancedIntelligenceService",
-    "IntelligenceCapabilityAdapter"
+    "IntelligenceCapabilityAdapter",
+    "TimeWindow",
+    "CapabilityHealth",
+    "BottleneckClassification",
+    "AlertSeverity",
+    "AlertStatus",
+    "PlatformOverviewMetrics",
+    "CapabilityPerformanceMetric",
+    "CapabilityAnalyticsResponse",
+    "LifecycleMetrics",
+    "BottleneckMetric",
+    "BottleneckAnalyticsResponse",
+    "IntelligenceAnalytics",
+    "ProvenanceAnalytics",
+    "FailureAnalytics",
+    "PlatformAlert",
+    "AlertAnalyticsResponse",
+    "ExecutionTimeline",
+    "PlatformTelemetryStore",
+    "PlatformObservabilityService"
 ]

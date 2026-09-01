@@ -47,28 +47,38 @@ class CredentialStore:
         """Sanitizes sensitive values in strings (e.g. passwords, tokens, API keys)."""
         if not text:
             return ""
-        redacted = re.sub(
-            r"(api[_-]?key|secret|token|password|auth|bearer|credential|private[_-]?key)\s*[:=]\s*([^\s,;]+)",
+        s = str(text)
+        # Redact Bearer tokens
+        s = re.sub(r"(Bearer\s+)([^\s,;]+)", r"\1[REDACTED]", s, flags=re.IGNORECASE)
+        # Redact JWT tokens
+        s = re.sub(r"eyJ[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]+", "[REDACTED]", s)
+        # Redact explicit secret/token/password/key assignments
+        s = re.sub(
+            r"(api[_-]?key|secret|token|password|auth|credential|private[_-]?key)\s*[:=]\s*([^\s,;]+)",
             r"\1=[REDACTED]",
-            str(text),
+            s,
             flags=re.IGNORECASE
         )
-        return redacted
+        return s
 
     @staticmethod
     def redact_sensitive_dict(data: Dict[str, Any]) -> Dict[str, Any]:
-        """Recursively redacts sensitive keys from any dictionary."""
+        """Recursively redacts sensitive keys and values from any dictionary."""
         if not isinstance(data, dict):
             return data
         redacted = {}
         for k, v in data.items():
             if SENSITIVE_KEY_PATTERNS.search(str(k)):
                 redacted[k] = "[REDACTED]"
+            elif isinstance(v, str):
+                redacted[k] = CredentialStore.redact_sensitive_str(v)
             elif isinstance(v, dict):
                 redacted[k] = CredentialStore.redact_sensitive_dict(v)
             elif isinstance(v, list):
                 redacted[k] = [
-                    CredentialStore.redact_sensitive_dict(item) if isinstance(item, dict) else item
+                    CredentialStore.redact_sensitive_dict(item) if isinstance(item, dict) else (
+                        CredentialStore.redact_sensitive_str(item) if isinstance(item, str) else item
+                    )
                     for item in v
                 ]
             else:

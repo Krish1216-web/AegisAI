@@ -83,6 +83,10 @@ class CapabilityRegistry:
     def get(self, capability_id: str) -> Optional[PlatformCapability]:
         return self._capabilities.get(capability_id)
 
+    def list_all(self) -> List[PlatformCapability]:
+        """Returns all registered capability objects."""
+        return list(self._capabilities.values())
+
     def list_available(
         self,
         workspace_id: uuid.UUID,

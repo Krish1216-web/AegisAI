@@ -253,7 +253,11 @@ class PlatformExecutionService:
                 completed_at=completed_at,
                 duration_ms=duration_ms,
                 correlation_id=correlation_id,
-                metadata={"version": cap_wrapper.metadata.version}
+                metadata={
+                    "version": cap_wrapper.metadata.version,
+                    "workspace_id": str(context.workspace_id),
+                    "user_id": str(context.user_id) if context.user_id else None
+                }
             )
 
             self._emit_event(
@@ -309,7 +313,11 @@ class PlatformExecutionService:
                 completed_at=completed_at,
                 duration_ms=duration_ms,
                 correlation_id=correlation_id,
-                metadata={"error_type": type(e).__name__}
+                metadata={
+                    "error_type": type(e).__name__,
+                    "workspace_id": str(context.workspace_id),
+                    "user_id": str(context.user_id) if context.user_id else None
+                }
             )
 
             self._emit_event(
