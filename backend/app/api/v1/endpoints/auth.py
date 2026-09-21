@@ -23,6 +23,7 @@ def register(payload: UserCreate, db: Session = Depends(get_db), redis_client: r
 
 @router.post("/login", response_model=Token)
 def login(
+    request: Request,
     response: Response,
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db),
@@ -31,8 +32,9 @@ def login(
     """
     Verifies credentials and returns access token + sets HTTP-Only refresh cookie.
     """
+    client_ip = request.client.host if request.client else None
     auth_service = AuthService(db, redis_client)
-    result = auth_service.login_user(form_data.username, form_data.password)
+    result = auth_service.login_user(form_data.username, form_data.password, ip_address=client_ip)
     
     # Set the refresh token as a secure, HTTP-Only cookie
     response.set_cookie(

@@ -20,6 +20,7 @@ def get_current_user(
 ) -> User:
     """
     Dependency provider extracting the authenticated user from the request header JWT.
+    Enforces token type, UUID validity, active state, and deletion checks.
     """
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -31,13 +32,22 @@ def get_current_user(
     if not payload:
         raise credentials_exception
         
+    # Prevent using refresh token as access token
+    if payload.get("type") and payload.get("type") != "access":
+        raise credentials_exception
+        
     user_id: str = payload.get("sub")
     if not user_id:
         raise credentials_exception
         
+    try:
+        user_uuid = uuid.UUID(user_id)
+    except (ValueError, TypeError):
+        raise credentials_exception
+
     user_repo = UserRepository(db)
-    user = user_repo.get_by_id(uuid.UUID(user_id))
-    if not user:
+    user = user_repo.get_by_id(user_uuid)
+    if not user or getattr(user, "is_deleted", False):
         raise credentials_exception
         
     if not user.is_active:

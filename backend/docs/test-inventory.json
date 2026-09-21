@@ -1,9 +1,9 @@
 {
-  "generated_at": "2026-09-21T15:23:08.239855+00:00",
+  "generated_at": "2026-09-21T15:57:42.839006+00:00",
   "baseline": {
-    "backend_tests": 573,
+    "backend_tests": 582,
     "frontend_tests": 0,
-    "total_test_files": 210
+    "total_test_files": 211
   },
   "subsystems": [
     {
@@ -291,9 +291,10 @@
     },
     {
       "name": "Authentication",
-      "test_count": 7,
-      "file_count": 2,
+      "test_count": 16,
+      "file_count": 3,
       "files": [
+        "test_p10_2_auth_security.py",
         "test_p10_auth_boundaries.py",
         "test_phase9_auth_security.py"
       ],
