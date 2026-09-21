@@ -44,14 +44,23 @@ class CredentialStore:
 
     @staticmethod
     def redact_sensitive_str(text: Optional[str]) -> str:
-        """Sanitizes sensitive values in strings (e.g. passwords, tokens, API keys)."""
+        """Sanitizes sensitive values in strings (e.g. passwords, tokens, API keys, database URLs, private keys)."""
         if not text:
             return ""
         s = str(text)
+        # Redact private keys
+        s = re.sub(r"-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----", "[REDACTED_PRIVATE_KEY]", s)
         # Redact Bearer tokens
         s = re.sub(r"(Bearer\s+)([^\s,;]+)", r"\1[REDACTED]", s, flags=re.IGNORECASE)
         # Redact JWT tokens
         s = re.sub(r"eyJ[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]+", "[REDACTED]", s)
+        # Redact database and Redis connection URIs with embedded credentials
+        s = re.sub(r"(?i)(postgresql|postgres|sqlite|mysql|mongodb|redis|amqp|smtp):\/\/([^@\n\s]+)@([^\n\s/]+)", r"\1://[REDACTED_CREDENTIALS]@\3", s)
+        # Redact common provider API key patterns (OpenAI sk-, Google AIza-, GitHub ghp-, Slack xoxb-)
+        s = re.sub(r"(?i)\b(sk-[a-zA-Z0-9_\-]{16,})\b", "[REDACTED_API_KEY]", s)
+        s = re.sub(r"\bAIza[0-9A-Za-z-_]{35}\b", "[REDACTED_API_KEY]", s)
+        s = re.sub(r"\bghp_[a-zA-Z0-9]{36}\b", "[REDACTED_API_KEY]", s)
+        s = re.sub(r"\bxoxb-[0-9]{11,13}-[0-9]{11,13}-[a-zA-Z0-9]{24}\b", "[REDACTED_API_KEY]", s)
         # Redact explicit secret/token/password/key assignments
         s = re.sub(
             r"(api[_-]?key|secret|token|password|auth|credential|private[_-]?key)\s*[:=]\s*([^\s,;]+)",

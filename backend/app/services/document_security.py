@@ -1,7 +1,7 @@
 import re
 from typing import Dict, Any, List
 
-# Common prompt injection, role override, and rule bypass patterns
+# Common prompt injection, role override, data exfiltration, and rule bypass patterns
 SUSPICIOUS_PATTERNS = [
     r"ignore\s+(?:all\s+)?previous\s+instructions",
     r"ignore\s+(?:the\s+)?above\s+instructions",
@@ -14,7 +14,10 @@ SUSPICIOUS_PATTERNS = [
     r"bypass\s+(?:safety|security)\s+filters?",
     r"ignore\s+your\s+(?:system\s+)?prompt",
     r"you\s+must\s+ignore\s+(?:all|any)?",
-    r"ignore\s+all\s+guidelines"
+    r"ignore\s+all\s+guidelines",
+    r"call\s+(?:the\s+)?(?:delete|execute|run|drop|admin|exfiltrate)\w*\s+tool",
+    r"send\s+(?:this\s+)?(?:data|document|content|file|secret|key|token)\s+to\s+\S+@\S+",
+    r"reveal\s+(?:the\s+)?(?:api[_-]?key|secret|password|token|system\s+prompt|credentials|environment)",
 ]
 
 def scan_document_text(text: str) -> Dict[str, Any]:

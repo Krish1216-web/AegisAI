@@ -7,6 +7,10 @@ from app.core.mcp.base import MCPValidationError
 from app.models.mcp import MCPTransport, MCPAuthenticationType
 
 # Security constants
+import os
+from pathlib import Path
+
+# Security constants
 MAX_SERVER_NAME_LENGTH = 100
 MAX_SERVER_URL_LENGTH = 512
 MAX_METADATA_BYTES = 64 * 1024       # 64 KB
@@ -19,12 +23,124 @@ ALLOWED_RESOURCE_SCHEMES = {"workspace", "db", "s3", "mock", "repo", "http", "ht
 DANGEROUS_URL_CHARACTERS = re.compile(r"[`$;|&><\n\r\t]")
 VALID_NAME_PATTERN = re.compile(r"^[a-zA-Z0-9_\-\.\s]{1,100}$")
 
-PROHIBITED_SSRF_HOSTS = {"localhost", "127.0.0.1", "0.0.0.0", "169.254.169.254", "::1"}
+PROHIBITED_SSRF_HOSTS = {
+    "localhost",
+    "127.0.0.1",
+    "0.0.0.0",
+    "169.254.169.254",
+    "::1",
+    "metadata.google.internal",
+    "100.100.100.200",
+}
 
 class MCPValidator:
     """
-    Strict validation utility for MCP server configurations, URLs, resource URIs, and prompt schemas.
+    Strict validation utility for MCP server configurations, URLs, resource URIs, prompt schemas, and filesystem paths.
     """
+    @staticmethod
+    def is_safe_ip(ip_obj: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+        """
+        Determines if an IP address is a safe public routable destination.
+        Rejects loopback, private, link-local, reserved, multicast, and cloud metadata.
+        """
+        if ip_obj.is_loopback or ip_obj.is_private or ip_obj.is_link_local or ip_obj.is_reserved or ip_obj.is_multicast or ip_obj.is_unspecified:
+            return False
+        # Specific cloud metadata checks
+        if str(ip_obj) in {"169.254.169.254", "100.100.100.200"}:
+            return False
+        # Check IPv4-mapped IPv6
+        if isinstance(ip_obj, ipaddress.IPv6Address) and ip_obj.ipv4_mapped:
+            return MCPValidator.is_safe_ip(ip_obj.ipv4_mapped)
+        return True
+
+    @staticmethod
+    def parse_and_validate_ip(host_str: str) -> Optional[ipaddress.IPv4Address | ipaddress.IPv6Address]:
+        """
+        Attempts to parse an IP literal across standard, decimal, hex, and octal notations.
+        """
+        clean_host = host_str.strip("[]")
+        # Standard IP parse
+        try:
+            return ipaddress.ip_address(clean_host)
+        except ValueError:
+            pass
+
+        # Hex / Decimal / Octal integer IP formats (e.g., 2130706433, 0x7f000001)
+        try:
+            if clean_host.startswith("0x") or clean_host.startswith("0X"):
+                int_val = int(clean_host, 16)
+                if 0 <= int_val <= 0xFFFFFFFF:
+                    return ipaddress.IPv4Address(int_val)
+            elif clean_host.isdigit():
+                int_val = int(clean_host, 10)
+                if 0 <= int_val <= 0xFFFFFFFF:
+                    return ipaddress.IPv4Address(int_val)
+        except Exception:
+            pass
+
+        return None
+
+    @staticmethod
+    def validate_safe_url(url: str, allowed_schemes: Optional[set] = None) -> tuple[bool, str]:
+        """
+        Comprehensive SSRF and URL structure validator.
+        """
+        if not url or not isinstance(url, str):
+            return False, "URL cannot be empty."
+        clean_url = url.strip()
+        if len(clean_url) > MAX_SERVER_URL_LENGTH:
+            return False, f"URL exceeds maximum allowed length of {MAX_SERVER_URL_LENGTH} characters."
+        if DANGEROUS_URL_CHARACTERS.search(clean_url):
+            return False, "URL contains prohibited characters or command injection signatures."
+
+        schemes = allowed_schemes or {"http", "https", "ws", "wss"}
+        try:
+            parsed = urlparse(clean_url)
+            scheme = (parsed.scheme or "").lower()
+            if not scheme or scheme not in schemes:
+                return False, f"URL scheme '{scheme}' is forbidden. Allowed schemes: {', '.join(schemes)}."
+
+            if parsed.username or parsed.password:
+                return False, "URL contains forbidden embedded credentials."
+
+            hostname = (parsed.hostname or "").lower()
+            if not hostname:
+                return False, "URL is missing a valid hostname or destination."
+
+            if hostname in PROHIBITED_SSRF_HOSTS:
+                return False, f"Destination hostname '{hostname}' is prohibited by SSRF policy."
+
+            ip_obj = MCPValidator.parse_and_validate_ip(hostname)
+            if ip_obj is not None:
+                if not MCPValidator.is_safe_ip(ip_obj):
+                    return False, f"IP address destination '{ip_obj}' is private/internal and prohibited by SSRF policy."
+
+            return True, "URL is valid and safe."
+        except Exception as e:
+            return False, f"Malformed URL: {e}"
+
+    @staticmethod
+    def validate_safe_path(base_dir: str | Path, target_path: str) -> Path:
+        """
+        Validates that target_path resolves strictly within base_dir, preventing path traversal attacks.
+        """
+        if not target_path or "\x00" in target_path:
+            raise MCPValidationError("Invalid filesystem path: empty or contains null bytes.")
+        
+        base = Path(base_dir).resolve()
+        # Combine and resolve
+        resolved = (base / target_path).resolve()
+        
+        try:
+            if not resolved.is_relative_to(base):
+                raise MCPValidationError(f"Path traversal detected: '{target_path}' escapes base directory '{base}'.")
+        except AttributeError:
+            # Fallback for Python < 3.9 if ever run
+            if not str(resolved).startswith(str(base)):
+                raise MCPValidationError(f"Path traversal detected: '{target_path}' escapes base directory '{base}'.")
+
+        return resolved
+
     @staticmethod
     def validate_server_name(name: str) -> str:
         if not name or not name.strip():
@@ -49,7 +165,6 @@ class MCPValidator:
             raise MCPValidationError("MCP server URL contains prohibited shell/command injection characters.")
 
         if transport == MCPTransport.STDIO:
-            # For stdio, URL represents an executable command / script path
             if clean_url.startswith("http://") or clean_url.startswith("https://"):
                 raise MCPValidationError("STDIO transport cannot use HTTP/HTTPS URLs.")
             return clean_url
@@ -94,22 +209,13 @@ class MCPValidator:
             if scheme not in ALLOWED_RESOURCE_SCHEMES:
                 raise MCPValidationError(f"Unsupported resource URI scheme '{scheme}'. Allowed: {', '.join(ALLOWED_RESOURCE_SCHEMES)}")
 
-            # 3. Reject embedded credentials (user:pass@host)
             if parsed.username or parsed.password:
                 raise MCPValidationError("Resource URI cannot contain embedded credentials.")
 
-            # 4. SSRF defense for HTTP/HTTPS resource URIs
             if scheme in ("http", "https"):
-                hostname = (parsed.hostname or "").lower()
-                if hostname in PROHIBITED_SSRF_HOSTS:
-                    raise MCPValidationError(f"Resource URI target '{hostname}' is prohibited (SSRF protection).")
-                try:
-                    ip = ipaddress.ip_address(hostname)
-                    if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
-                        raise MCPValidationError(f"Resource URI cannot target private/internal IP address '{hostname}'.")
-                except ValueError:
-                    # Hostname is not an IP literal
-                    pass
+                is_safe, reason = MCPValidator.validate_safe_url(clean_uri, allowed_schemes={"http", "https"})
+                if not is_safe:
+                    raise MCPValidationError(reason)
 
         except MCPValidationError:
             raise

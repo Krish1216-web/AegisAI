@@ -22,3 +22,10 @@ dist-ssr/
 *.njsproj
 *.sln
 *.sw?
+*.db
+.env
+backend/.env
+storage/
+backend/storage/
+.pytest_cache/
+backend/.pytest_cache/
