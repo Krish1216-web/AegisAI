@@ -25,13 +25,13 @@ class SecurityContext(BaseModel):
 
     def has_permission(self, permission: str) -> bool:
         """Check if caller has explicit permission or admin role."""
-        if self.user_role == "admin":
+        if self.user_role.lower() in ["admin", "super admin", "owner"]:
             return True
         return permission in self.permissions
 
     def has_all_permissions(self, required_permissions: List[str]) -> bool:
         """Check if caller has all required permissions or admin role."""
-        if self.user_role == "admin":
+        if self.user_role.lower() in ["admin", "super admin", "owner"]:
             return True
         return all(self.has_permission(p) for p in required_permissions)
 

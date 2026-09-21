@@ -30,7 +30,7 @@ class AuthorizationService:
         if not user or not user.is_active or user.is_deleted:
             return set()
 
-        if user.role and user.role.name == "admin":
+        if user.role and user.role.name.lower() in ["admin", "super admin"]:
             return set(ALL_PERMISSIONS)
 
         ws_member = self.db.query(WorkspaceMember).filter(
@@ -110,3 +110,59 @@ class AuthorizationService:
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"Action forbidden. Requires permission: '{permission}'."
             )
+
+    def assert_workspace_ownership(
+        self,
+        resource_workspace_id: uuid.UUID,
+        request_workspace_id: uuid.UUID
+    ) -> None:
+        """
+        Enforces that a resource's workspace matches the request context workspace.
+        """
+        if resource_workspace_id != request_workspace_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Resource belongs to another workspace. Access denied."
+            )
+
+    def create_security_context(
+        self,
+        user_id: uuid.UUID,
+        workspace_id: uuid.UUID,
+        team_id: Optional[uuid.UUID] = None,
+        project_id: Optional[uuid.UUID] = None,
+        trust_level: str = "medium",
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> Any:
+        from app.core.platform.security import SecurityContext, TrustLevel
+        user = self.db.query(User).filter(User.id == user_id).first()
+        if not user or not user.is_active or user.is_deleted:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="User account is inactive or not found."
+            )
+        ws_member = self.db.query(WorkspaceMember).filter(
+            WorkspaceMember.workspace_id == workspace_id,
+            WorkspaceMember.user_id == user_id
+        ).first()
+        if not ws_member and not (user.role and user.role.name.lower() in ["admin", "super admin"]):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="User is not a member of the target workspace."
+            )
+        role = ws_member.role.lower() if ws_member else (user.role.name.lower() if user.role else "viewer")
+        effective_perms = self.get_effective_permissions(
+            user_id=user_id,
+            workspace_id=workspace_id,
+            team_id=team_id,
+            project_id=project_id
+        )
+        return SecurityContext(
+            user_id=user_id,
+            workspace_id=workspace_id,
+            user_role=role,
+            permissions=effective_perms,
+            trust_level=TrustLevel(trust_level) if isinstance(trust_level, str) else trust_level,
+            tenant_boundary_enforced=True,
+            metadata=metadata or {}
+        )
