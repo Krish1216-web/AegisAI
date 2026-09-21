@@ -1,0 +1,413 @@
+{
+  "generated_at": "2026-09-21T15:23:08.239855+00:00",
+  "baseline": {
+    "backend_tests": 573,
+    "frontend_tests": 0,
+    "total_test_files": 210
+  },
+  "subsystems": [
+    {
+      "name": "Multi-Agent & AI Providers",
+      "test_count": 53,
+      "file_count": 10,
+      "files": [
+        "test_agent_engine.py",
+        "test_ai_provider.py",
+        "test_critic.py",
+        "test_executor.py",
+        "test_orchestrator.py",
+        "test_p10_agent_resilience.py",
+        "test_pipeline.py",
+        "test_planner.py",
+        "test_research.py",
+        "test_response.py"
+      ],
+      "categories": [
+        "UNIT",
+        "AI_EVALUATION",
+        "RESILIENCE"
+      ],
+      "criticality": "critical",
+      "coverage_status": "strong"
+    },
+    {
+      "name": "Documents",
+      "test_count": 54,
+      "file_count": 18,
+      "files": [
+        "test_chunking.py",
+        "test_csv_extractor.py",
+        "test_document_api.py",
+        "test_document_chunk_api.py",
+        "test_document_processing.py",
+        "test_document_security.py",
+        "test_document_storage.py",
+        "test_document_validation.py",
+        "test_docx_extractor.py",
+        "test_embeddings.py",
+        "test_embedding_service.py",
+        "test_image_extractor.py",
+        "test_media_extractor.py",
+        "test_pdf_extractor.py",
+        "test_pptx_extractor.py",
+        "test_text_extractor.py",
+        "test_text_normalizer.py",
+        "test_xlsx_extractor.py"
+      ],
+      "categories": [
+        "UNIT",
+        "SECURITY",
+        "API"
+      ],
+      "criticality": "high",
+      "coverage_status": "strong"
+    },
+    {
+      "name": "Collaboration",
+      "test_count": 54,
+      "file_count": 46,
+      "files": [
+        "test_collab_analytics_activity_series.py",
+        "test_collab_analytics_notifications.py",
+        "test_collab_analytics_overview.py",
+        "test_collab_analytics_projects.py",
+        "test_collab_analytics_teams.py",
+        "test_collab_analytics_tenant_isolation.py",
+        "test_collab_analytics_zero_division.py",
+        "test_comments_crud.py",
+        "test_comment_activity_timeline.py",
+        "test_comment_authorization.py",
+        "test_comment_mentions.py",
+        "test_comment_realtime_events.py",
+        "test_comment_tenant_isolation.py",
+        "test_comment_threading.py",
+        "test_notification_creation_and_lifecycle.py",
+        "test_notification_deduplication.py",
+        "test_notification_email_delivery.py",
+        "test_notification_preferences.py",
+        "test_notification_realtime_events.py",
+        "test_notification_recipient_resolution.py",
+        "test_notification_tenant_isolation.py",
+        "test_phase9_websocket_security.py",
+        "test_projects.py",
+        "test_project_api.py",
+        "test_project_audit.py",
+        "test_project_authorization.py",
+        "test_project_membership.py",
+        "test_project_resources.py",
+        "test_project_tenant_isolation.py",
+        "test_realtime_authorization.py",
+        "test_realtime_connection_manager.py",
+        "test_realtime_event_broadcasting.py",
+        "test_realtime_presence.py",
+        "test_realtime_revocation.py",
+        "test_realtime_tenant_isolation.py",
+        "test_realtime_websocket_api.py",
+        "test_team_advanced.py",
+        "test_team_advanced_api.py",
+        "test_team_advanced_security.py",
+        "test_team_api.py",
+        "test_team_audit.py",
+        "test_team_invitations.py",
+        "test_team_membership.py",
+        "test_team_rbac.py",
+        "test_team_service.py",
+        "test_team_tenant_isolation.py"
+      ],
+      "categories": [
+        "UNIT",
+        "SECURITY",
+        "TENANT_ISOLATION",
+        "API",
+        "REALTIME"
+      ],
+      "criticality": "critical",
+      "coverage_status": "strong"
+    },
+    {
+      "name": "Workflows",
+      "test_count": 65,
+      "file_count": 37,
+      "files": [
+        "test_condition_evaluator.py",
+        "test_p10_workflow_engine_hardening.py",
+        "test_workflow_advanced_routing.py",
+        "test_workflow_agent_node.py",
+        "test_workflow_analytics.py",
+        "test_workflow_analytics_health.py",
+        "test_workflow_analytics_tenant_isolation.py",
+        "test_workflow_api.py",
+        "test_workflow_approval_and_cancel.py",
+        "test_workflow_approval_policies.py",
+        "test_workflow_approval_rbac.py",
+        "test_workflow_approval_service.py",
+        "test_workflow_approval_tenant_isolation.py",
+        "test_workflow_atomic_update.py",
+        "test_workflow_composition.py",
+        "test_workflow_concurrency_hardening.py",
+        "test_workflow_condition_validation.py",
+        "test_workflow_cron.py",
+        "test_workflow_definition.py",
+        "test_workflow_e2e.py",
+        "test_workflow_execution.py",
+        "test_workflow_graph_node.py",
+        "test_workflow_mcp_node.py",
+        "test_workflow_memory_node.py",
+        "test_workflow_models.py",
+        "test_workflow_node_config.py",
+        "test_workflow_node_execution.py",
+        "test_workflow_parallel_merge.py",
+        "test_workflow_rag_node.py",
+        "test_workflow_scheduler.py",
+        "test_workflow_schedule_tenant_isolation.py",
+        "test_workflow_security_hardening.py",
+        "test_workflow_service.py",
+        "test_workflow_tenant_isolation.py",
+        "test_workflow_validation.py",
+        "test_workflow_variables.py",
+        "test_workflow_version_conflict.py"
+      ],
+      "categories": [
+        "UNIT",
+        "WORKFLOW",
+        "SECURITY",
+        "API"
+      ],
+      "criticality": "critical",
+      "coverage_status": "strong"
+    },
+    {
+      "name": "Knowledge Graph",
+      "test_count": 67,
+      "file_count": 9,
+      "files": [
+        "test_entity_extraction.py",
+        "test_entity_resolution.py",
+        "test_graph_analytics.py",
+        "test_graph_construction.py",
+        "test_graph_rag_enhancement.py",
+        "test_graph_reasoning_agent.py",
+        "test_knowledge_graph.py",
+        "test_knowledge_graph_intelligence.py",
+        "test_relationship_extraction.py"
+      ],
+      "categories": [
+        "UNIT",
+        "GRAPH_EVALUATION",
+        "API"
+      ],
+      "criticality": "high",
+      "coverage_status": "strong"
+    },
+    {
+      "name": "RAG",
+      "test_count": 30,
+      "file_count": 9,
+      "files": [
+        "test_hybrid_rag.py",
+        "test_p10_rag_edge_cases.py",
+        "test_rag_agent.py",
+        "test_rag_citations.py",
+        "test_rag_context.py",
+        "test_rag_generator.py",
+        "test_rag_reranker.py",
+        "test_rag_retriever.py",
+        "test_rag_service.py"
+      ],
+      "categories": [
+        "UNIT",
+        "RAG_EVALUATION",
+        "API"
+      ],
+      "criticality": "high",
+      "coverage_status": "strong"
+    },
+    {
+      "name": "MCP & Tool Safety",
+      "test_count": 100,
+      "file_count": 36,
+      "files": [
+        "test_mcp_agent_integration.py",
+        "test_mcp_api.py",
+        "test_mcp_cache_isolation.py",
+        "test_mcp_concurrency.py",
+        "test_mcp_confirmation_security.py",
+        "test_mcp_connection.py",
+        "test_mcp_discovery.py",
+        "test_mcp_execution_agent.py",
+        "test_mcp_execution_api.py",
+        "test_mcp_execution_security.py",
+        "test_mcp_failure_injection.py",
+        "test_mcp_orchestrator.py",
+        "test_mcp_permissions.py",
+        "test_mcp_pipeline.py",
+        "test_mcp_planner.py",
+        "test_mcp_prompts.py",
+        "test_mcp_prompt_injection.py",
+        "test_mcp_prompt_security.py",
+        "test_mcp_protocol_security.py",
+        "test_mcp_registry.py",
+        "test_mcp_resources.py",
+        "test_mcp_resources_prompts_api.py",
+        "test_mcp_resource_security.py",
+        "test_mcp_security.py",
+        "test_mcp_security_api.py",
+        "test_mcp_security_hardening.py",
+        "test_mcp_security_service.py",
+        "test_mcp_tenant_isolation.py",
+        "test_mcp_tool_api.py",
+        "test_mcp_tool_catalog.py",
+        "test_mcp_tool_execution.py",
+        "test_mcp_tool_security.py",
+        "test_mcp_tool_validation.py",
+        "test_mcp_ui_endpoints.py",
+        "test_mcp_validation.py",
+        "test_p10_mcp_protocol_boundaries.py"
+      ],
+      "categories": [
+        "UNIT",
+        "MCP_SAFETY",
+        "SECURITY",
+        "API"
+      ],
+      "criticality": "critical",
+      "coverage_status": "strong"
+    },
+    {
+      "name": "Memory",
+      "test_count": 14,
+      "file_count": 3,
+      "files": [
+        "test_memory.py",
+        "test_memory_graph_sync.py",
+        "test_persistence.py"
+      ],
+      "categories": [
+        "UNIT",
+        "AI_EVALUATION"
+      ],
+      "criticality": "high",
+      "coverage_status": "strong"
+    },
+    {
+      "name": "Authentication",
+      "test_count": 7,
+      "file_count": 2,
+      "files": [
+        "test_p10_auth_boundaries.py",
+        "test_phase9_auth_security.py"
+      ],
+      "categories": [
+        "UNIT",
+        "SECURITY",
+        "API"
+      ],
+      "criticality": "critical",
+      "coverage_status": "strong"
+    },
+    {
+      "name": "Tenancy & Security",
+      "test_count": 9,
+      "file_count": 5,
+      "files": [
+        "test_phase9_injection_and_xss_security.py",
+        "test_phase9_resilience_and_fault_injection.py",
+        "test_phase9_secret_redaction_and_privacy.py",
+        "test_phase9_tenant_isolation_attack.py",
+        "test_production_hardening.py"
+      ],
+      "categories": [
+        "SECURITY",
+        "TENANT_ISOLATION",
+        "RESILIENCE"
+      ],
+      "criticality": "critical",
+      "coverage_status": "strong"
+    },
+    {
+      "name": "Authorization & RBAC",
+      "test_count": 9,
+      "file_count": 6,
+      "files": [
+        "test_phase9_rbac_escalation_security.py",
+        "test_rbac_api.py",
+        "test_rbac_audit.py",
+        "test_rbac_effective_permissions.py",
+        "test_rbac_security.py",
+        "test_workspace_role_management.py"
+      ],
+      "categories": [
+        "UNIT",
+        "RBAC",
+        "SECURITY",
+        "API"
+      ],
+      "criticality": "critical",
+      "coverage_status": "strong"
+    },
+    {
+      "name": "Platform Execution & Admin",
+      "test_count": 111,
+      "file_count": 29,
+      "files": [
+        "test_platform_admin.py",
+        "test_platform_admin_analytics.py",
+        "test_platform_admin_api.py",
+        "test_platform_admin_e2e.py",
+        "test_platform_admin_security.py",
+        "test_platform_agent_integration.py",
+        "test_platform_agent_security.py",
+        "test_platform_api.py",
+        "test_platform_api_security.py",
+        "test_platform_capability.py",
+        "test_platform_context.py",
+        "test_platform_e2e_hardening.py",
+        "test_platform_events.py",
+        "test_platform_execution.py",
+        "test_platform_execution_security.py",
+        "test_platform_intelligence_core.py",
+        "test_platform_intelligence_integration.py",
+        "test_platform_knowledge_integration.py",
+        "test_platform_knowledge_security.py",
+        "test_platform_lifecycle.py",
+        "test_platform_mcp_integration.py",
+        "test_platform_mcp_security.py",
+        "test_platform_observability_api.py",
+        "test_platform_observability_core.py",
+        "test_platform_observability_service.py",
+        "test_platform_provenance.py",
+        "test_platform_resilience.py",
+        "test_platform_security.py",
+        "test_platform_security_hardening.py"
+      ],
+      "categories": [
+        "UNIT",
+        "SECURITY",
+        "API",
+        "END_TO_END"
+      ],
+      "criticality": "critical",
+      "coverage_status": "strong"
+    }
+  ],
+  "gaps": [
+    {
+      "id": "GAP-FE-TESTS",
+      "description": "Frontend currently lacks an automated unit/component test runner (Vitest recommended for Phase 10.7)",
+      "severity": "medium",
+      "resolution_phase": "Phase 10.7"
+    },
+    {
+      "id": "GAP-PERF-LOAD",
+      "description": "Performance and high-concurrency load testing suite scheduled for dedicated execution",
+      "severity": "medium",
+      "resolution_phase": "Phase 10.8"
+    }
+  ],
+  "recommendations": [
+    "Initialize Vitest + React Testing Library in frontend during Phase 10.7",
+    "Implement comprehensive integration scenarios in Phase 10.2",
+    "Expand Multi-Agent dynamic evaluation in Phase 10.3",
+    "Run automated load benchmarking in Phase 10.8"
+  ]
+}
