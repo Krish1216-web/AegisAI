@@ -1,9 +1,9 @@
 {
-  "generated_at": "2026-09-24T15:30:59.997420+00:00",
+  "generated_at": "2026-09-24T15:55:28.755539+00:00",
   "baseline": {
-    "backend_tests": 605,
+    "backend_tests": 615,
     "frontend_tests": 0,
-    "total_test_files": 214
+    "total_test_files": 215
   },
   "subsystems": [
     {
@@ -308,12 +308,13 @@
     },
     {
       "name": "Uncategorized",
-      "test_count": 23,
-      "file_count": 3,
+      "test_count": 33,
+      "file_count": 4,
       "files": [
         "test_p10_3_authz_tenant_isolation.py",
         "test_p10_4_secrets_ssrf_ai_security.py",
-        "test_p10_5_api_web_security.py"
+        "test_p10_5_api_web_security.py",
+        "test_p10_6_security_fuzzing_and_invariants.py"
       ],
       "categories": [
         "UNIT"
