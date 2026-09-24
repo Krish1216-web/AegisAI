@@ -25,6 +25,9 @@ class McpConnectionError(AegisBaseException):
     def __init__(self, message: str, details: Any = None):
         super().__init__(message, code="MCP_SERVER_UNAVAILABLE", details=details)
 
+from app.core.mcp.security import CredentialStore
+from app.core.config import settings
+
 # FastAPI custom handlers registration mapping
 def register_exception_handlers(app):
     @app.exception_handler(AegisBaseException)
@@ -45,6 +48,12 @@ def register_exception_handlers(app):
         elif exc.code == "STORAGE_ERROR":
             status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
 
+        safe_details = exc.details
+        if isinstance(safe_details, str):
+            safe_details = CredentialStore.redact_sensitive_str(safe_details)
+        elif isinstance(safe_details, dict):
+            safe_details = CredentialStore.redact_sensitive_dict(safe_details)
+
         return JSONResponse(
             status_code=status_code,
             content={
@@ -52,7 +61,7 @@ def register_exception_handlers(app):
                 "error": {
                     "code": exc.code,
                     "message": exc.message,
-                    "details": exc.details
+                    "details": safe_details
                 }
             }
         )
@@ -60,6 +69,12 @@ def register_exception_handlers(app):
     @app.exception_handler(Exception)
     async def global_exception_handler(request: Request, exc: Exception):
         logger.opt(exception=exc).error("Unhandled system exception encountered.")
+        
+        raw_msg = str(exc)
+        safe_msg = CredentialStore.redact_sensitive_str(raw_msg)
+        if getattr(settings, "ENVIRONMENT", "dev") == "prod":
+            safe_msg = "An unexpected internal server error occurred."
+
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content={
@@ -67,7 +82,8 @@ def register_exception_handlers(app):
                 "error": {
                     "code": "UNEXPECTED_SYSTEM_ERROR",
                     "message": "An unhandled error occurred inside the gateway routing logic.",
-                    "details": str(exc)
+                    "details": safe_msg
                 }
             }
         )
+

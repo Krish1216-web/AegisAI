@@ -248,11 +248,15 @@ def download_document(
     storage_service = DocumentStorage()
     file_bytes = storage_service.get_file(doc.storage_path)
     
+    import re
+    safe_filename = re.sub(r'[\r\n"\\/]', '_', doc.original_filename or "document")
     return StreamingResponse(
         io.BytesIO(file_bytes),
         media_type=doc.mime_type,
         headers={
-            "Content-Disposition": f'attachment; filename="{doc.original_filename}"'
+            "Content-Disposition": f'attachment; filename="{safe_filename}"',
+            "X-Content-Type-Options": "nosniff",
+            "Cache-Control": "private, no-store, max-age=0"
         }
     )
 

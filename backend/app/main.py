@@ -23,18 +23,27 @@ app = FastAPI(
     redoc_url="/redoc"
 )
 
+from app.core.security_headers import SecurityHeadersMiddleware
+from app.core.request_limits import RequestSizeLimitMiddleware
+
 # 1. Register security TrustedHostMiddleware
 app.add_middleware(
     TrustedHostMiddleware, 
-    allowed_hosts=["localhost", "127.0.0.1", "testserver", "*.aegisai.enterprise"]
+    allowed_hosts=settings.ALLOWED_HOSTS
 )
 
-# 2. Register CORS policy middleware
+# 2. Register Security Headers Middleware
+app.add_middleware(SecurityHeadersMiddleware)
+
+# 3. Register Request Size Limit Middleware
+app.add_middleware(RequestSizeLimitMiddleware)
+
+# 4. Register Explicit CORS policy middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Restrict this to target hosts in prod environments
+    allow_origins=settings.CORS_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 

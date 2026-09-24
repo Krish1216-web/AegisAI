@@ -125,3 +125,36 @@ def check_rate_limit(
         from loguru import logger
         logger.error(f"Redis rate limiting error: {e}")
 
+from fastapi import Request
+
+def check_ip_rate_limit(
+    request: Request,
+    redis_client: Any = Depends(get_redis),
+    limit_per_minute: int = 30,
+    action: str = "auth"
+) -> None:
+    """
+    Enforces rate limits by client IP address for unauthenticated / sensitive endpoints.
+    Directly extracts client IP without blindly trusting client-supplied spoofable headers.
+    """
+    client_ip = request.client.host if request.client else "unknown"
+    minute_timestamp = int(time.time() // 60)
+    key = f"aegis:ratelimit:ip:{action}:{client_ip}:{minute_timestamp}"
+    
+    try:
+        count = redis_client.incr(key)
+        if count == 1:
+            redis_client.expire(key, 60)
+        
+        if count > limit_per_minute:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Too many requests from this client. Please try again in a minute."
+            )
+    except HTTPException:
+        raise
+    except Exception as e:
+        from loguru import logger
+        logger.error(f"Redis IP rate limit error: {e}")
+
+

@@ -57,6 +57,18 @@ class BaseConfig(BaseSettings):
     DOCUMENT_STORAGE_PATH: str = Field(default="storage", env="DOCUMENT_STORAGE_PATH")
     MAX_DOCUMENT_SIZE_MB: int = Field(default=50, env="MAX_DOCUMENT_SIZE_MB")
     
+    # API & Web Security Configurations
+    CORS_ORIGINS: list[str] = [
+        "http://localhost:5173",
+        "http://localhost:3000",
+        "http://127.0.0.1:5173",
+        "http://127.0.0.1:3000"
+    ]
+    ALLOWED_HOSTS: list[str] = ["localhost", "127.0.0.1", "testserver", "*.aegisai.enterprise"]
+    MAX_REQUEST_BODY_BYTES: int = 10 * 1024 * 1024   # 10 MB limit for JSON / standard requests
+    MAX_UPLOAD_BYTES: int = 50 * 1024 * 1024         # 50 MB limit for document uploads
+    ENABLE_HSTS: bool = False
+    
     MODEL_PRICING: Dict[str, Dict[str, Dict[str, float]]] = {
         "openai": {
             "gpt-4o": {"input": 5.0, "output": 15.0},
