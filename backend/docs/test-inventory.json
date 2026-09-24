@@ -1,9 +1,9 @@
 {
-  "generated_at": "2026-09-24T15:55:28.755539+00:00",
+  "generated_at": "2026-09-24T17:02:41.355236+00:00",
   "baseline": {
-    "backend_tests": 615,
-    "frontend_tests": 0,
-    "total_test_files": 215
+    "backend_tests": 620,
+    "frontend_tests": 12,
+    "total_test_files": 216
   },
   "subsystems": [
     {
@@ -291,12 +291,11 @@
     },
     {
       "name": "Authentication",
-      "test_count": 16,
-      "file_count": 3,
+      "test_count": 15,
+      "file_count": 2,
       "files": [
         "test_p10_2_auth_security.py",
-        "test_p10_auth_boundaries.py",
-        "test_phase9_auth_security.py"
+        "test_p10_auth_boundaries.py"
       ],
       "categories": [
         "UNIT",
@@ -308,13 +307,12 @@
     },
     {
       "name": "Uncategorized",
-      "test_count": 33,
-      "file_count": 4,
+      "test_count": 16,
+      "file_count": 3,
       "files": [
         "test_p10_3_authz_tenant_isolation.py",
         "test_p10_4_secrets_ssrf_ai_security.py",
-        "test_p10_5_api_web_security.py",
-        "test_p10_6_security_fuzzing_and_invariants.py"
+        "test_phase9_auth_security.py"
       ],
       "categories": [
         "UNIT"
@@ -324,9 +322,11 @@
     },
     {
       "name": "Tenancy & Security",
-      "test_count": 9,
-      "file_count": 5,
+      "test_count": 27,
+      "file_count": 7,
       "files": [
+        "test_p10_5_api_web_security.py",
+        "test_p10_6_security_fuzzing_and_invariants.py",
         "test_phase9_injection_and_xss_security.py",
         "test_phase9_resilience_and_fault_injection.py",
         "test_phase9_secret_redaction_and_privacy.py",
@@ -337,6 +337,22 @@
         "SECURITY",
         "TENANT_ISOLATION",
         "RESILIENCE"
+      ],
+      "criticality": "critical",
+      "coverage_status": "strong"
+    },
+    {
+      "name": "Frontend & End-to-End",
+      "test_count": 5,
+      "file_count": 1,
+      "files": [
+        "test_p10_7_frontend_e2e_journeys.py"
+      ],
+      "categories": [
+        "FRONTEND",
+        "END_TO_END",
+        "USER_JOURNEY",
+        "INTEGRATION"
       ],
       "criticality": "critical",
       "coverage_status": "strong"
@@ -409,12 +425,6 @@
   ],
   "gaps": [
     {
-      "id": "GAP-FE-TESTS",
-      "description": "Frontend currently lacks an automated unit/component test runner (Vitest recommended for Phase 10.7)",
-      "severity": "medium",
-      "resolution_phase": "Phase 10.7"
-    },
-    {
       "id": "GAP-PERF-LOAD",
       "description": "Performance and high-concurrency load testing suite scheduled for dedicated execution",
       "severity": "medium",
@@ -422,9 +432,7 @@
     }
   ],
   "recommendations": [
-    "Initialize Vitest + React Testing Library in frontend during Phase 10.7",
-    "Implement comprehensive integration scenarios in Phase 10.2",
-    "Expand Multi-Agent dynamic evaluation in Phase 10.3",
+    "Maintain Vitest + React Testing Library in frontend CI workflow",
     "Run automated load benchmarking in Phase 10.8"
   ]
 }
