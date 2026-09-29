@@ -20,31 +20,50 @@ import {
   getAdminSecurityPosture, 
   getAdminRolesPermissions, 
   getAdminAuditLogs, 
-  exportAdminReport 
+  exportAdminReport,
+  getAdminSecurityAlerts,
+  verifyAdminAuditIntegrity
 } from '../../api/admin';
 
 export default function AdminSecurity() {
   const [posture, setPosture] = useState(null);
   const [roleMatrix, setRoleMatrix] = useState(null);
   const [auditLogs, setAuditLogs] = useState([]);
+  const [securityAlerts, setSecurityAlerts] = useState([]);
+  const [integrityStatus, setIntegrityStatus] = useState(null);
+  const [verifyingIntegrity, setVerifyingIntegrity] = useState(false);
   const [loading, setLoading] = useState(true);
   const [exportMsg, setExportMsg] = useState(null);
 
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [posData, rolesData, logsData] = await Promise.all([
+      const [posData, rolesData, logsData, alertsData] = await Promise.all([
         getAdminSecurityPosture(),
         getAdminRolesPermissions(),
-        getAdminAuditLogs({ page: 1, page_size: 20 })
+        getAdminAuditLogs({ page: 1, page_size: 20 }),
+        getAdminSecurityAlerts().catch(() => ({ total: 0, alerts: [] }))
       ]);
       setPosture(posData);
       setRoleMatrix(rolesData);
       setAuditLogs(logsData.logs);
+      setSecurityAlerts(alertsData.alerts || []);
     } catch (err) {
       console.error('Failed to load security posture:', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleVerifyIntegrity = async () => {
+    setVerifyingIntegrity(true);
+    try {
+      const res = await verifyAdminAuditIntegrity();
+      setIntegrityStatus(res);
+    } catch (err) {
+      setIntegrityStatus({ chain_valid: false, details: 'Integrity verification request failed.' });
+    } finally {
+      setVerifyingIntegrity(false);
     }
   };
 
@@ -192,9 +211,33 @@ export default function AdminSecurity() {
 
         {/* Right: Persistent Audit Trail */}
         <div className="glass-panel p-5 bg-[#090b10ab] border border-[rgba(255,255,255,0.06)] rounded-xl flex flex-col gap-4">
-          <h4 className="text-xs font-bold text-white uppercase tracking-wider border-b border-[rgba(255,255,255,0.06)] pb-2 flex items-center gap-2">
-            <FileText size={14} className="text-cyan-400" /> Persistent Audit Records
-          </h4>
+          <div className="flex justify-between items-center border-b border-[rgba(255,255,255,0.06)] pb-2">
+            <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
+              <FileText size={14} className="text-cyan-400" /> Persistent Audit Records
+            </h4>
+            <button
+              onClick={handleVerifyIntegrity}
+              disabled={verifyingIntegrity}
+              className="text-[10px] font-mono px-2 py-1 rounded bg-purple-500/20 text-purple-300 border border-purple-500/40 hover:bg-purple-500/30 flex items-center gap-1 cursor-pointer"
+            >
+              <ShieldCheck size={11} className={verifyingIntegrity ? 'animate-spin' : ''} />
+              {verifyingIntegrity ? 'VERIFYING...' : 'VERIFY_INTEGRITY'}
+            </button>
+          </div>
+
+          {integrityStatus && (
+            <div className={`p-3 rounded-lg border text-[11px] font-mono flex items-center gap-2 ${
+              integrityStatus.chain_valid 
+                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300' 
+                : 'bg-rose-500/10 border-rose-500/30 text-rose-300'
+            }`}>
+              {integrityStatus.chain_valid ? <CheckCircle2 size={14} /> : <AlertCircle size={14} />}
+              <div>
+                <span className="font-bold">{integrityStatus.chain_valid ? 'SHA-256 CHAIN INTACT' : 'INTEGRITY VIOLATION DETECTED'}</span>
+                <span className="block text-[9px] opacity-80">{integrityStatus.details} ({integrityStatus.total_records_checked || 0} records verified)</span>
+              </div>
+            </div>
+          )}
 
           <div className="flex flex-col gap-2 max-h-96 overflow-y-auto pr-1 font-mono text-[10px]">
             {auditLogs.length === 0 ? (
@@ -214,6 +257,36 @@ export default function AdminSecurity() {
           </div>
         </div>
 
+      </div>
+
+      {/* Security Alerts Stream */}
+      <div className="glass-panel p-5 bg-[#090b10ab] border border-[rgba(255,255,255,0.06)] rounded-xl flex flex-col gap-4">
+        <h4 className="text-xs font-bold text-white uppercase tracking-wider border-b border-[rgba(255,255,255,0.06)] pb-2 flex items-center gap-2">
+          <ShieldAlert size={14} className="text-amber-400" /> Real-Time Security Alerts & Anomaly Stream
+        </h4>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 font-mono text-[10px]">
+          {securityAlerts.length === 0 ? (
+            <div className="col-span-full py-6 text-center text-slate-500 text-xs">No active security alerts. System normal.</div>
+          ) : (
+            securityAlerts.map((alert, idx) => (
+              <div key={idx} className="p-3 bg-white/2 rounded-lg border border-[rgba(255,255,255,0.04)] flex flex-col gap-1">
+                <div className="flex justify-between items-center">
+                  <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${
+                    alert.severity === 'CRITICAL' ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30' :
+                    alert.severity === 'HIGH' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' :
+                    'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30'
+                  }`}>
+                    {alert.severity}
+                  </span>
+                  <span className="text-slate-500 text-[9px]">{new Date(alert.last_triggered_at).toLocaleTimeString()}</span>
+                </div>
+                <div className="font-bold text-slate-200 mt-1">{alert.title}</div>
+                <div className="text-slate-400 text-[9px]">{alert.description}</div>
+                <div className="text-slate-600 text-[8px] mt-1">Rule: {alert.rule_name} | Triggers: {alert.trigger_count}</div>
+              </div>
+            ))
+          )}
+        </div>
       </div>
 
     </div>

@@ -322,3 +322,48 @@ export async function exportAdminReport(payload: AdminExportRequest): Promise<Ad
     body: JSON.stringify(payload)
   });
 }
+
+export interface SecurityAlert {
+  alert_id: string;
+  rule_name: string;
+  title: string;
+  severity: string;
+  description: string;
+  status: string;
+  trigger_count: number;
+  first_triggered_at: string;
+  last_triggered_at: string;
+}
+
+export interface SecurityAlertListResponse {
+  total: number;
+  alerts: SecurityAlert[];
+}
+
+export interface AuditIntegrityResponse {
+  tenant_id: string;
+  verified_at: string;
+  total_records_checked: number;
+  chain_valid: boolean;
+  broken_links_count: number;
+  tampered_record_ids: string[];
+  first_record_timestamp?: string | null;
+  last_record_timestamp?: string | null;
+  details: string;
+}
+
+export async function getAdminSecurityAlerts(params: {
+  status_filter?: string;
+  severity_filter?: string;
+} = {}): Promise<SecurityAlertListResponse> {
+  const query = new URLSearchParams();
+  if (params.status_filter) query.append('status_filter', params.status_filter);
+  if (params.severity_filter) query.append('severity_filter', params.severity_filter);
+  const qStr = query.toString() ? `?${query.toString()}` : '';
+  return request<SecurityAlertListResponse>(`/admin/security/alerts${qStr}`);
+}
+
+export async function verifyAdminAuditIntegrity(): Promise<AuditIntegrityResponse> {
+  return request<AuditIntegrityResponse>('/admin/security/audit-integrity');
+}
+
