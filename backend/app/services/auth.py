@@ -45,6 +45,35 @@ class AuthService:
             )
             self.db.add(audit)
             self.db.commit()
+
+            # Map to canonical SecurityEvent
+            from app.services.security_observability import SecurityObservabilityService
+            from app.core.security_events import SecurityEventType, SecuritySeverity
+
+            event_type_map = {
+                "AUTH_LOGIN_SUCCESS": SecurityEventType.AUTH_LOGIN_SUCCESS,
+                "AUTH_LOGIN_FAILED": SecurityEventType.AUTH_LOGIN_FAILED,
+                "AUTH_REGISTER": SecurityEventType.AUTH_REGISTER,
+                "AUTH_TOKEN_ROTATED": SecurityEventType.AUTH_TOKEN_ROTATED,
+                "AUTH_LOGOUT": SecurityEventType.AUTH_LOGOUT,
+                "AUTH_REPLAY_ATTACK_DETECTED": SecurityEventType.AUTH_REFRESH_REPLAY,
+                "ACCOUNT_SUSPENDED": SecurityEventType.ACCOUNT_SUSPENDED
+            }
+            sec_type = event_type_map.get(action, SecurityEventType.SUSPICIOUS_ACTIVITY)
+            outcome = "SUCCESS" if "SUCCESS" in action or "REGISTER" in action or "ROTATED" in action else "FAILURE"
+            
+            sec_service = SecurityObservabilityService(self.db)
+            sec_service.record_event(
+                event_type=sec_type,
+                source_component="AuthService",
+                action=action,
+                outcome=outcome,
+                actor_id=user_id,
+                source_ip=ip_address,
+                reason=details,
+                sanitized_details={"action": action, "details": details},
+                persist_to_audit_log=False
+            )
         except Exception as e:
             logger.debug(f"Audit log recording skipped or failed: {e}")
             try:

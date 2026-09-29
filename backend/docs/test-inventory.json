@@ -1,873 +1,877 @@
 {
-  "total_test_files": 217,
-  "total_tests": 524,
+  "total_test_files": 218,
+  "total_tests": 679,
   "files": [
     {
-      "file": "tests/unit\\test_agent_engine.py",
-      "test_count": 1
-    },
-    {
-      "file": "tests/unit\\test_ai_provider.py",
-      "test_count": 2
-    },
-    {
-      "file": "tests/unit\\test_chunking.py",
-      "test_count": 5
-    },
-    {
-      "file": "tests/unit\\test_collab_analytics_activity_series.py",
-      "test_count": 1
-    },
-    {
-      "file": "tests/unit\\test_collab_analytics_notifications.py",
-      "test_count": 1
-    },
-    {
-      "file": "tests/unit\\test_collab_analytics_overview.py",
-      "test_count": 1
-    },
-    {
-      "file": "tests/unit\\test_collab_analytics_projects.py",
-      "test_count": 1
-    },
-    {
-      "file": "tests/unit\\test_collab_analytics_teams.py",
-      "test_count": 1
-    },
-    {
-      "file": "tests/unit\\test_collab_analytics_tenant_isolation.py",
-      "test_count": 1
-    },
-    {
-      "file": "tests/unit\\test_collab_analytics_zero_division.py",
-      "test_count": 1
-    },
-    {
-      "file": "tests/unit\\test_comment_activity_timeline.py",
-      "test_count": 1
-    },
-    {
-      "file": "tests/unit\\test_comment_authorization.py",
-      "test_count": 1
-    },
-    {
-      "file": "tests/unit\\test_comment_mentions.py",
-      "test_count": 1
-    },
-    {
-      "file": "tests/unit\\test_comment_realtime_events.py",
-      "test_count": 1
-    },
-    {
-      "file": "tests/unit\\test_comment_tenant_isolation.py",
-      "test_count": 1
-    },
-    {
-      "file": "tests/unit\\test_comment_threading.py",
-      "test_count": 1
-    },
-    {
-      "file": "tests/unit\\test_comments_crud.py",
-      "test_count": 1
-    },
-    {
-      "file": "tests/unit\\test_condition_evaluator.py",
+      "file": "tests\\unit\\test_agent_engine.py",
       "test_count": 3
     },
     {
-      "file": "tests/unit\\test_critic.py",
-      "test_count": 2
-    },
-    {
-      "file": "tests/unit\\test_csv_extractor.py",
-      "test_count": 2
-    },
-    {
-      "file": "tests/unit\\test_document_api.py",
-      "test_count": 7
-    },
-    {
-      "file": "tests/unit\\test_document_chunk_api.py",
-      "test_count": 3
-    },
-    {
-      "file": "tests/unit\\test_document_processing.py",
-      "test_count": 5
-    },
-    {
-      "file": "tests/unit\\test_document_security.py",
-      "test_count": 2
-    },
-    {
-      "file": "tests/unit\\test_document_storage.py",
-      "test_count": 4
-    },
-    {
-      "file": "tests/unit\\test_document_validation.py",
+      "file": "tests\\unit\\test_ai_provider.py",
       "test_count": 6
     },
     {
-      "file": "tests/unit\\test_docx_extractor.py",
+      "file": "tests\\unit\\test_chunking.py",
+      "test_count": 5
+    },
+    {
+      "file": "tests\\unit\\test_collab_analytics_activity_series.py",
       "test_count": 1
     },
     {
-      "file": "tests/unit\\test_embedding_service.py",
+      "file": "tests\\unit\\test_collab_analytics_notifications.py",
+      "test_count": 1
+    },
+    {
+      "file": "tests\\unit\\test_collab_analytics_overview.py",
+      "test_count": 1
+    },
+    {
+      "file": "tests\\unit\\test_collab_analytics_projects.py",
+      "test_count": 1
+    },
+    {
+      "file": "tests\\unit\\test_collab_analytics_teams.py",
+      "test_count": 1
+    },
+    {
+      "file": "tests\\unit\\test_collab_analytics_tenant_isolation.py",
+      "test_count": 1
+    },
+    {
+      "file": "tests\\unit\\test_collab_analytics_zero_division.py",
+      "test_count": 1
+    },
+    {
+      "file": "tests\\unit\\test_comment_activity_timeline.py",
+      "test_count": 1
+    },
+    {
+      "file": "tests\\unit\\test_comment_authorization.py",
+      "test_count": 1
+    },
+    {
+      "file": "tests\\unit\\test_comment_mentions.py",
+      "test_count": 1
+    },
+    {
+      "file": "tests\\unit\\test_comment_realtime_events.py",
+      "test_count": 1
+    },
+    {
+      "file": "tests\\unit\\test_comment_tenant_isolation.py",
+      "test_count": 1
+    },
+    {
+      "file": "tests\\unit\\test_comment_threading.py",
+      "test_count": 1
+    },
+    {
+      "file": "tests\\unit\\test_comments_crud.py",
+      "test_count": 1
+    },
+    {
+      "file": "tests\\unit\\test_condition_evaluator.py",
       "test_count": 3
     },
     {
-      "file": "tests/unit\\test_embeddings.py",
-      "test_count": 2
-    },
-    {
-      "file": "tests/unit\\test_entity_extraction.py",
-      "test_count": 5
-    },
-    {
-      "file": "tests/unit\\test_entity_resolution.py",
-      "test_count": 7
-    },
-    {
-      "file": "tests/unit\\test_executor.py",
-      "test_count": 2
-    },
-    {
-      "file": "tests/unit\\test_graph_analytics.py",
+      "file": "tests\\unit\\test_critic.py",
       "test_count": 6
     },
     {
-      "file": "tests/unit\\test_graph_construction.py",
-      "test_count": 4
+      "file": "tests\\unit\\test_csv_extractor.py",
+      "test_count": 2
     },
     {
-      "file": "tests/unit\\test_graph_rag_enhancement.py",
-      "test_count": 0
+      "file": "tests\\unit\\test_document_api.py",
+      "test_count": 7
     },
     {
-      "file": "tests/unit\\test_graph_reasoning_agent.py",
-      "test_count": 0
+      "file": "tests\\unit\\test_document_chunk_api.py",
+      "test_count": 3
     },
     {
-      "file": "tests/unit\\test_hybrid_rag.py",
+      "file": "tests\\unit\\test_document_processing.py",
       "test_count": 5
     },
     {
-      "file": "tests/unit\\test_image_extractor.py",
+      "file": "tests\\unit\\test_document_security.py",
+      "test_count": 2
+    },
+    {
+      "file": "tests\\unit\\test_document_storage.py",
+      "test_count": 4
+    },
+    {
+      "file": "tests\\unit\\test_document_validation.py",
+      "test_count": 6
+    },
+    {
+      "file": "tests\\unit\\test_docx_extractor.py",
       "test_count": 1
     },
     {
-      "file": "tests/unit\\test_knowledge_graph.py",
+      "file": "tests\\unit\\test_embedding_service.py",
+      "test_count": 3
+    },
+    {
+      "file": "tests\\unit\\test_embeddings.py",
+      "test_count": 2
+    },
+    {
+      "file": "tests\\unit\\test_entity_extraction.py",
+      "test_count": 5
+    },
+    {
+      "file": "tests\\unit\\test_entity_resolution.py",
+      "test_count": 7
+    },
+    {
+      "file": "tests\\unit\\test_executor.py",
+      "test_count": 6
+    },
+    {
+      "file": "tests\\unit\\test_graph_analytics.py",
+      "test_count": 6
+    },
+    {
+      "file": "tests\\unit\\test_graph_construction.py",
+      "test_count": 4
+    },
+    {
+      "file": "tests\\unit\\test_graph_rag_enhancement.py",
+      "test_count": 2
+    },
+    {
+      "file": "tests\\unit\\test_graph_reasoning_agent.py",
+      "test_count": 5
+    },
+    {
+      "file": "tests\\unit\\test_hybrid_rag.py",
+      "test_count": 6
+    },
+    {
+      "file": "tests\\unit\\test_image_extractor.py",
+      "test_count": 1
+    },
+    {
+      "file": "tests\\unit\\test_knowledge_graph.py",
       "test_count": 26
     },
     {
-      "file": "tests/unit\\test_knowledge_graph_intelligence.py",
-      "test_count": 7
-    },
-    {
-      "file": "tests/unit\\test_mcp_agent_integration.py",
-      "test_count": 0
-    },
-    {
-      "file": "tests/unit\\test_mcp_api.py",
-      "test_count": 1
-    },
-    {
-      "file": "tests/unit\\test_mcp_cache_isolation.py",
-      "test_count": 1
-    },
-    {
-      "file": "tests/unit\\test_mcp_concurrency.py",
-      "test_count": 0
-    },
-    {
-      "file": "tests/unit\\test_mcp_confirmation_security.py",
-      "test_count": 4
-    },
-    {
-      "file": "tests/unit\\test_mcp_connection.py",
-      "test_count": 0
-    },
-    {
-      "file": "tests/unit\\test_mcp_discovery.py",
-      "test_count": 0
-    },
-    {
-      "file": "tests/unit\\test_mcp_execution_agent.py",
-      "test_count": 0
-    },
-    {
-      "file": "tests/unit\\test_mcp_execution_api.py",
-      "test_count": 1
-    },
-    {
-      "file": "tests/unit\\test_mcp_execution_security.py",
-      "test_count": 1
-    },
-    {
-      "file": "tests/unit\\test_mcp_failure_injection.py",
-      "test_count": 0
-    },
-    {
-      "file": "tests/unit\\test_mcp_orchestrator.py",
-      "test_count": 0
-    },
-    {
-      "file": "tests/unit\\test_mcp_permissions.py",
-      "test_count": 1
-    },
-    {
-      "file": "tests/unit\\test_mcp_pipeline.py",
-      "test_count": 0
-    },
-    {
-      "file": "tests/unit\\test_mcp_planner.py",
-      "test_count": 0
-    },
-    {
-      "file": "tests/unit\\test_mcp_prompt_injection.py",
-      "test_count": 2
-    },
-    {
-      "file": "tests/unit\\test_mcp_prompt_security.py",
-      "test_count": 1
-    },
-    {
-      "file": "tests/unit\\test_mcp_prompts.py",
-      "test_count": 0
-    },
-    {
-      "file": "tests/unit\\test_mcp_protocol_security.py",
-      "test_count": 4
-    },
-    {
-      "file": "tests/unit\\test_mcp_registry.py",
-      "test_count": 6
-    },
-    {
-      "file": "tests/unit\\test_mcp_resource_security.py",
-      "test_count": 1
-    },
-    {
-      "file": "tests/unit\\test_mcp_resources.py",
-      "test_count": 0
-    },
-    {
-      "file": "tests/unit\\test_mcp_resources_prompts_api.py",
-      "test_count": 1
-    },
-    {
-      "file": "tests/unit\\test_mcp_security.py",
-      "test_count": 5
-    },
-    {
-      "file": "tests/unit\\test_mcp_security_api.py",
-      "test_count": 1
-    },
-    {
-      "file": "tests/unit\\test_mcp_security_hardening.py",
-      "test_count": 3
-    },
-    {
-      "file": "tests/unit\\test_mcp_security_service.py",
-      "test_count": 2
-    },
-    {
-      "file": "tests/unit\\test_mcp_tenant_isolation.py",
-      "test_count": 3
-    },
-    {
-      "file": "tests/unit\\test_mcp_tool_api.py",
-      "test_count": 1
-    },
-    {
-      "file": "tests/unit\\test_mcp_tool_catalog.py",
-      "test_count": 3
-    },
-    {
-      "file": "tests/unit\\test_mcp_tool_execution.py",
-      "test_count": 0
-    },
-    {
-      "file": "tests/unit\\test_mcp_tool_security.py",
-      "test_count": 4
-    },
-    {
-      "file": "tests/unit\\test_mcp_tool_validation.py",
-      "test_count": 4
-    },
-    {
-      "file": "tests/unit\\test_mcp_ui_endpoints.py",
-      "test_count": 4
-    },
-    {
-      "file": "tests/unit\\test_mcp_validation.py",
-      "test_count": 7
-    },
-    {
-      "file": "tests/unit\\test_media_extractor.py",
-      "test_count": 2
-    },
-    {
-      "file": "tests/unit\\test_memory.py",
-      "test_count": 1
-    },
-    {
-      "file": "tests/unit\\test_memory_graph_sync.py",
-      "test_count": 6
-    },
-    {
-      "file": "tests/unit\\test_notification_creation_and_lifecycle.py",
-      "test_count": 1
-    },
-    {
-      "file": "tests/unit\\test_notification_deduplication.py",
-      "test_count": 1
-    },
-    {
-      "file": "tests/unit\\test_notification_email_delivery.py",
-      "test_count": 1
-    },
-    {
-      "file": "tests/unit\\test_notification_preferences.py",
-      "test_count": 1
-    },
-    {
-      "file": "tests/unit\\test_notification_realtime_events.py",
-      "test_count": 1
-    },
-    {
-      "file": "tests/unit\\test_notification_recipient_resolution.py",
-      "test_count": 1
-    },
-    {
-      "file": "tests/unit\\test_notification_tenant_isolation.py",
-      "test_count": 1
-    },
-    {
-      "file": "tests/unit\\test_orchestrator.py",
-      "test_count": 2
-    },
-    {
-      "file": "tests/unit\\test_p10_2_auth_security.py",
-      "test_count": 9
-    },
-    {
-      "file": "tests/unit\\test_p10_3_authz_tenant_isolation.py",
-      "test_count": 9
-    },
-    {
-      "file": "tests/unit\\test_p10_4_secrets_ssrf_ai_security.py",
-      "test_count": 6
-    },
-    {
-      "file": "tests/unit\\test_p10_5_api_web_security.py",
+      "file": "tests\\unit\\test_knowledge_graph_intelligence.py",
       "test_count": 8
     },
     {
-      "file": "tests/unit\\test_p10_6_security_fuzzing_and_invariants.py",
-      "test_count": 10
-    },
-    {
-      "file": "tests/unit\\test_p10_7_frontend_e2e_journeys.py",
+      "file": "tests\\unit\\test_mcp_agent_integration.py",
       "test_count": 5
     },
     {
-      "file": "tests/unit\\test_p10_8_load_performance_concurrency.py",
+      "file": "tests\\unit\\test_mcp_api.py",
+      "test_count": 1
+    },
+    {
+      "file": "tests\\unit\\test_mcp_cache_isolation.py",
+      "test_count": 1
+    },
+    {
+      "file": "tests\\unit\\test_mcp_concurrency.py",
+      "test_count": 1
+    },
+    {
+      "file": "tests\\unit\\test_mcp_confirmation_security.py",
+      "test_count": 4
+    },
+    {
+      "file": "tests\\unit\\test_mcp_connection.py",
+      "test_count": 4
+    },
+    {
+      "file": "tests\\unit\\test_mcp_discovery.py",
+      "test_count": 3
+    },
+    {
+      "file": "tests\\unit\\test_mcp_execution_agent.py",
+      "test_count": 1
+    },
+    {
+      "file": "tests\\unit\\test_mcp_execution_api.py",
+      "test_count": 1
+    },
+    {
+      "file": "tests\\unit\\test_mcp_execution_security.py",
+      "test_count": 2
+    },
+    {
+      "file": "tests\\unit\\test_mcp_failure_injection.py",
+      "test_count": 2
+    },
+    {
+      "file": "tests\\unit\\test_mcp_orchestrator.py",
+      "test_count": 5
+    },
+    {
+      "file": "tests\\unit\\test_mcp_permissions.py",
+      "test_count": 1
+    },
+    {
+      "file": "tests\\unit\\test_mcp_pipeline.py",
+      "test_count": 2
+    },
+    {
+      "file": "tests\\unit\\test_mcp_planner.py",
+      "test_count": 3
+    },
+    {
+      "file": "tests\\unit\\test_mcp_prompt_injection.py",
+      "test_count": 3
+    },
+    {
+      "file": "tests\\unit\\test_mcp_prompt_security.py",
+      "test_count": 2
+    },
+    {
+      "file": "tests\\unit\\test_mcp_prompts.py",
+      "test_count": 2
+    },
+    {
+      "file": "tests\\unit\\test_mcp_protocol_security.py",
+      "test_count": 4
+    },
+    {
+      "file": "tests\\unit\\test_mcp_registry.py",
+      "test_count": 7
+    },
+    {
+      "file": "tests\\unit\\test_mcp_resource_security.py",
+      "test_count": 3
+    },
+    {
+      "file": "tests\\unit\\test_mcp_resources.py",
+      "test_count": 2
+    },
+    {
+      "file": "tests\\unit\\test_mcp_resources_prompts_api.py",
+      "test_count": 1
+    },
+    {
+      "file": "tests\\unit\\test_mcp_security.py",
+      "test_count": 5
+    },
+    {
+      "file": "tests\\unit\\test_mcp_security_api.py",
+      "test_count": 1
+    },
+    {
+      "file": "tests\\unit\\test_mcp_security_hardening.py",
+      "test_count": 3
+    },
+    {
+      "file": "tests\\unit\\test_mcp_security_service.py",
+      "test_count": 2
+    },
+    {
+      "file": "tests\\unit\\test_mcp_tenant_isolation.py",
+      "test_count": 3
+    },
+    {
+      "file": "tests\\unit\\test_mcp_tool_api.py",
+      "test_count": 1
+    },
+    {
+      "file": "tests\\unit\\test_mcp_tool_catalog.py",
+      "test_count": 3
+    },
+    {
+      "file": "tests\\unit\\test_mcp_tool_execution.py",
+      "test_count": 2
+    },
+    {
+      "file": "tests\\unit\\test_mcp_tool_security.py",
+      "test_count": 4
+    },
+    {
+      "file": "tests\\unit\\test_mcp_tool_validation.py",
+      "test_count": 4
+    },
+    {
+      "file": "tests\\unit\\test_mcp_ui_endpoints.py",
+      "test_count": 3
+    },
+    {
+      "file": "tests\\unit\\test_mcp_validation.py",
+      "test_count": 7
+    },
+    {
+      "file": "tests\\unit\\test_media_extractor.py",
+      "test_count": 2
+    },
+    {
+      "file": "tests\\unit\\test_memory.py",
+      "test_count": 5
+    },
+    {
+      "file": "tests\\unit\\test_memory_graph_sync.py",
+      "test_count": 6
+    },
+    {
+      "file": "tests\\unit\\test_notification_creation_and_lifecycle.py",
+      "test_count": 1
+    },
+    {
+      "file": "tests\\unit\\test_notification_deduplication.py",
+      "test_count": 1
+    },
+    {
+      "file": "tests\\unit\\test_notification_email_delivery.py",
+      "test_count": 1
+    },
+    {
+      "file": "tests\\unit\\test_notification_preferences.py",
+      "test_count": 1
+    },
+    {
+      "file": "tests\\unit\\test_notification_realtime_events.py",
+      "test_count": 1
+    },
+    {
+      "file": "tests\\unit\\test_notification_recipient_resolution.py",
+      "test_count": 1
+    },
+    {
+      "file": "tests\\unit\\test_notification_tenant_isolation.py",
+      "test_count": 1
+    },
+    {
+      "file": "tests\\unit\\test_orchestrator.py",
+      "test_count": 4
+    },
+    {
+      "file": "tests\\unit\\test_p10_2_auth_security.py",
+      "test_count": 9
+    },
+    {
+      "file": "tests\\unit\\test_p10_3_authz_tenant_isolation.py",
+      "test_count": 9
+    },
+    {
+      "file": "tests\\unit\\test_p10_4_secrets_ssrf_ai_security.py",
+      "test_count": 6
+    },
+    {
+      "file": "tests\\unit\\test_p10_5_api_web_security.py",
+      "test_count": 8
+    },
+    {
+      "file": "tests\\unit\\test_p10_6_security_fuzzing_and_invariants.py",
+      "test_count": 47
+    },
+    {
+      "file": "tests\\unit\\test_p10_7_frontend_e2e_journeys.py",
+      "test_count": 5
+    },
+    {
+      "file": "tests\\unit\\test_p10_8_load_performance_concurrency.py",
       "test_count": 14
     },
     {
-      "file": "tests/unit\\test_p10_agent_resilience.py",
+      "file": "tests\\unit\\test_p10_9_security_observability.py",
+      "test_count": 12
+    },
+    {
+      "file": "tests\\unit\\test_p10_agent_resilience.py",
       "test_count": 2
     },
     {
-      "file": "tests/unit\\test_p10_auth_boundaries.py",
+      "file": "tests\\unit\\test_p10_auth_boundaries.py",
       "test_count": 6
     },
     {
-      "file": "tests/unit\\test_p10_mcp_protocol_boundaries.py",
+      "file": "tests\\unit\\test_p10_mcp_protocol_boundaries.py",
       "test_count": 1
     },
     {
-      "file": "tests/unit\\test_p10_rag_edge_cases.py",
+      "file": "tests\\unit\\test_p10_rag_edge_cases.py",
       "test_count": 2
     },
     {
-      "file": "tests/unit\\test_p10_workflow_engine_hardening.py",
+      "file": "tests\\unit\\test_p10_workflow_engine_hardening.py",
       "test_count": 1
     },
     {
-      "file": "tests/unit\\test_pdf_extractor.py",
+      "file": "tests\\unit\\test_pdf_extractor.py",
       "test_count": 3
     },
     {
-      "file": "tests/unit\\test_persistence.py",
-      "test_count": 0
-    },
-    {
-      "file": "tests/unit\\test_phase9_auth_security.py",
-      "test_count": 1
-    },
-    {
-      "file": "tests/unit\\test_phase9_injection_and_xss_security.py",
-      "test_count": 1
-    },
-    {
-      "file": "tests/unit\\test_phase9_rbac_escalation_security.py",
-      "test_count": 1
-    },
-    {
-      "file": "tests/unit\\test_phase9_resilience_and_fault_injection.py",
-      "test_count": 1
-    },
-    {
-      "file": "tests/unit\\test_phase9_secret_redaction_and_privacy.py",
-      "test_count": 1
-    },
-    {
-      "file": "tests/unit\\test_phase9_tenant_isolation_attack.py",
-      "test_count": 1
-    },
-    {
-      "file": "tests/unit\\test_phase9_websocket_security.py",
-      "test_count": 1
-    },
-    {
-      "file": "tests/unit\\test_pipeline.py",
-      "test_count": 0
-    },
-    {
-      "file": "tests/unit\\test_planner.py",
-      "test_count": 4
-    },
-    {
-      "file": "tests/unit\\test_platform_admin.py",
-      "test_count": 5
-    },
-    {
-      "file": "tests/unit\\test_platform_admin_analytics.py",
-      "test_count": 2
-    },
-    {
-      "file": "tests/unit\\test_platform_admin_api.py",
-      "test_count": 5
-    },
-    {
-      "file": "tests/unit\\test_platform_admin_e2e.py",
-      "test_count": 1
-    },
-    {
-      "file": "tests/unit\\test_platform_admin_security.py",
+      "file": "tests\\unit\\test_persistence.py",
       "test_count": 3
     },
     {
-      "file": "tests/unit\\test_platform_agent_integration.py",
-      "test_count": 4
-    },
-    {
-      "file": "tests/unit\\test_platform_agent_security.py",
-      "test_count": 2
-    },
-    {
-      "file": "tests/unit\\test_platform_api.py",
+      "file": "tests\\unit\\test_phase9_auth_security.py",
       "test_count": 1
     },
     {
-      "file": "tests/unit\\test_platform_api_security.py",
-      "test_count": 3
-    },
-    {
-      "file": "tests/unit\\test_platform_capability.py",
+      "file": "tests\\unit\\test_phase9_injection_and_xss_security.py",
       "test_count": 1
     },
     {
-      "file": "tests/unit\\test_platform_context.py",
-      "test_count": 2
-    },
-    {
-      "file": "tests/unit\\test_platform_e2e_hardening.py",
+      "file": "tests\\unit\\test_phase9_rbac_escalation_security.py",
       "test_count": 1
     },
     {
-      "file": "tests/unit\\test_platform_events.py",
-      "test_count": 2
+      "file": "tests\\unit\\test_phase9_resilience_and_fault_injection.py",
+      "test_count": 1
     },
     {
-      "file": "tests/unit\\test_platform_execution.py",
-      "test_count": 5
+      "file": "tests\\unit\\test_phase9_secret_redaction_and_privacy.py",
+      "test_count": 1
     },
     {
-      "file": "tests/unit\\test_platform_execution_security.py",
-      "test_count": 2
+      "file": "tests\\unit\\test_phase9_tenant_isolation_attack.py",
+      "test_count": 1
     },
     {
-      "file": "tests/unit\\test_platform_intelligence_core.py",
-      "test_count": 7
+      "file": "tests\\unit\\test_phase9_websocket_security.py",
+      "test_count": 1
     },
     {
-      "file": "tests/unit\\test_platform_intelligence_integration.py",
-      "test_count": 4
+      "file": "tests\\unit\\test_pipeline.py",
+      "test_count": 9
     },
     {
-      "file": "tests/unit\\test_platform_knowledge_integration.py",
+      "file": "tests\\unit\\test_planner.py",
       "test_count": 6
     },
     {
-      "file": "tests/unit\\test_platform_knowledge_security.py",
-      "test_count": 4
-    },
-    {
-      "file": "tests/unit\\test_platform_lifecycle.py",
-      "test_count": 2
-    },
-    {
-      "file": "tests/unit\\test_platform_mcp_integration.py",
-      "test_count": 7
-    },
-    {
-      "file": "tests/unit\\test_platform_mcp_security.py",
+      "file": "tests\\unit\\test_platform_admin.py",
       "test_count": 5
     },
     {
-      "file": "tests/unit\\test_platform_observability_api.py",
+      "file": "tests\\unit\\test_platform_admin_analytics.py",
+      "test_count": 2
+    },
+    {
+      "file": "tests\\unit\\test_platform_admin_api.py",
+      "test_count": 5
+    },
+    {
+      "file": "tests\\unit\\test_platform_admin_e2e.py",
+      "test_count": 1
+    },
+    {
+      "file": "tests\\unit\\test_platform_admin_security.py",
+      "test_count": 3
+    },
+    {
+      "file": "tests\\unit\\test_platform_agent_integration.py",
+      "test_count": 4
+    },
+    {
+      "file": "tests\\unit\\test_platform_agent_security.py",
+      "test_count": 2
+    },
+    {
+      "file": "tests\\unit\\test_platform_api.py",
+      "test_count": 1
+    },
+    {
+      "file": "tests\\unit\\test_platform_api_security.py",
+      "test_count": 3
+    },
+    {
+      "file": "tests\\unit\\test_platform_capability.py",
+      "test_count": 1
+    },
+    {
+      "file": "tests\\unit\\test_platform_context.py",
+      "test_count": 2
+    },
+    {
+      "file": "tests\\unit\\test_platform_e2e_hardening.py",
+      "test_count": 1
+    },
+    {
+      "file": "tests\\unit\\test_platform_events.py",
+      "test_count": 1
+    },
+    {
+      "file": "tests\\unit\\test_platform_execution.py",
+      "test_count": 5
+    },
+    {
+      "file": "tests\\unit\\test_platform_execution_security.py",
+      "test_count": 2
+    },
+    {
+      "file": "tests\\unit\\test_platform_intelligence_core.py",
+      "test_count": 6
+    },
+    {
+      "file": "tests\\unit\\test_platform_intelligence_integration.py",
+      "test_count": 4
+    },
+    {
+      "file": "tests\\unit\\test_platform_knowledge_integration.py",
+      "test_count": 6
+    },
+    {
+      "file": "tests\\unit\\test_platform_knowledge_security.py",
+      "test_count": 4
+    },
+    {
+      "file": "tests\\unit\\test_platform_lifecycle.py",
+      "test_count": 2
+    },
+    {
+      "file": "tests\\unit\\test_platform_mcp_integration.py",
+      "test_count": 7
+    },
+    {
+      "file": "tests\\unit\\test_platform_mcp_security.py",
+      "test_count": 5
+    },
+    {
+      "file": "tests\\unit\\test_platform_observability_api.py",
       "test_count": 10
     },
     {
-      "file": "tests/unit\\test_platform_observability_core.py",
+      "file": "tests\\unit\\test_platform_observability_core.py",
       "test_count": 3
     },
     {
-      "file": "tests/unit\\test_platform_observability_service.py",
+      "file": "tests\\unit\\test_platform_observability_service.py",
       "test_count": 8
     },
     {
-      "file": "tests/unit\\test_platform_provenance.py",
+      "file": "tests\\unit\\test_platform_provenance.py",
       "test_count": 2
     },
     {
-      "file": "tests/unit\\test_platform_resilience.py",
+      "file": "tests\\unit\\test_platform_resilience.py",
       "test_count": 5
     },
     {
-      "file": "tests/unit\\test_platform_security.py",
+      "file": "tests\\unit\\test_platform_security.py",
       "test_count": 2
     },
     {
-      "file": "tests/unit\\test_platform_security_hardening.py",
+      "file": "tests\\unit\\test_platform_security_hardening.py",
       "test_count": 7
     },
     {
-      "file": "tests/unit\\test_pptx_extractor.py",
+      "file": "tests\\unit\\test_pptx_extractor.py",
       "test_count": 1
     },
     {
-      "file": "tests/unit\\test_production_hardening.py",
+      "file": "tests\\unit\\test_production_hardening.py",
+      "test_count": 5
+    },
+    {
+      "file": "tests\\unit\\test_project_api.py",
+      "test_count": 1
+    },
+    {
+      "file": "tests\\unit\\test_project_audit.py",
+      "test_count": 1
+    },
+    {
+      "file": "tests\\unit\\test_project_authorization.py",
+      "test_count": 1
+    },
+    {
+      "file": "tests\\unit\\test_project_membership.py",
+      "test_count": 1
+    },
+    {
+      "file": "tests\\unit\\test_project_resources.py",
+      "test_count": 1
+    },
+    {
+      "file": "tests\\unit\\test_project_tenant_isolation.py",
+      "test_count": 1
+    },
+    {
+      "file": "tests\\unit\\test_projects.py",
+      "test_count": 1
+    },
+    {
+      "file": "tests\\unit\\test_rag_agent.py",
+      "test_count": 13
+    },
+    {
+      "file": "tests\\unit\\test_rag_citations.py",
+      "test_count": 1
+    },
+    {
+      "file": "tests\\unit\\test_rag_context.py",
+      "test_count": 1
+    },
+    {
+      "file": "tests\\unit\\test_rag_generator.py",
       "test_count": 2
     },
     {
-      "file": "tests/unit\\test_project_api.py",
+      "file": "tests\\unit\\test_rag_reranker.py",
       "test_count": 1
     },
     {
-      "file": "tests/unit\\test_project_audit.py",
-      "test_count": 1
-    },
-    {
-      "file": "tests/unit\\test_project_authorization.py",
-      "test_count": 1
-    },
-    {
-      "file": "tests/unit\\test_project_membership.py",
-      "test_count": 1
-    },
-    {
-      "file": "tests/unit\\test_project_resources.py",
-      "test_count": 1
-    },
-    {
-      "file": "tests/unit\\test_project_tenant_isolation.py",
-      "test_count": 1
-    },
-    {
-      "file": "tests/unit\\test_projects.py",
-      "test_count": 1
-    },
-    {
-      "file": "tests/unit\\test_rag_agent.py",
-      "test_count": 1
-    },
-    {
-      "file": "tests/unit\\test_rag_citations.py",
-      "test_count": 1
-    },
-    {
-      "file": "tests/unit\\test_rag_context.py",
-      "test_count": 1
-    },
-    {
-      "file": "tests/unit\\test_rag_generator.py",
-      "test_count": 0
-    },
-    {
-      "file": "tests/unit\\test_rag_reranker.py",
-      "test_count": 1
-    },
-    {
-      "file": "tests/unit\\test_rag_retriever.py",
-      "test_count": 1
-    },
-    {
-      "file": "tests/unit\\test_rag_service.py",
-      "test_count": 1
-    },
-    {
-      "file": "tests/unit\\test_rbac_api.py",
-      "test_count": 1
-    },
-    {
-      "file": "tests/unit\\test_rbac_audit.py",
-      "test_count": 1
-    },
-    {
-      "file": "tests/unit\\test_rbac_effective_permissions.py",
+      "file": "tests\\unit\\test_rag_retriever.py",
       "test_count": 2
     },
     {
-      "file": "tests/unit\\test_rbac_security.py",
+      "file": "tests\\unit\\test_rag_service.py",
       "test_count": 2
     },
     {
-      "file": "tests/unit\\test_realtime_authorization.py",
+      "file": "tests\\unit\\test_rbac_api.py",
       "test_count": 1
     },
     {
-      "file": "tests/unit\\test_realtime_connection_manager.py",
+      "file": "tests\\unit\\test_rbac_audit.py",
       "test_count": 1
     },
     {
-      "file": "tests/unit\\test_realtime_event_broadcasting.py",
+      "file": "tests\\unit\\test_rbac_effective_permissions.py",
+      "test_count": 2
+    },
+    {
+      "file": "tests\\unit\\test_rbac_security.py",
+      "test_count": 2
+    },
+    {
+      "file": "tests\\unit\\test_realtime_authorization.py",
       "test_count": 1
     },
     {
-      "file": "tests/unit\\test_realtime_presence.py",
+      "file": "tests\\unit\\test_realtime_connection_manager.py",
       "test_count": 1
     },
     {
-      "file": "tests/unit\\test_realtime_revocation.py",
+      "file": "tests\\unit\\test_realtime_event_broadcasting.py",
       "test_count": 1
     },
     {
-      "file": "tests/unit\\test_realtime_tenant_isolation.py",
+      "file": "tests\\unit\\test_realtime_presence.py",
       "test_count": 1
     },
     {
-      "file": "tests/unit\\test_realtime_websocket_api.py",
+      "file": "tests\\unit\\test_realtime_revocation.py",
       "test_count": 1
     },
     {
-      "file": "tests/unit\\test_relationship_extraction.py",
+      "file": "tests\\unit\\test_realtime_tenant_isolation.py",
+      "test_count": 1
+    },
+    {
+      "file": "tests\\unit\\test_realtime_websocket_api.py",
+      "test_count": 1
+    },
+    {
+      "file": "tests\\unit\\test_relationship_extraction.py",
       "test_count": 4
     },
     {
-      "file": "tests/unit\\test_research.py",
-      "test_count": 0
-    },
-    {
-      "file": "tests/unit\\test_response.py",
-      "test_count": 2
-    },
-    {
-      "file": "tests/unit\\test_team_advanced.py",
+      "file": "tests\\unit\\test_research.py",
       "test_count": 4
     },
     {
-      "file": "tests/unit\\test_team_advanced_api.py",
-      "test_count": 1
-    },
-    {
-      "file": "tests/unit\\test_team_advanced_security.py",
-      "test_count": 2
-    },
-    {
-      "file": "tests/unit\\test_team_api.py",
-      "test_count": 1
-    },
-    {
-      "file": "tests/unit\\test_team_audit.py",
-      "test_count": 1
-    },
-    {
-      "file": "tests/unit\\test_team_invitations.py",
-      "test_count": 2
-    },
-    {
-      "file": "tests/unit\\test_team_membership.py",
-      "test_count": 1
-    },
-    {
-      "file": "tests/unit\\test_team_rbac.py",
-      "test_count": 1
-    },
-    {
-      "file": "tests/unit\\test_team_service.py",
-      "test_count": 3
-    },
-    {
-      "file": "tests/unit\\test_team_tenant_isolation.py",
-      "test_count": 2
-    },
-    {
-      "file": "tests/unit\\test_text_extractor.py",
-      "test_count": 2
-    },
-    {
-      "file": "tests/unit\\test_text_normalizer.py",
-      "test_count": 4
-    },
-    {
-      "file": "tests/unit\\test_workflow_advanced_routing.py",
-      "test_count": 1
-    },
-    {
-      "file": "tests/unit\\test_workflow_agent_node.py",
-      "test_count": 1
-    },
-    {
-      "file": "tests/unit\\test_workflow_analytics.py",
-      "test_count": 2
-    },
-    {
-      "file": "tests/unit\\test_workflow_analytics_health.py",
-      "test_count": 1
-    },
-    {
-      "file": "tests/unit\\test_workflow_analytics_tenant_isolation.py",
-      "test_count": 1
-    },
-    {
-      "file": "tests/unit\\test_workflow_api.py",
-      "test_count": 0
-    },
-    {
-      "file": "tests/unit\\test_workflow_approval_and_cancel.py",
-      "test_count": 2
-    },
-    {
-      "file": "tests/unit\\test_workflow_approval_policies.py",
-      "test_count": 1
-    },
-    {
-      "file": "tests/unit\\test_workflow_approval_rbac.py",
-      "test_count": 2
-    },
-    {
-      "file": "tests/unit\\test_workflow_approval_service.py",
-      "test_count": 2
-    },
-    {
-      "file": "tests/unit\\test_workflow_approval_tenant_isolation.py",
-      "test_count": 1
-    },
-    {
-      "file": "tests/unit\\test_workflow_atomic_update.py",
-      "test_count": 2
-    },
-    {
-      "file": "tests/unit\\test_workflow_composition.py",
-      "test_count": 2
-    },
-    {
-      "file": "tests/unit\\test_workflow_concurrency_hardening.py",
-      "test_count": 2
-    },
-    {
-      "file": "tests/unit\\test_workflow_condition_validation.py",
-      "test_count": 2
-    },
-    {
-      "file": "tests/unit\\test_workflow_cron.py",
-      "test_count": 4
-    },
-    {
-      "file": "tests/unit\\test_workflow_definition.py",
-      "test_count": 1
-    },
-    {
-      "file": "tests/unit\\test_workflow_e2e.py",
-      "test_count": 1
-    },
-    {
-      "file": "tests/unit\\test_workflow_execution.py",
-      "test_count": 2
-    },
-    {
-      "file": "tests/unit\\test_workflow_graph_node.py",
-      "test_count": 1
-    },
-    {
-      "file": "tests/unit\\test_workflow_mcp_node.py",
-      "test_count": 1
-    },
-    {
-      "file": "tests/unit\\test_workflow_memory_node.py",
-      "test_count": 1
-    },
-    {
-      "file": "tests/unit\\test_workflow_models.py",
-      "test_count": 1
-    },
-    {
-      "file": "tests/unit\\test_workflow_node_config.py",
-      "test_count": 2
-    },
-    {
-      "file": "tests/unit\\test_workflow_node_execution.py",
-      "test_count": 2
-    },
-    {
-      "file": "tests/unit\\test_workflow_parallel_merge.py",
-      "test_count": 1
-    },
-    {
-      "file": "tests/unit\\test_workflow_rag_node.py",
-      "test_count": 1
-    },
-    {
-      "file": "tests/unit\\test_workflow_schedule_tenant_isolation.py",
-      "test_count": 1
-    },
-    {
-      "file": "tests/unit\\test_workflow_scheduler.py",
-      "test_count": 2
-    },
-    {
-      "file": "tests/unit\\test_workflow_security_hardening.py",
-      "test_count": 2
-    },
-    {
-      "file": "tests/unit\\test_workflow_service.py",
-      "test_count": 3
-    },
-    {
-      "file": "tests/unit\\test_workflow_tenant_isolation.py",
-      "test_count": 3
-    },
-    {
-      "file": "tests/unit\\test_workflow_validation.py",
+      "file": "tests\\unit\\test_response.py",
       "test_count": 7
     },
     {
-      "file": "tests/unit\\test_workflow_variables.py",
+      "file": "tests\\unit\\test_team_advanced.py",
+      "test_count": 4
+    },
+    {
+      "file": "tests\\unit\\test_team_advanced_api.py",
       "test_count": 1
     },
     {
-      "file": "tests/unit\\test_workflow_version_conflict.py",
-      "test_count": 1
-    },
-    {
-      "file": "tests/unit\\test_workspace_role_management.py",
+      "file": "tests\\unit\\test_team_advanced_security.py",
       "test_count": 2
     },
     {
-      "file": "tests/unit\\test_xlsx_extractor.py",
+      "file": "tests\\unit\\test_team_api.py",
+      "test_count": 1
+    },
+    {
+      "file": "tests\\unit\\test_team_audit.py",
+      "test_count": 1
+    },
+    {
+      "file": "tests\\unit\\test_team_invitations.py",
+      "test_count": 2
+    },
+    {
+      "file": "tests\\unit\\test_team_membership.py",
+      "test_count": 1
+    },
+    {
+      "file": "tests\\unit\\test_team_rbac.py",
+      "test_count": 1
+    },
+    {
+      "file": "tests\\unit\\test_team_service.py",
+      "test_count": 3
+    },
+    {
+      "file": "tests\\unit\\test_team_tenant_isolation.py",
+      "test_count": 2
+    },
+    {
+      "file": "tests\\unit\\test_text_extractor.py",
+      "test_count": 2
+    },
+    {
+      "file": "tests\\unit\\test_text_normalizer.py",
+      "test_count": 4
+    },
+    {
+      "file": "tests\\unit\\test_workflow_advanced_routing.py",
+      "test_count": 1
+    },
+    {
+      "file": "tests\\unit\\test_workflow_agent_node.py",
+      "test_count": 1
+    },
+    {
+      "file": "tests\\unit\\test_workflow_analytics.py",
+      "test_count": 2
+    },
+    {
+      "file": "tests\\unit\\test_workflow_analytics_health.py",
+      "test_count": 1
+    },
+    {
+      "file": "tests\\unit\\test_workflow_analytics_tenant_isolation.py",
+      "test_count": 1
+    },
+    {
+      "file": "tests\\unit\\test_workflow_api.py",
+      "test_count": 1
+    },
+    {
+      "file": "tests\\unit\\test_workflow_approval_and_cancel.py",
+      "test_count": 2
+    },
+    {
+      "file": "tests\\unit\\test_workflow_approval_policies.py",
+      "test_count": 1
+    },
+    {
+      "file": "tests\\unit\\test_workflow_approval_rbac.py",
+      "test_count": 2
+    },
+    {
+      "file": "tests\\unit\\test_workflow_approval_service.py",
+      "test_count": 2
+    },
+    {
+      "file": "tests\\unit\\test_workflow_approval_tenant_isolation.py",
+      "test_count": 1
+    },
+    {
+      "file": "tests\\unit\\test_workflow_atomic_update.py",
+      "test_count": 2
+    },
+    {
+      "file": "tests\\unit\\test_workflow_composition.py",
+      "test_count": 2
+    },
+    {
+      "file": "tests\\unit\\test_workflow_concurrency_hardening.py",
+      "test_count": 2
+    },
+    {
+      "file": "tests\\unit\\test_workflow_condition_validation.py",
+      "test_count": 2
+    },
+    {
+      "file": "tests\\unit\\test_workflow_cron.py",
+      "test_count": 4
+    },
+    {
+      "file": "tests\\unit\\test_workflow_definition.py",
+      "test_count": 1
+    },
+    {
+      "file": "tests\\unit\\test_workflow_e2e.py",
+      "test_count": 1
+    },
+    {
+      "file": "tests\\unit\\test_workflow_execution.py",
+      "test_count": 2
+    },
+    {
+      "file": "tests\\unit\\test_workflow_graph_node.py",
+      "test_count": 1
+    },
+    {
+      "file": "tests\\unit\\test_workflow_mcp_node.py",
+      "test_count": 1
+    },
+    {
+      "file": "tests\\unit\\test_workflow_memory_node.py",
+      "test_count": 1
+    },
+    {
+      "file": "tests\\unit\\test_workflow_models.py",
+      "test_count": 1
+    },
+    {
+      "file": "tests\\unit\\test_workflow_node_config.py",
+      "test_count": 2
+    },
+    {
+      "file": "tests\\unit\\test_workflow_node_execution.py",
+      "test_count": 2
+    },
+    {
+      "file": "tests\\unit\\test_workflow_parallel_merge.py",
+      "test_count": 1
+    },
+    {
+      "file": "tests\\unit\\test_workflow_rag_node.py",
+      "test_count": 1
+    },
+    {
+      "file": "tests\\unit\\test_workflow_schedule_tenant_isolation.py",
+      "test_count": 1
+    },
+    {
+      "file": "tests\\unit\\test_workflow_scheduler.py",
+      "test_count": 2
+    },
+    {
+      "file": "tests\\unit\\test_workflow_security_hardening.py",
+      "test_count": 2
+    },
+    {
+      "file": "tests\\unit\\test_workflow_service.py",
+      "test_count": 2
+    },
+    {
+      "file": "tests\\unit\\test_workflow_tenant_isolation.py",
+      "test_count": 3
+    },
+    {
+      "file": "tests\\unit\\test_workflow_validation.py",
+      "test_count": 7
+    },
+    {
+      "file": "tests\\unit\\test_workflow_variables.py",
+      "test_count": 1
+    },
+    {
+      "file": "tests\\unit\\test_workflow_version_conflict.py",
+      "test_count": 1
+    },
+    {
+      "file": "tests\\unit\\test_workspace_role_management.py",
+      "test_count": 2
+    },
+    {
+      "file": "tests\\unit\\test_xlsx_extractor.py",
       "test_count": 1
     }
   ]

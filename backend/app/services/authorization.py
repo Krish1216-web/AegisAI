@@ -106,6 +106,25 @@ class AuthorizationService:
         resource_id: Optional[str] = None
     ) -> None:
         if not self.authorize(user_id, workspace_id, permission, team_id, project_id, resource_id):
+            try:
+                from app.services.security_observability import SecurityObservabilityService
+                from app.core.security_events import SecurityEventType, SecuritySeverity
+                SecurityObservabilityService(self.db).record_event(
+                    event_type=SecurityEventType.AUTHZ_DENIED,
+                    source_component="AuthorizationService",
+                    action=f"ACCESS_PERMISSION:{permission}",
+                    outcome="DENIED",
+                    actor_id=user_id,
+                    workspace_id=workspace_id,
+                    team_id=team_id,
+                    project_id=project_id,
+                    reason=f"Action forbidden. Missing permission: '{permission}'.",
+                    severity=SecuritySeverity.MEDIUM,
+                    sanitized_details={"required_permission": permission, "resource_id": resource_id}
+                )
+            except Exception:
+                pass
+
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"Action forbidden. Requires permission: '{permission}'."
@@ -114,12 +133,30 @@ class AuthorizationService:
     def assert_workspace_ownership(
         self,
         resource_workspace_id: uuid.UUID,
-        request_workspace_id: uuid.UUID
+        request_workspace_id: uuid.UUID,
+        user_id: Optional[uuid.UUID] = None
     ) -> None:
         """
         Enforces that a resource's workspace matches the request context workspace.
         """
         if resource_workspace_id != request_workspace_id:
+            try:
+                from app.services.security_observability import SecurityObservabilityService
+                from app.core.security_events import SecurityEventType, SecuritySeverity
+                SecurityObservabilityService(self.db).record_event(
+                    event_type=SecurityEventType.TENANT_BOUNDARY_VIOLATION,
+                    source_component="AuthorizationService",
+                    action="WORKSPACE_BOUNDARY_CHECK",
+                    outcome="DENIED",
+                    actor_id=user_id,
+                    workspace_id=request_workspace_id,
+                    reason=f"Cross-tenant access attempted. Resource workspace {resource_workspace_id} != request workspace {request_workspace_id}.",
+                    severity=SecuritySeverity.HIGH,
+                    sanitized_details={"resource_workspace_id": str(resource_workspace_id), "request_workspace_id": str(request_workspace_id)}
+                )
+            except Exception:
+                pass
+
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Resource belongs to another workspace. Access denied."

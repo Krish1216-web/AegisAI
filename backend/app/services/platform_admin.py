@@ -97,6 +97,12 @@ class PlatformAdminService:
             alerts_data = self.obs_service.get_alerts(workspace_id, time_window=time_window)
             alerts_count = alerts_data.total_alerts
 
+        # Security alerts count
+        from app.services.security_observability import SecurityObservabilityService
+        sec_service = SecurityObservabilityService(self.db)
+        sec_alerts = sec_service.alert_engine.get_alerts(workspace_id=workspace_id, status_filter="ACTIVE")
+        security_alerts_count = len(sec_alerts)
+
         return AdminOverviewResponse(
             total_users=total_users,
             active_users=active_users,
@@ -114,7 +120,7 @@ class PlatformAdminService:
             success_rate=round(success_rate, 2),
             system_status=system_status,
             alerts_count=alerts_count,
-            security_alerts_count=0,
+            security_alerts_count=security_alerts_count,
             time_window=time_window
         )
 
@@ -604,10 +610,20 @@ class PlatformAdminService:
         ]
         
         # Recent security alerts
-        recent_alerts = []
-        if workspace_id:
-            alerts_res = self.obs_service.get_alerts(workspace_id, time_window="24h")
-            recent_alerts = [a.dict() for a in alerts_res.alerts if a.severity in ["critical", "high"]]
+        from app.services.security_observability import SecurityObservabilityService
+        sec_service = SecurityObservabilityService(self.db)
+        sec_alerts = sec_service.alert_engine.get_alerts(workspace_id=workspace_id, status_filter="ACTIVE")
+        recent_alerts = [
+            {
+                "alert_id": a.alert_id,
+                "title": a.title,
+                "severity": a.severity.value,
+                "rule_name": a.rule_name,
+                "last_triggered_at": a.last_triggered_at.isoformat(),
+                "trigger_count": a.trigger_count
+            }
+            for a in sec_alerts[:10]
+        ]
             
         return AdminSecurityPostureResponse(
             tenant_isolation_enforced=True,
