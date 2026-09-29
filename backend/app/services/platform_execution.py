@@ -56,6 +56,8 @@ from app.core.platform.errors import (
 )
 from app.core.mcp.security import CredentialStore
 
+import threading
+
 class PlatformExecutionService:
     """
     Production-grade Core Platform Execution Engine.
@@ -66,6 +68,8 @@ class PlatformExecutionService:
     _executions: Dict[str, PlatformExecutionResult] = {}
     _active_concurrency: Dict[uuid.UUID, int] = defaultdict(int)
     _idempotency_map: Dict[str, str] = {}  # idempotency_key -> execution_id
+    _idempotency_locks: Dict[str, threading.Lock] = {}
+    _global_lock: threading.Lock = threading.Lock()
 
     def __init__(self, db: Session):
         self.db = db
@@ -119,19 +123,36 @@ class PlatformExecutionService:
         """
         Executes a platform capability deterministically through the 6-stage lifecycle.
         """
+        if idempotency_key:
+            scoped_key = f"{context.workspace_id}:{idempotency_key}"
+            with self._global_lock:
+                if scoped_key not in self._idempotency_locks:
+                    self._idempotency_locks[scoped_key] = threading.Lock()
+                k_lock = self._idempotency_locks[scoped_key]
+
+            with k_lock:
+                if scoped_key in self._idempotency_map:
+                    existing_id = self._idempotency_map[scoped_key]
+                    if existing_id in self._executions:
+                        logger.info(f"Returning idempotent execution result for key '{idempotency_key}' (id={existing_id})")
+                        return self._executions[existing_id]
+                return self._execute_core(capability_id, context, input_data, idempotency_key, timeout_seconds, scoped_key)
+        else:
+            return self._execute_core(capability_id, context, input_data, idempotency_key, timeout_seconds, None)
+
+    def _execute_core(
+        self,
+        capability_id: str,
+        context: PlatformContext,
+        input_data: Dict[str, Any],
+        idempotency_key: Optional[str],
+        timeout_seconds: Optional[int],
+        scoped_idempotency_key: Optional[str]
+    ) -> PlatformExecutionResult:
         start_time = datetime.datetime.now(datetime.timezone.utc)
         start_mono = time.monotonic()
         execution_id = f"exec_{uuid.uuid4().hex[:12]}"
         correlation_id = context.correlation_id or f"corr_{uuid.uuid4().hex[:12]}"
-
-        # 0. Idempotency Check
-        if idempotency_key:
-            scoped_idempotency_key = f"{context.workspace_id}:{idempotency_key}"
-            if scoped_idempotency_key in self._idempotency_map:
-                existing_id = self._idempotency_map[scoped_idempotency_key]
-                if existing_id in self._executions:
-                    logger.info(f"Returning idempotent execution result for key '{idempotency_key}' (id={existing_id})")
-                    return self._executions[existing_id]
 
         state_machine = LifecycleStateMachine(initial_state=LifecycleState.REQUESTED)
 

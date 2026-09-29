@@ -12,5 +12,6 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     fileParallelism: false,
+    pool: 'threads',
   },
 })
