@@ -99,7 +99,7 @@ class DevelopmentConfig(BaseConfig):
 
 class ProductionConfig(BaseConfig):
     ENVIRONMENT: str = "prod"
-    # Overwrite settings to strictly enforce TLS in production
+    ENABLE_HSTS: bool = True
     class Config:
         env_file = ".env.prod"
 
@@ -108,6 +108,33 @@ class TestConfig(BaseConfig):
     POSTGRES_DB: str = "aegisai_test"
     class Config:
         env_file = ".env.test"
+
+def validate_production_configuration(cfg: BaseConfig) -> list[str]:
+    """
+    Validates production configuration invariants.
+    Returns a list of error messages (empty if valid).
+    """
+    errors = []
+    if cfg.ENVIRONMENT == "prod":
+        # 1. JWT Secret strength and non-default check
+        if not cfg.SECRET_KEY or cfg.SECRET_KEY == "SUPER_SECRET_AEGIS_KEY_2026_CHANGE_ME" or "replace-with" in cfg.SECRET_KEY:
+            errors.append("Production SECRET_KEY must be securely configured and not use default placeholder values.")
+        elif len(cfg.SECRET_KEY) < 32:
+            errors.append(f"Production SECRET_KEY is too short ({len(cfg.SECRET_KEY)} chars); must be at least 32 characters.")
+
+        # 2. Database credentials
+        if cfg.POSTGRES_PASSWORD == "postgres" and not cfg.DATABASE_URL:
+            errors.append("Production POSTGRES_PASSWORD must not use default 'postgres' password.")
+
+        # 3. CORS wildcard with credentials check
+        if "*" in cfg.CORS_ORIGINS:
+            errors.append("Production CORS_ORIGINS must not contain wildcard '*' when allow_credentials=True.")
+
+        # 4. Storage directory configuration
+        if not cfg.DOCUMENT_STORAGE_PATH:
+            errors.append("DOCUMENT_STORAGE_PATH must be explicitly configured in production.")
+
+    return errors
 
 def get_settings() -> BaseConfig:
     """

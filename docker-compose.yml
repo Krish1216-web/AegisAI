@@ -1,35 +1,129 @@
+# ==============================================================================
+# AegisAI Enterprise — Docker Compose Stack
+# Multi-container production architecture with isolated networks & healthchecks
+# ==============================================================================
+
 version: '3.8'
 
 services:
-  app:
+  # ----------------------------------------------------------------------------
+  # Backend API Service (FastAPI / ASGI)
+  # ----------------------------------------------------------------------------
+  backend:
     build:
       context: .
-      dockerfile: docker/development/app.dockerfile
-    ports:
-      - "8000:8000"
+      dockerfile: docker/production/app.dockerfile
+    image: aegisai-backend:production
+    container_name: aegisai-backend
+    restart: always
     environment:
-      - ENVIRONMENT=dev
+      - ENVIRONMENT=prod
       - POSTGRES_SERVER=db
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=${POSTGRES_DB:-aegisai}
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
       - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - SECRET_KEY=${SECRET_KEY}
+      - DOCUMENT_STORAGE_PATH=/workspace/storage
+    volumes:
+      - aegis_storage:/workspace/storage
+      - aegis_logs:/workspace/logs
+    networks:
+      - aegis-internal
     depends_on:
-      - db
-      - redis
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health/readiness"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
 
+  # ----------------------------------------------------------------------------
+  # Frontend Static & Reverse Proxy Service (Nginx)
+  # ----------------------------------------------------------------------------
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/production/frontend.dockerfile
+    image: aegisai-frontend:production
+    container_name: aegisai-frontend
+    restart: always
+    ports:
+      - "80:80"
+    networks:
+      - aegis-internal
+      - aegis-public
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1/"]
+      interval: 20s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+  # ----------------------------------------------------------------------------
+  # PostgreSQL 16 Database
+  # ----------------------------------------------------------------------------
   db:
     image: postgres:16-alpine
+    container_name: aegisai-db
+    restart: always
     environment:
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
-      - POSTGRES_DB=aegisai
-    ports:
-      - "5432:5432"
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-aegisai}
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - aegis_postgres_data:/var/lib/postgresql/data
+    networks:
+      - aegis-internal
+    # Internal network only: database ports are NOT exposed to the host by default
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
+  # ----------------------------------------------------------------------------
+  # Redis 7 Cache & Message Bus
+  # ----------------------------------------------------------------------------
   redis:
     image: redis:7-alpine
-    ports:
-      - "6379:6379"
+    container_name: aegisai-redis
+    restart: always
+    command: ["redis-server", "--appendonly", "yes", "--loglevel", "notice"]
+    volumes:
+      - aegis_redis_data:/data
+    networks:
+      - aegis-internal
+    # Internal network only: redis port is NOT exposed to host by default
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+# ------------------------------------------------------------------------------
+# Isolated Networks & Persistent Volumes
+# ------------------------------------------------------------------------------
+networks:
+  aegis-internal:
+    driver: bridge
+    internal: true
+  aegis-public:
+    driver: bridge
 
 volumes:
-  postgres_data:
+  aegis_postgres_data:
+  aegis_redis_data:
+  aegis_storage:
+  aegis_logs:

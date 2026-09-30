@@ -1,0 +1,127 @@
+# ==============================================================================
+# AegisAI Enterprise — Strict Production Docker Compose Stack
+# Multi-container hardened architecture with resource limits & network boundaries
+# ==============================================================================
+
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: docker/production/app.dockerfile
+    image: aegisai-backend:production
+    container_name: aegisai-backend-prod
+    restart: always
+    env_file:
+      - .env.prod
+    volumes:
+      - aegis_storage_prod:/workspace/storage
+      - aegis_logs_prod:/workspace/logs
+    networks:
+      - aegis-internal-net
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 4G
+        reservations:
+          cpus: '0.5'
+          memory: 1G
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health/readiness"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/production/frontend.dockerfile
+    image: aegisai-frontend:production
+    container_name: aegisai-frontend-prod
+    restart: always
+    ports:
+      - "80:80"
+    networks:
+      - aegis-internal-net
+      - aegis-public-net
+    depends_on:
+      backend:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.2'
+          memory: 256M
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1/"]
+      interval: 20s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+  db:
+    image: postgres:16-alpine
+    container_name: aegisai-db-prod
+    restart: always
+    env_file:
+      - .env.prod
+    volumes:
+      - aegis_postgres_prod_data:/var/lib/postgresql/data
+    networks:
+      - aegis-internal-net
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 4G
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    container_name: aegisai-redis-prod
+    restart: always
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "2gb", "--maxmemory-policy", "noeviction"]
+    volumes:
+      - aegis_redis_prod_data:/data
+    networks:
+      - aegis-internal-net
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 2G
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+networks:
+  aegis-internal-net:
+    driver: bridge
+    internal: true
+  aegis-public-net:
+    driver: bridge
+
+volumes:
+  aegis_postgres_prod_data:
+  aegis_redis_prod_data:
+  aegis_storage_prod:
+  aegis_logs_prod:
