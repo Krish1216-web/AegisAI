@@ -24,8 +24,8 @@ class MemoryCategory(Base, AuditMixin):
 
 class Memory(Base, AuditMixin):
     __tablename__ = "memories"
-    workspace_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False)
-    category_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("memory_categories.id", ondelete="RESTRICT"), nullable=False)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False, index=True)
+    category_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("memory_categories.id", ondelete="RESTRICT"), nullable=False, index=True)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     
     category = relationship("MemoryCategory", back_populates="memories")

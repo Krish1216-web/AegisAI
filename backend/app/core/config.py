@@ -27,6 +27,14 @@ class BaseConfig(BaseSettings):
     POSTGRES_PORT: str = Field(default="5432", env="POSTGRES_PORT")
     DATABASE_URL: Optional[str] = None
 
+    # Database Connection Pool Settings
+    DB_POOL_SIZE: int = Field(default=20, env="DB_POOL_SIZE")
+    DB_MAX_OVERFLOW: int = Field(default=10, env="DB_MAX_OVERFLOW")
+    DB_POOL_TIMEOUT: int = Field(default=30, env="DB_POOL_TIMEOUT")
+    DB_POOL_RECYCLE: int = Field(default=1800, env="DB_POOL_RECYCLE")
+    DB_POOL_PRE_PING: bool = Field(default=True, env="DB_POOL_PRE_PING")
+    DB_CONNECT_TIMEOUT: int = Field(default=10, env="DB_CONNECT_TIMEOUT")
+
     # Redis config
     REDIS_HOST: str = Field(default="localhost", env="REDIS_HOST")
     REDIS_PORT: int = Field(default=6379, env="REDIS_PORT")
@@ -122,15 +130,24 @@ def validate_production_configuration(cfg: BaseConfig) -> list[str]:
         elif len(cfg.SECRET_KEY) < 32:
             errors.append(f"Production SECRET_KEY is too short ({len(cfg.SECRET_KEY)} chars); must be at least 32 characters.")
 
-        # 2. Database credentials
+        # 2. Database credentials & driver verification
+        db_url = cfg.get_database_url()
+        if db_url.startswith("sqlite"):
+            errors.append("SQLite database is not permitted in production environment. A production PostgreSQL database must be configured.")
         if cfg.POSTGRES_PASSWORD == "postgres" and not cfg.DATABASE_URL:
             errors.append("Production POSTGRES_PASSWORD must not use default 'postgres' password.")
 
-        # 3. CORS wildcard with credentials check
+        # 3. Database connection pool boundaries
+        if cfg.DB_POOL_SIZE < 5:
+            errors.append(f"Production DB_POOL_SIZE ({cfg.DB_POOL_SIZE}) is too low; minimum recommended is 5.")
+        elif cfg.DB_POOL_SIZE > 100:
+            errors.append(f"Production DB_POOL_SIZE ({cfg.DB_POOL_SIZE}) exceeds safe boundary (100); adjust according to PostgreSQL max_connections.")
+
+        # 4. CORS wildcard with credentials check
         if "*" in cfg.CORS_ORIGINS:
             errors.append("Production CORS_ORIGINS must not contain wildcard '*' when allow_credentials=True.")
 
-        # 4. Storage directory configuration
+        # 5. Storage directory configuration
         if not cfg.DOCUMENT_STORAGE_PATH:
             errors.append("DOCUMENT_STORAGE_PATH must be explicitly configured in production.")
 

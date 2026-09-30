@@ -1,6 +1,6 @@
 {
-  "total_test_files": 219,
-  "total_tests": 693,
+  "total_test_files": 220,
+  "total_tests": 708,
   "files": [
     {
       "file": "tests\\\\unit\\\\test_agent_engine.py",
@@ -401,6 +401,10 @@
     {
       "file": "tests\\\\unit\\\\test_p11_1_container_environment.py",
       "test_count": 14
+    },
+    {
+      "file": "tests\\\\unit\\\\test_p11_2_database_migrations.py",
+      "test_count": 15
     },
     {
       "file": "tests\\\\unit\\\\test_pdf_extractor.py",

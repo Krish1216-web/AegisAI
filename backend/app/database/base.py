@@ -35,6 +35,11 @@ from app.models.notification import Notification, NotificationPreference  # noqa
 # Model Context Protocol (MCP)
 from app.models.mcp import MCPServer, MCPCapability  # noqa
 
+# Teams & Collaboration
+from app.models.team import Team, TeamMembership, TeamInvitation  # noqa
+from app.models.project import Project, ProjectMembership, ProjectResource  # noqa
+from app.models.comment import Comment, CommentMention  # noqa
+
 # Analytics
 from app.models.analytics import AnalyticsEvent, UsageMetrics, APIUsage  # noqa
 
