@@ -13,8 +13,8 @@ class BaseConfig(BaseSettings):
     BUILD_TIMESTAMP: str = Field(default="", env="BUILD_TIMESTAMP")
     API_V1_STR: str = "/api/v1"
     
-    # Environment flag: 'dev' | 'prod' | 'test'
-    ENVIRONMENT: Literal["dev", "prod", "test"] = Field(default="dev", env="ENVIRONMENT")
+    # Environment flag: 'dev' | 'prod' | 'test' | 'staging'
+    ENVIRONMENT: Literal["dev", "prod", "test", "staging"] = Field(default="dev", env="ENVIRONMENT")
 
     # Security keys
     SECRET_KEY: str = Field(default="SUPER_SECRET_AEGIS_KEY_2026_CHANGE_ME", env="SECRET_KEY")
@@ -133,6 +133,14 @@ class BaseConfig(BaseSettings):
 class DevelopmentConfig(BaseConfig):
     ENVIRONMENT: str = "dev"
 
+class StagingConfig(BaseConfig):
+    ENVIRONMENT: str = "staging"
+    ENABLE_HSTS: bool = True
+    POSTGRES_DB: str = "aegisai_staging"
+    DOCUMENT_STORAGE_PATH: str = "storage/staging"
+    class Config:
+        env_file = ".env.staging"
+
 class ProductionConfig(BaseConfig):
     ENVIRONMENT: str = "prod"
     ENABLE_HSTS: bool = True
@@ -140,6 +148,7 @@ class ProductionConfig(BaseConfig):
         env_file = ".env.prod"
 
 class TestConfig(BaseConfig):
+    __test__ = False
     ENVIRONMENT: str = "test"
     POSTGRES_DB: str = "aegisai_test"
     class Config:
@@ -147,41 +156,43 @@ class TestConfig(BaseConfig):
 
 def validate_production_configuration(cfg: BaseConfig) -> list[str]:
     """
-    Validates production configuration invariants.
+    Validates production and staging configuration invariants.
     Returns a list of error messages (empty if valid).
     """
     errors = []
-    if cfg.ENVIRONMENT == "prod":
+    env_name = cfg.ENVIRONMENT
+    env_label = "Production" if env_name == "prod" else "Staging"
+    if env_name in ["prod", "staging"]:
         # 1. JWT Secret strength and non-default check
         if not cfg.SECRET_KEY or cfg.SECRET_KEY == "SUPER_SECRET_AEGIS_KEY_2026_CHANGE_ME" or "replace-with" in cfg.SECRET_KEY:
-            errors.append("Production SECRET_KEY must be securely configured and not use default placeholder values.")
+            errors.append(f"{env_label} SECRET_KEY must be securely configured and not use default placeholder values.")
         elif len(cfg.SECRET_KEY) < 32:
-            errors.append(f"Production SECRET_KEY is too short ({len(cfg.SECRET_KEY)} chars); must be at least 32 characters.")
+            errors.append(f"{env_label} SECRET_KEY is too short ({len(cfg.SECRET_KEY)} chars); must be at least 32 characters.")
 
         # 2. Database credentials & driver verification
         db_url = cfg.get_database_url()
         if db_url.startswith("sqlite"):
-            errors.append("SQLite database is not permitted in production environment. A production PostgreSQL database must be configured.")
+            errors.append(f"SQLite database is not permitted in {env_label.lower()} environment. A dedicated PostgreSQL database must be configured.")
         if cfg.POSTGRES_PASSWORD == "postgres" and not cfg.DATABASE_URL:
-            errors.append("Production POSTGRES_PASSWORD must not use default 'postgres' password.")
+            errors.append(f"{env_label} POSTGRES_PASSWORD must not use default 'postgres' password.")
 
         # 3. Database connection pool boundaries
         if cfg.DB_POOL_SIZE < 5:
-            errors.append(f"Production DB_POOL_SIZE ({cfg.DB_POOL_SIZE}) is too low; minimum recommended is 5.")
+            errors.append(f"{env_label} DB_POOL_SIZE ({cfg.DB_POOL_SIZE}) is too low; minimum recommended is 5.")
         elif cfg.DB_POOL_SIZE > 100:
-            errors.append(f"Production DB_POOL_SIZE ({cfg.DB_POOL_SIZE}) exceeds safe boundary (100); adjust according to PostgreSQL max_connections.")
+            errors.append(f"{env_label} DB_POOL_SIZE ({cfg.DB_POOL_SIZE}) exceeds safe boundary (100); adjust according to PostgreSQL max_connections.")
 
         # 4. CORS wildcard with credentials check
         if "*" in cfg.CORS_ORIGINS:
-            errors.append("Production CORS_ORIGINS must not contain wildcard '*' when allow_credentials=True.")
+            errors.append(f"{env_label} CORS_ORIGINS must not contain wildcard '*' when allow_credentials=True.")
 
         # 5. Trusted hosts & proxy validation
         if "*" in cfg.ALLOWED_HOSTS:
-            errors.append("Production ALLOWED_HOSTS must not contain wildcard '*' to protect against Host header attacks.")
+            errors.append(f"{env_label} ALLOWED_HOSTS must not contain wildcard '*' to protect against Host header attacks.")
         if not cfg.ALLOWED_HOSTS:
-            errors.append("Production ALLOWED_HOSTS must be explicitly configured.")
+            errors.append(f"{env_label} ALLOWED_HOSTS must be explicitly configured.")
         if "*" in getattr(cfg, "TRUSTED_PROXIES", []):
-            errors.append("Production TRUSTED_PROXIES must not contain wildcard '*' to prevent IP spoofing.")
+            errors.append(f"{env_label} TRUSTED_PROXIES must not contain wildcard '*' to prevent IP spoofing.")
 
         # 6. TLS certificate and key consistency
         if cfg.TLS_CERT_PATH and not cfg.TLS_KEY_PATH:
@@ -191,7 +202,11 @@ def validate_production_configuration(cfg: BaseConfig) -> list[str]:
 
         # 7. Storage directory configuration
         if not cfg.DOCUMENT_STORAGE_PATH:
-            errors.append("DOCUMENT_STORAGE_PATH must be explicitly configured in production.")
+            errors.append(f"DOCUMENT_STORAGE_PATH must be explicitly configured in {env_label.lower()}.")
+
+        # 8. Environment isolation check (Staging must not point to Production DB)
+        if env_name == "staging" and cfg.POSTGRES_DB == "aegisai_prod":
+            errors.append("Staging environment must not connect to the production database 'aegisai_prod'.")
 
     return errors
 
@@ -200,8 +215,10 @@ def get_settings() -> BaseConfig:
     Resolve the correct settings profile based on the active ENVIRONMENT variable.
     """
     env = os.getenv("ENVIRONMENT", "dev").lower()
-    if env == "prod":
+    if env in ["prod", "production"]:
         return ProductionConfig()
+    elif env in ["staging", "stage"]:
+        return StagingConfig()
     elif env == "test":
         return TestConfig()
     return DevelopmentConfig()

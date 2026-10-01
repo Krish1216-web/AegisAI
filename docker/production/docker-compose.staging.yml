@@ -1,0 +1,188 @@
+# ==============================================================================
+# AegisAI Enterprise — Dedicated Production-Like Staging Docker Compose Stack
+# Multi-container isolated architecture matching production topology
+# ==============================================================================
+
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ../../
+      dockerfile: docker/production/app.dockerfile
+    image: aegisai-backend:staging
+    container_name: aegisai-backend-staging
+    restart: always
+    env_file:
+      - ../../.env.staging
+    volumes:
+      - aegis_storage_staging:/workspace/storage
+      - aegis_logs_staging:/workspace/logs
+    networks:
+      - aegis-staging-internal-net
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 4G
+        reservations:
+          cpus: '0.5'
+          memory: 1G
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health/readiness"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  worker:
+    build:
+      context: ../../
+      dockerfile: docker/production/app.dockerfile
+    image: aegisai-backend:staging
+    container_name: aegisai-worker-staging
+    restart: always
+    command: ["python", "-m", "app.worker"]
+    env_file:
+      - ../../.env.staging
+    volumes:
+      - aegis_storage_staging:/workspace/storage
+      - aegis_logs_staging:/workspace/logs
+    networks:
+      - aegis-staging-internal-net
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 4G
+        reservations:
+          cpus: '0.5'
+          memory: 1G
+
+  scheduler:
+    build:
+      context: ../../
+      dockerfile: docker/production/app.dockerfile
+    image: aegisai-backend:staging
+    container_name: aegisai-scheduler-staging
+    restart: always
+    command: ["python", "-m", "app.scheduler_daemon"]
+    env_file:
+      - ../../.env.staging
+    volumes:
+      - aegis_storage_staging:/workspace/storage
+      - aegis_logs_staging:/workspace/logs
+    networks:
+      - aegis-staging-internal-net
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 2G
+        reservations:
+          cpus: '0.2'
+          memory: 512M
+
+  frontend:
+    build:
+      context: ../../
+      dockerfile: docker/production/frontend.dockerfile
+    image: aegisai-frontend:staging
+    container_name: aegisai-frontend-staging
+    restart: always
+    ports:
+      - "8080:80"
+      - "8443:443"
+    volumes:
+      - ../../certs/staging:/etc/nginx/certs:ro
+    networks:
+      - aegis-staging-internal-net
+      - aegis-staging-public-net
+    depends_on:
+      backend:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.2'
+          memory: 256M
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1/"]
+      interval: 20s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+  db:
+    image: postgres:16-alpine
+    container_name: aegisai-db-staging
+    restart: always
+    env_file:
+      - ../../.env.staging
+    volumes:
+      - aegis_postgres_staging_data:/var/lib/postgresql/data
+    networks:
+      - aegis-staging-internal-net
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 4G
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    container_name: aegisai-redis-staging
+    restart: always
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "1gb", "--maxmemory-policy", "noeviction"]
+    volumes:
+      - aegis_redis_staging_data:/data
+    networks:
+      - aegis-staging-internal-net
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+networks:
+  aegis-staging-internal-net:
+    driver: bridge
+    internal: true
+  aegis-staging-public-net:
+    driver: bridge
+
+volumes:
+  aegis_postgres_staging_data:
+  aegis_redis_staging_data:
+  aegis_storage_staging:
+  aegis_logs_staging:
