@@ -45,6 +45,40 @@ services:
       start_period: 20s
 
   # ----------------------------------------------------------------------------
+  # Background Worker & Scheduler Service
+  # ----------------------------------------------------------------------------
+  worker:
+    build:
+      context: .
+      dockerfile: docker/production/app.dockerfile
+    image: aegisai-backend:production
+    container_name: aegisai-worker
+    restart: always
+    command: ["python", "-m", "app.worker"]
+    environment:
+      - ENVIRONMENT=prod
+      - POSTGRES_SERVER=db
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=${POSTGRES_DB:-aegisai}
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - SECRET_KEY=${SECRET_KEY}
+      - DOCUMENT_STORAGE_PATH=/workspace/storage
+      - WORKER_CONCURRENCY=10
+    volumes:
+      - aegis_storage:/workspace/storage
+      - aegis_logs:/workspace/logs
+    networks:
+      - aegis-internal
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # ----------------------------------------------------------------------------
   # Frontend Static & Reverse Proxy Service (Nginx)
   # ----------------------------------------------------------------------------
   frontend:

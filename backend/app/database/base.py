@@ -26,8 +26,9 @@ from app.models.rag import RAGQuery  # noqa
 # Knowledge Graph
 from app.models.knowledge_graph import KnowledgeGraphNode, KnowledgeGraphEdge  # noqa
 
-# Tasks
+# Tasks & Background Jobs
 from app.models.task import Task, TaskExecution  # noqa
+from app.models.job import BackgroundJob, JobStatus, JobPriority, JobErrorCategory  # noqa
 
 # Notifications
 from app.models.notification import Notification, NotificationPreference  # noqa

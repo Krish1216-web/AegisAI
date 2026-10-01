@@ -20,3 +20,4 @@ from app.models.team import Team, TeamMembership, TeamInvitation
 from app.models.project import Project, ProjectMembership, ProjectResource
 
 from app.models.comment import Comment, CommentMention
+from app.models.job import BackgroundJob, JobStatus, JobPriority, JobErrorCategory

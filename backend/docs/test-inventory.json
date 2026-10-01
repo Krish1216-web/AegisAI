@@ -1,6 +1,6 @@
 {
-  "total_test_files": 221,
-  "total_tests": 725,
+  "total_test_files": 222,
+  "total_tests": 755,
   "files": [
     {
       "file": "tests\\\\unit\\\\test_agent_engine.py",
@@ -881,6 +881,10 @@
     {
       "file": "tests\\\\unit\\\\test_workspace_role_management.py",
       "test_count": 2
+    },
+    {
+      "file": "tests\\\\unit\\\\test_p11_4_workers_scheduling.py",
+      "test_count": 30
     },
     {
       "file": "tests\\\\unit\\\\test_xlsx_extractor.py",

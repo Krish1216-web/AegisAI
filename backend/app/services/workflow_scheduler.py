@@ -433,3 +433,70 @@ class WorkflowSchedulerService:
                 self.db.commit()
 
         return executions
+
+    def enqueue_due_schedules(self, max_batch: int = 50) -> List[Any]:
+        """
+        Polls due schedules and asynchronously enqueues them as BackgroundJobs into the worker queue.
+        Advances the next_run_at timestamp to prevent duplicate triggering.
+        """
+        from app.services.worker_service import WorkerService
+        worker_svc = WorkerService(self.db)
+        now = datetime.datetime.now(datetime.timezone.utc)
+
+        due_schedules = self.db.query(WorkflowSchedule).filter(
+            and_(
+                WorkflowSchedule.status == WorkflowScheduleStatus.ACTIVE,
+                WorkflowSchedule.is_enabled.is_(True),
+                WorkflowSchedule.next_run_at.is_not(None),
+                WorkflowSchedule.next_run_at <= now,
+                WorkflowSchedule.deleted_at.is_(None)
+            )
+        ).limit(max_batch).all()
+
+        enqueued_jobs = []
+        for sched in due_schedules:
+            try:
+                # Idempotency token per scheduled run
+                run_token = f"sched_{sched.id}_{int(sched.next_run_at.timestamp())}"
+                input_payload = dict(sched.input_data or {})
+                input_payload["_schedule_provenance"] = {
+                    "schedule_id": str(sched.id),
+                    "schedule_name": sched.name,
+                    "trigger_type": "schedule",
+                    "workflow_version": sched.workflow_version,
+                    "triggered_at": now.isoformat()
+                }
+
+                job = worker_svc.enqueue_job(
+                    workspace_id=sched.workspace_id,
+                    created_by=sched.created_by,
+                    job_type="workflow.execution",
+                    payload={
+                        "workflow_id": str(sched.workflow_id),
+                        "input_data": input_payload
+                    },
+                    priority=50,
+                    idempotency_key=run_token,
+                    correlation_id=run_token
+                )
+                enqueued_jobs.append(job)
+
+                sched.last_run_at = now
+                sched.total_runs += 1
+
+                # Advance next run
+                if sched.schedule_type in [WorkflowScheduleType.ONE_TIME, WorkflowScheduleType.DELAYED]:
+                    sched.status = WorkflowScheduleStatus.COMPLETED
+                    sched.is_enabled = False
+                    sched.next_run_at = None
+                elif sched.schedule_type == WorkflowScheduleType.CRON and sched.cron_expression:
+                    sched.next_run_at = CronEvaluator.get_next_run(sched.cron_expression, from_dt=now, tz_name=sched.timezone)
+
+                self.db.commit()
+            except Exception as e:
+                logger.error(f"Failed to enqueue background job for schedule {sched.id}: {e}")
+                sched.failure_count += 1
+                sched.last_error = str(e)
+                self.db.commit()
+
+        return enqueued_jobs

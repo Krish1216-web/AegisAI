@@ -40,6 +40,35 @@ services:
       retries: 3
       start_period: 20s
 
+  worker:
+    build:
+      context: .
+      dockerfile: docker/production/app.dockerfile
+    image: aegisai-backend:production
+    container_name: aegisai-worker-prod
+    restart: always
+    command: ["python", "-m", "app.worker"]
+    env_file:
+      - .env.prod
+    volumes:
+      - aegis_storage_prod:/workspace/storage
+      - aegis_logs_prod:/workspace/logs
+    networks:
+      - aegis-internal-net
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 4G
+        reservations:
+          cpus: '0.5'
+          memory: 1G
+
   frontend:
     build:
       context: .

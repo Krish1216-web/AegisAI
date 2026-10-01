@@ -27,10 +27,11 @@ def test_alembic_migration_chain_and_head():
     """Verify that the Alembic migration history is completely linear and points to expected head."""
     chain_info = verify_migration_chain("alembic.ini")
     assert chain_info["is_linear"] is True
-    assert chain_info["head"] == "018_notifications_realtime"
-    assert chain_info["total_revisions"] == 18
+    assert chain_info["head"] == "019_background_jobs"
+    assert chain_info["total_revisions"] == 19
     assert "001_initial_migration" in chain_info["revisions"]
     assert "018_notifications_realtime" in chain_info["revisions"]
+    assert "019_background_jobs" in chain_info["revisions"]
 
 def test_production_database_config_validation():
     """Verify production database validation rules (rejection of SQLite, default passwords, pool boundaries)."""
@@ -170,7 +171,7 @@ def test_run_migrations_with_lock_orchestration():
     with mock.patch("alembic.command.upgrade") as mock_upgrade:
         res = run_migrations_with_lock(mock_engine, target_revision="head")
         assert res["status"] == "success"
-        assert res["head"] == "018_notifications_realtime"
+        assert res["head"] == "019_background_jobs"
         mock_upgrade.assert_called_once()
 
 def test_model_metadata_table_completeness():
@@ -196,6 +197,7 @@ def test_model_metadata_table_completeness():
         "workflows",
         "mcp_servers",
         "notifications",
+        "background_jobs",
         "audit_logs",
         "activity_logs"
     }

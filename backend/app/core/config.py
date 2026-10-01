@@ -64,6 +64,18 @@ class BaseConfig(BaseSettings):
     CHUNK_OVERLAP: int = Field(default=150, env="CHUNK_OVERLAP")
     DOCUMENT_STORAGE_PATH: str = Field(default="storage", env="DOCUMENT_STORAGE_PATH")
     MAX_DOCUMENT_SIZE_MB: int = Field(default=50, env="MAX_DOCUMENT_SIZE_MB")
+
+    # Worker & Scheduling Settings
+    WORKER_CONCURRENCY: int = Field(default=10, env="WORKER_CONCURRENCY")
+    MAX_TENANT_CONCURRENCY: int = Field(default=5, env="MAX_TENANT_CONCURRENCY")
+    WORKER_HEARTBEAT_INTERVAL_SECONDS: int = Field(default=10, env="WORKER_HEARTBEAT_INTERVAL_SECONDS")
+    WORKER_STALE_TIMEOUT_SECONDS: int = Field(default=60, env="WORKER_STALE_TIMEOUT_SECONDS")
+    WORKER_SHUTDOWN_TIMEOUT_SECONDS: int = Field(default=30, env="WORKER_SHUTDOWN_TIMEOUT_SECONDS")
+    SCHEDULER_POLL_INTERVAL_SECONDS: int = Field(default=5, env="SCHEDULER_POLL_INTERVAL_SECONDS")
+    SCHEDULER_LEADER_TTL_SECONDS: int = Field(default=15, env="SCHEDULER_LEADER_TTL_SECONDS")
+    JOB_MAX_RETRIES: int = Field(default=3, env="JOB_MAX_RETRIES")
+    JOB_BASE_BACKOFF_SECONDS: int = Field(default=2, env="JOB_BASE_BACKOFF_SECONDS")
+    JOB_MAX_BACKOFF_SECONDS: int = Field(default=300, env="JOB_MAX_BACKOFF_SECONDS")
     
     # API & Web Security Configurations
     CORS_ORIGINS: list[str] = [
