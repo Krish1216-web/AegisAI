@@ -1,6 +1,6 @@
 {
-  "total_test_files": 226,
-  "total_tests": 865,
+  "total_test_files": 227,
+  "total_tests": 896,
   "files": [
     {
       "file": "D:\\CP\\AegisAI\\backend\\tests\\staging\\test_staging_smoke_suite.py",
@@ -429,6 +429,10 @@
     {
       "file": "D:\\CP\\AegisAI\\backend\\tests\\unit\\test_p11_7_staging_environment.py",
       "test_count": 33
+    },
+    {
+      "file": "D:\\CP\\AegisAI\\backend\\tests\\unit\\test_p11_8_production_architecture.py",
+      "test_count": 31
     },
     {
       "file": "D:\\CP\\AegisAI\\backend\\tests\\unit\\test_pdf_extractor.py",

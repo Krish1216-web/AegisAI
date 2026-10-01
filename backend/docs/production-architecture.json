@@ -1,0 +1,249 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "name": "AegisAI Production Deployment Architecture Manifest",
+  "version": "1.0.0",
+  "environment": "production",
+  "generated_at": "2026-10-01T18:47:00Z",
+  "topology": {
+    "entrypoint": "Reverse Proxy (Nginx with TLS Termination)",
+    "public_endpoints": [
+      {
+        "port": 443,
+        "protocol": "HTTPS",
+        "description": "Production HTTPS web traffic, REST API, WebSocket and SSE connections"
+      },
+      {
+        "port": 80,
+        "protocol": "HTTP",
+        "description": "HTTP to HTTPS permanent redirect (301)"
+      }
+    ],
+    "networks": {
+      "aegis-public-net": {
+        "driver": "bridge",
+        "internal": false,
+        "description": "External ingress network connecting reverse proxy to internet / load balancer"
+      },
+      "aegis-internal-net": {
+        "driver": "bridge",
+        "internal": true,
+        "description": "Strictly isolated internal mesh network for service-to-service communication. No external egress/ingress."
+      }
+    }
+  },
+  "services": {
+    "frontend": {
+      "category": "stateless",
+      "scaling_model": "horizontal",
+      "recommended_replicas": 2,
+      "container_image": "aegisai-frontend:production",
+      "user": "aegisuser (UID 10001)",
+      "networks": ["aegis-public-net", "aegis-internal-net"],
+      "resource_limits": {
+        "cpus": "1.0",
+        "memory": "1GiB"
+      },
+      "healthcheck": {
+        "endpoint": "http://127.0.0.1/",
+        "interval_seconds": 20,
+        "timeout_seconds": 3,
+        "retries": 3
+      },
+      "dependencies": ["backend"]
+    },
+    "backend": {
+      "category": "stateless",
+      "scaling_model": "horizontal",
+      "recommended_replicas": 3,
+      "container_image": "aegisai-backend:production",
+      "user": "aegisuser (UID 10001)",
+      "networks": ["aegis-internal-net"],
+      "resource_limits": {
+        "cpus": "2.0",
+        "memory": "4GiB"
+      },
+      "healthcheck": {
+        "endpoint": "http://localhost:8000/health/readiness",
+        "interval_seconds": 15,
+        "timeout_seconds": 5,
+        "retries": 3
+      },
+      "dependencies": ["db", "redis"]
+    },
+    "worker": {
+      "category": "stateless_worker",
+      "scaling_model": "horizontal",
+      "recommended_replicas": 4,
+      "container_image": "aegisai-backend:production",
+      "command": "python -m app.worker",
+      "user": "aegisuser (UID 10001)",
+      "networks": ["aegis-internal-net"],
+      "resource_limits": {
+        "cpus": "2.0",
+        "memory": "4GiB"
+      },
+      "dependencies": ["db", "redis"]
+    },
+    "scheduler": {
+      "category": "singleton_leader",
+      "scaling_model": "active_passive_leader_election",
+      "recommended_replicas": 2,
+      "container_image": "aegisai-backend:production",
+      "command": "python -m app.scheduler_daemon",
+      "user": "aegisuser (UID 10001)",
+      "networks": ["aegis-internal-net"],
+      "coordination": {
+        "mechanism": "Redis Distributed Lock",
+        "lock_key": "aegis:scheduler:leader:lock",
+        "lease_ttl_seconds": 15,
+        "renewal_interval_seconds": 5
+      },
+      "resource_limits": {
+        "cpus": "1.0",
+        "memory": "2GiB"
+      },
+      "dependencies": ["db", "redis"]
+    },
+    "db": {
+      "category": "stateful_persistent",
+      "scaling_model": "single_primary_with_read_replicas",
+      "recommended_replicas": 1,
+      "container_image": "postgres:16-alpine",
+      "database_name": "aegisai_prod",
+      "networks": ["aegis-internal-net"],
+      "host_port_exposure": false,
+      "persistent_volume": "aegis_postgres_prod_data",
+      "resource_limits": {
+        "cpus": "2.0",
+        "memory": "4GiB"
+      },
+      "healthcheck": {
+        "test": "pg_isready -U postgres -d aegisai_prod",
+        "interval_seconds": 10,
+        "timeout_seconds": 5,
+        "retries": 5
+      }
+    },
+    "redis": {
+      "category": "stateful_ephemeral_cache_queue",
+      "scaling_model": "single_instance_or_sentinel_cluster",
+      "recommended_replicas": 1,
+      "container_image": "redis:7-alpine",
+      "command": "redis-server --appendonly yes --maxmemory 2gb --maxmemory-policy noeviction",
+      "networks": ["aegis-internal-net"],
+      "host_port_exposure": false,
+      "persistent_volume": "aegis_redis_prod_data",
+      "resource_limits": {
+        "cpus": "1.0",
+        "memory": "2GiB"
+      },
+      "healthcheck": {
+        "test": "redis-cli ping",
+        "interval_seconds": 10,
+        "timeout_seconds": 3,
+        "retries": 5
+      }
+    }
+  },
+  "deployment_strategy": {
+    "type": "immutable_rolling_deployment",
+    "promotion_pipeline": "staging -> manual_approval -> production",
+    "zero_rebuild_in_promotion": true,
+    "migration_protocol": {
+      "phase": "pre_deployment",
+      "concurrency_lock": "PostgreSQL Advisory Lock (AEGIS_MIGRATION_ADVISORY_LOCK_ID)",
+      "direction": "upgrade_head_additive_only",
+      "destructive_downgrade_allowed": false,
+      "schema_pattern": "Expand -> Deploy -> Backfill -> Contract"
+    },
+    "health_gates": [
+      "/health/liveness",
+      "/health/readiness",
+      "/health/dependencies"
+    ],
+    "rollback_protocol": {
+      "action": "revert_container_image_digest",
+      "automatic_db_downgrade": false,
+      "recovery_point_objective_target_minutes": 15,
+      "recovery_time_objective_target_minutes": 10
+    }
+  },
+  "external_dependencies": [
+    {
+      "name": "PostgreSQL 16 Engine",
+      "type": "database",
+      "status": "VERIFIED LOCALLY",
+      "notes": "Advisory locking, migration chain to head, and connection pooling verified locally."
+    },
+    {
+      "name": "Redis 7 Broker & Lock Engine",
+      "type": "queue_cache_lock",
+      "status": "VERIFIED LOCALLY",
+      "notes": "QueueManager, leader election, and heartbeat mechanisms verified locally."
+    },
+    {
+      "name": "Production Docker Multi-Stage Builds",
+      "type": "containerization",
+      "status": "VERIFIED LOCALLY",
+      "notes": "UID 10001 unprivileged non-root execution verified."
+    },
+    {
+      "name": "Reverse Proxy Nginx TLS / HTTP2 / WebSockets",
+      "type": "networking",
+      "status": "VERIFIED LOCALLY",
+      "notes": "Configuration syntax, rate limiting, and security headers verified locally."
+    },
+    {
+      "name": "Cloud Load Balancer (AWS ALB / GCP HTTPS LB)",
+      "type": "cloud_networking",
+      "status": "REQUIRES CLOUD",
+      "notes": "External edge ingress infrastructure managed by cloud provider."
+    },
+    {
+      "name": "Production DNS Nameserver (Route53 / Cloudflare)",
+      "type": "dns",
+      "status": "REQUIRES DNS",
+      "notes": "Production domain A/AAAA/CNAME records mapping to edge IP."
+    },
+    {
+      "name": "Production SSL/TLS Certificate (Let's Encrypt / DigiCert)",
+      "type": "tls_certificates",
+      "status": "REQUIRES CERTIFICATE",
+      "notes": "Publicly trusted X.509 certificate for https://app.aegisai.enterprise."
+    },
+    {
+      "name": "OCI Container Registry (GHCR / AWS ECR / Artifact Registry)",
+      "type": "container_registry",
+      "status": "REQUIRES REGISTRY",
+      "notes": "Hosting immutable tagged image digests with attached Syft SBOMs."
+    },
+    {
+      "name": "Enterprise Secrets Manager (HashiCorp Vault / AWS Secrets Manager)",
+      "type": "secrets_management",
+      "status": "REQUIRES SECRET MANAGER",
+      "notes": "External runtime secret injection into production environment."
+    },
+    {
+      "name": "OpenAI / Anthropic / Google Gemini AI Endpoints",
+      "type": "ai_inference",
+      "status": "VERIFIED LOCALLY",
+      "notes": "Mock and live provider adapters implemented with graceful offline fallbacks."
+    },
+    {
+      "name": "External MCP Tool Servers",
+      "type": "mcp_servers",
+      "status": "VERIFIED LOCALLY",
+      "notes": "Security sandbox, SSRF protection, credential store, and confirmation gating verified locally."
+    }
+  ],
+  "verification_summary": {
+    "total_external_dependencies": 11,
+    "verified_locally": 6,
+    "requires_cloud": 1,
+    "requires_dns": 1,
+    "requires_certificate": 1,
+    "requires_registry": 1,
+    "requires_secret_manager": 1,
+    "not_yet_verified": 0
+  }
+}

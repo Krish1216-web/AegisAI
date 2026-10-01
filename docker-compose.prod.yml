@@ -69,6 +69,35 @@ services:
           cpus: '0.5'
           memory: 1G
 
+  scheduler:
+    build:
+      context: .
+      dockerfile: docker/production/app.dockerfile
+    image: aegisai-backend:production
+    container_name: aegisai-scheduler-prod
+    restart: always
+    command: ["python", "-m", "app.scheduler_daemon"]
+    env_file:
+      - .env.prod
+    volumes:
+      - aegis_storage_prod:/workspace/storage
+      - aegis_logs_prod:/workspace/logs
+    networks:
+      - aegis-internal-net
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 2G
+        reservations:
+          cpus: '0.2'
+          memory: 512M
+
   frontend:
     build:
       context: .
