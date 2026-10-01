@@ -40,6 +40,15 @@ RUN pip install --no-cache /wheels/*
 # Copy backend files
 COPY backend/ /workspace/
 
+ARG APP_VERSION=1.0.0
+ARG GIT_COMMIT_SHA=unknown
+
+ENV PYTHONPATH="/workspace" \
+    PYTHONUNBUFFERED="1" \
+    ENVIRONMENT="prod" \
+    APP_VERSION="${APP_VERSION}" \
+    GIT_COMMIT_SHA="${GIT_COMMIT_SHA}"
+
 RUN useradd -m aegisuser && chown -R aegisuser:aegisuser /workspace
 USER aegisuser
 

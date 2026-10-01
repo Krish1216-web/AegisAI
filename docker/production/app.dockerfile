@@ -57,11 +57,16 @@ RUN mkdir -p /workspace/storage /workspace/logs && \
 # Copy backend application source
 COPY --chown=aegisuser:aegisgroup backend/ /workspace/
 
+ARG APP_VERSION=1.0.0
+ARG GIT_COMMIT_SHA=unknown
+
 # Set Python environment variables for container runtime
 ENV PYTHONPATH="/workspace" \
     PYTHONUNBUFFERED="1" \
     PYTHONDONTWRITEBYTECODE="1" \
     ENVIRONMENT="prod" \
+    APP_VERSION="${APP_VERSION}" \
+    GIT_COMMIT_SHA="${GIT_COMMIT_SHA}" \
     DOCUMENT_STORAGE_PATH="/workspace/storage"
 
 USER aegisuser

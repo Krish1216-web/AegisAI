@@ -218,6 +218,22 @@ def dependencies_health_probe(db: Session = Depends(get_db)):
         }
     }
 
+@app.get("/version", tags=["Version"])
+@app.get(f"{settings.API_V1_STR}/version", tags=["Version"])
+def version_info():
+    """
+    Application build metadata and runtime version endpoint.
+    Exposes immutable version identifiers and build information safely without leaking secrets.
+    """
+    return {
+        "service": settings.PROJECT_NAME,
+        "version": settings.VERSION,
+        "git_commit": settings.GIT_COMMIT_SHA,
+        "environment": settings.ENVIRONMENT,
+        "build_timestamp": settings.BUILD_TIMESTAMP if settings.BUILD_TIMESTAMP else None,
+        "api_version": "v1"
+    }
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)
