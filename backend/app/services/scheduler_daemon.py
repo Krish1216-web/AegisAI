@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.core.queue import QueueManager
 from app.core.config import settings
+from app.core.metrics import metrics_registry
 from app.services.workflow_scheduler import WorkflowSchedulerService
 from app.services.worker_service import WorkerService
 
@@ -53,6 +54,7 @@ class SchedulerDaemon:
 
         # Node is active leader
         logger.debug(f"Scheduler '{self.instance_id}' executing active cycle as LEADER.")
+        metrics_registry.record_scheduler_event("cycle")
         enqueued_schedules_count = 0
         recovered_stale_count = 0
         delayed_jobs_pushed = 0
@@ -70,6 +72,8 @@ class SchedulerDaemon:
             wf_scheduler = WorkflowSchedulerService(db)
             enqueued = wf_scheduler.enqueue_due_schedules(max_batch=50)
             enqueued_schedules_count = len(enqueued)
+            if enqueued_schedules_count > 0:
+                metrics_registry.record_scheduler_event("schedule_triggered", count=enqueued_schedules_count)
 
             worker_svc = WorkerService(db, queue_mgr=self.queue_mgr)
             recovered = worker_svc.recover_stale_jobs(stale_timeout_seconds=settings.WORKER_STALE_TIMEOUT_SECONDS)

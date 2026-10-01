@@ -75,8 +75,18 @@ class BaseConfig(BaseSettings):
     SCHEDULER_LEADER_TTL_SECONDS: int = Field(default=15, env="SCHEDULER_LEADER_TTL_SECONDS")
     JOB_MAX_RETRIES: int = Field(default=3, env="JOB_MAX_RETRIES")
     JOB_BASE_BACKOFF_SECONDS: int = Field(default=2, env="JOB_BASE_BACKOFF_SECONDS")
-    JOB_MAX_BACKOFF_SECONDS: int = Field(default=300, env="JOB_MAX_BACKOFF_SECONDS")
-    
+    # Observability & Logging Settings
+    LOG_LEVEL: str = Field(default="INFO", env="LOG_LEVEL")
+    LOG_FORMAT: str = Field(default="json", env="LOG_FORMAT")
+    LOG_FILE_PATH: Optional[str] = Field(default="logs/aegis.log", env="LOG_FILE_PATH")
+    LOG_ROTATION: str = Field(default="100 MB", env="LOG_ROTATION")
+    LOG_RETENTION: str = Field(default="10 days", env="LOG_RETENTION")
+    METRICS_ENABLED: bool = Field(default=True, env="METRICS_ENABLED")
+    METRICS_MAX_HISTORY_SECONDS: int = Field(default=86400, env="METRICS_MAX_HISTORY_SECONDS")
+    ALERT_ERROR_RATE_THRESHOLD: float = Field(default=0.05, env="ALERT_ERROR_RATE_THRESHOLD")
+    ALERT_QUEUE_DEPTH_THRESHOLD: int = Field(default=100, env="ALERT_QUEUE_DEPTH_THRESHOLD")
+    ALERT_STALE_WORKER_THRESHOLD_SECONDS: int = Field(default=60, env="ALERT_STALE_WORKER_THRESHOLD_SECONDS")
+
     # API & Web Security Configurations
     CORS_ORIGINS: list[str] = [
         "http://localhost:5173",

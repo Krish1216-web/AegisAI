@@ -25,6 +25,7 @@ app = FastAPI(
 
 from app.core.security_headers import SecurityHeadersMiddleware
 from app.core.request_limits import RequestSizeLimitMiddleware
+from app.core.correlation import CorrelationMiddleware
 
 # 1. Register security TrustedHostMiddleware
 app.add_middleware(
@@ -38,7 +39,10 @@ app.add_middleware(SecurityHeadersMiddleware)
 # 3. Register Request Size Limit Middleware
 app.add_middleware(RequestSizeLimitMiddleware)
 
-# 4. Register Explicit CORS policy middleware
+# 4. Register Request Correlation & Telemetry Middleware
+app.add_middleware(CorrelationMiddleware)
+
+# 5. Register Explicit CORS policy middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
@@ -152,6 +156,66 @@ def readiness_probe(db: Session = Depends(get_db)):
         "timestamp": time.time(),
         "database": "ok",
         "redis": "ok"
+    }
+
+@app.get("/health/dependencies", tags=["Health"])
+def dependencies_health_probe(db: Session = Depends(get_db)):
+    """
+    Comprehensive dependency health evaluation for PostgreSQL, Redis, Queues, Workers, and Storage.
+    """
+    import os
+    from app.core.queue import QueueManager
+    from app.core.metrics import metrics_registry
+
+    db_status = "healthy"
+    db_latency_ms = None
+    try:
+        t0 = time.perf_counter()
+        db.execute(text("SELECT 1"))
+        db_latency_ms = round((time.perf_counter() - t0) * 1000.0, 2)
+        metrics_registry.record_db_query(duration_ms=db_latency_ms)
+    except Exception as e:
+        logger.error(f"PostgreSQL dependency check error: {e}")
+        db_status = "unhealthy"
+        metrics_registry.record_db_query(duration_ms=0, is_failure=True)
+
+    redis_ok = check_redis_health()
+    redis_status = "healthy" if redis_ok else "unhealthy"
+
+    queue_mgr = QueueManager()
+    active_workers = queue_mgr.get_active_workers()
+    queue_depths = queue_mgr.get_queue_depth()
+
+    storage_path = getattr(settings, "DOCUMENT_STORAGE_PATH", "storage")
+    storage_accessible = os.path.isdir(storage_path) or os.path.exists(storage_path)
+
+    overall = "healthy"
+    if db_status != "healthy" or redis_status != "healthy":
+        overall = "unhealthy"
+    elif not storage_accessible:
+        overall = "degraded"
+
+    return {
+        "status": overall,
+        "timestamp": time.time(),
+        "environment": settings.ENVIRONMENT,
+        "dependencies": {
+            "database": {
+                "status": db_status,
+                "latency_ms": db_latency_ms
+            },
+            "redis": {
+                "status": redis_status
+            },
+            "worker_cluster": {
+                "active_workers_count": len(active_workers),
+                "queue_depths": queue_depths
+            },
+            "storage": {
+                "status": "accessible" if storage_accessible else "inaccessible",
+                "path": storage_path
+            }
+        }
     }
 
 if __name__ == "__main__":

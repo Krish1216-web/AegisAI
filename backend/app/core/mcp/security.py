@@ -95,6 +95,16 @@ class CredentialStore:
         return redacted
 
     @staticmethod
+    def scrub_text(text: Optional[str]) -> str:
+        """Alias for redact_sensitive_str."""
+        return CredentialStore.redact_sensitive_str(text)
+
+    @staticmethod
+    def scrub_dict(data: Dict[str, Any]) -> Dict[str, Any]:
+        """Alias for redact_sensitive_dict."""
+        return CredentialStore.redact_sensitive_dict(data)
+
+    @staticmethod
     def encode_secure_token(raw_token: str) -> str:
         """Securely prepares token for storage."""
         if not raw_token:

@@ -16,6 +16,8 @@ from app.core.mcp.security import CredentialStore
 from app.core.security_events import SecurityEventType, SecuritySeverity
 from app.services.security_observability import SecurityObservabilityService
 from app.services.authorization import AuthorizationService
+from app.core.correlation import set_correlation_context
+from app.core.metrics import metrics_registry
 from app.core.platform.errors import (
     PlatformExecutionError,
     TenantIsolationError,
@@ -151,6 +153,7 @@ class WorkerService:
             delay_seconds = max(0.0, (effective_scheduled_at - now).total_seconds())
 
         self.queue_mgr.enqueue(str(job.id), priority=priority, delay_seconds=delay_seconds)
+        metrics_registry.record_job_lifecycle("queued")
 
         # 6. Observability
         try:
@@ -281,6 +284,15 @@ class WorkerService:
         job.heartbeat_at = now
         self.db.commit()
 
+        # Set thread-local correlation context for logger and platform events
+        set_correlation_context(
+            job_id=str(job.id),
+            correlation_id=job.correlation_id,
+            workspace_id=job.workspace_id,
+            user_id=job.created_by
+        )
+        metrics_registry.record_job_lifecycle("started")
+
         # Security Context Verification
         user = self.db.query(User).filter(
             and_(User.id == job.created_by, User.is_active.is_(True), User.is_deleted.is_(False))
@@ -315,6 +327,7 @@ class WorkerService:
             self.db.commit()
             self.db.refresh(job)
 
+            metrics_registry.record_job_lifecycle("succeeded")
             logger.info(f"Job {job.id} ({job.job_type}) succeeded.")
             return job
 
@@ -399,6 +412,7 @@ class WorkerService:
 
             # Re-enqueue to Redis delayed queue
             self.queue_mgr.enqueue(str(job.id), priority=job.priority, delay_seconds=delay_seconds)
+            metrics_registry.record_job_lifecycle("retried")
             logger.warning(f"Job {job.id} transient failure (attempt {job.attempts}/{job.max_attempts}). Retrying in {delay_seconds}s.")
         else:
             # Permanent Failure / Dead Lettering
@@ -407,6 +421,7 @@ class WorkerService:
             self.db.commit()
             self.db.refresh(job)
 
+            metrics_registry.record_job_lifecycle("dead_lettered")
             logger.error(f"Job {job.id} transitioned to DEAD_LETTERED. Reason: {sanitized_error} (Category: {error_category.value})")
 
             # Security Observability Record
@@ -452,6 +467,7 @@ class WorkerService:
         self.db.commit()
         self.db.refresh(job)
 
+        metrics_registry.record_job_lifecycle("dead_lettered")
         logger.error(f"Job {job.id} permanently failed: {sanitized_reason}")
 
         try:
@@ -502,6 +518,7 @@ class WorkerService:
             job.completed_at = now
             self.db.commit()
             self.db.refresh(job)
+            metrics_registry.record_job_lifecycle("cancelled")
             logger.info(f"Queued job {job_id} cancelled by user {user_id}")
             return job
 
@@ -509,6 +526,7 @@ class WorkerService:
             job.status = JobStatus.CANCEL_REQUESTED
             self.db.commit()
             self.db.refresh(job)
+            metrics_registry.record_job_lifecycle("cancelled")
             logger.info(f"Cancellation requested for running job {job_id} by user {user_id}")
             return job
 
@@ -541,11 +559,13 @@ class WorkerService:
                 job.last_error = f"Worker heartbeat timeout (> {stale_timeout_seconds}s). Re-queued for retry."
                 job.error_category = JobErrorCategory.TIMEOUT
                 self.queue_mgr.enqueue(str(job.id), priority=job.priority, delay_seconds=delay)
+                metrics_registry.record_job_lifecycle("stale_recovered")
             else:
                 job.status = JobStatus.DEAD_LETTERED
                 job.completed_at = now
                 job.last_error = f"Worker heartbeat timeout exceeded max attempts ({job.attempts}/{job.max_attempts})."
                 job.error_category = JobErrorCategory.TIMEOUT
+                metrics_registry.record_job_lifecycle("dead_lettered")
 
             recovered.append(job)
 
