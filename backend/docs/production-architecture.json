@@ -164,8 +164,8 @@
     "rollback_protocol": {
       "action": "revert_container_image_digest",
       "automatic_db_downgrade": false,
-      "recovery_point_objective_target_minutes": 15,
-      "recovery_time_objective_target_minutes": 10
+      "recovery_point_objective_target_minutes": "15 (TARGET — NOT YET MEASURED IN PRODUCTION)",
+      "recovery_time_objective_target_minutes": "10 (TARGET — NOT YET MEASURED IN PRODUCTION)"
     }
   },
   "external_dependencies": [

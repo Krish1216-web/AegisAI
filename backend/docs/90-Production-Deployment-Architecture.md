@@ -313,9 +313,9 @@ In the event of an unrecoverable runtime error, elevated error rate, or health g
 
 ## 17. Disaster Recovery & Continuity
 
-### RPO & RTO Targets
-- **Recovery Point Objective (RPO) Target**: 15 minutes.
-- **Recovery Time Objective (RTO) Target**: 10 minutes.
+### RPO & RTO Targets (Architectural Targets)
+- **Recovery Point Objective (RPO)**: `15 minutes (TARGET — NOT YET MEASURED IN PRODUCTION)`
+- **Recovery Time Objective (RTO)**: `10 minutes (TARGET — NOT YET MEASURED IN PRODUCTION)`
 
 ### Backup Schedule & Retention
 - **Automated PostgreSQL Dumps**: Full database backup executed every 6 hours via `pg_dump` with gzip compression.
@@ -331,6 +331,7 @@ In the event of an unrecoverable runtime error, elevated error rate, or health g
 | :--- | :--- | :--- | :--- | :--- |
 | **Topology** | 6-Service Production Stack | `docker-compose.prod.yml` | 6 Services Declared | `VERIFIED LOCALLY` |
 | **Networking** | Isolated Private Network | `aegis-internal-net` | `internal: true` | `VERIFIED LOCALLY` |
+| **Public Ingress** | Reverse Proxy HTTPS/HTTP | `aegis-public-net` (ports 80/443) | TLS termination & redirect | `VERIFIED LOCALLY` |
 | **DB / Redis Ports** | Non-Public Host Exposure | Compose port inspector | 0 Exposed Host Ports | `VERIFIED LOCALLY` |
 | **Non-Root Runtime**| UID 10001 Execution | `app.dockerfile` & `frontend.dockerfile`| `USER 10001` / `nginx` | `VERIFIED LOCALLY` |
 | **Resource Limits** | Memory & CPU Bound | Service deploy specs | All Services Capped | `VERIFIED LOCALLY` |
@@ -346,3 +347,21 @@ In the event of an unrecoverable runtime error, elevated error rate, or health g
 | **Cloud LB & DNS** | Edge HTTPS & Anycast DNS | AWS ALB / Route53 | External Infrastructure | `REQUIRES CLOUD / DNS` |
 | **SSL Certificates**| Trusted Public X.509 | Let's Encrypt / DigiCert | External PKI | `REQUIRES CERTIFICATE` |
 | **Secrets Manager** | Cloud Vault Injection | HashiCorp Vault / AWS Secrets | External Provider | `REQUIRES SECRET MANAGER` |
+
+---
+
+## 19. Test Inventory Reconciliation & Final Verification
+
+### Test Inventory Lineage
+
+| Phase Baseline | Test Files | Total Tests | Description of Delta |
+| :--- | :--- | :--- | :--- |
+| **Phase 11.6 CI/CD** | 224 | 820 | CI/CD supply chain, SBOM, and provenance suite |
+| **Phase 11.7 Staging** | 226 | 865 | Added `test_p11_7_staging_environment.py` (33) + `test_staging_smoke_suite.py` (12) |
+| **Phase 11.8 Production Architecture** | **227** | **896** | Added `test_p11_8_production_architecture.py` (31 tests) |
+
+### Final Verified Test Metrics
+- **Full Backend Regression**: **896 / 896 tests passing (100%)**, 0 failures, 0 errors across all 227 test files.
+- **Frontend Test Suite**: **12 / 12 tests passing (100%)** across 4 test suites.
+- **Frontend Production Build**: **2540 modules transformed, 0 errors**.
+- **Working Tree**: Completely clean, all changes tracked and committed.
