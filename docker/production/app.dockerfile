@@ -59,6 +59,7 @@ COPY --chown=aegisuser:aegisgroup backend/ /workspace/
 
 ARG APP_VERSION=1.0.0
 ARG GIT_COMMIT_SHA=unknown
+ARG BUILD_TIMESTAMP=""
 
 # Set Python environment variables for container runtime
 ENV PYTHONPATH="/workspace" \
@@ -67,6 +68,7 @@ ENV PYTHONPATH="/workspace" \
     ENVIRONMENT="prod" \
     APP_VERSION="${APP_VERSION}" \
     GIT_COMMIT_SHA="${GIT_COMMIT_SHA}" \
+    BUILD_TIMESTAMP="${BUILD_TIMESTAMP}" \
     DOCUMENT_STORAGE_PATH="/workspace/storage"
 
 USER aegisuser

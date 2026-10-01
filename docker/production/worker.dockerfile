@@ -42,12 +42,14 @@ COPY backend/ /workspace/
 
 ARG APP_VERSION=1.0.0
 ARG GIT_COMMIT_SHA=unknown
+ARG BUILD_TIMESTAMP=""
 
 ENV PYTHONPATH="/workspace" \
     PYTHONUNBUFFERED="1" \
     ENVIRONMENT="prod" \
     APP_VERSION="${APP_VERSION}" \
-    GIT_COMMIT_SHA="${GIT_COMMIT_SHA}"
+    GIT_COMMIT_SHA="${GIT_COMMIT_SHA}" \
+    BUILD_TIMESTAMP="${BUILD_TIMESTAMP}"
 
 RUN useradd -m aegisuser && chown -R aegisuser:aegisuser /workspace
 USER aegisuser

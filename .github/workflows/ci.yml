@@ -105,6 +105,14 @@ jobs:
           path: backend/pytest-results.xml
           retention-days: 14
 
+      - name: Upload Coverage Report Artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: backend-coverage-report
+          path: backend/coverage.xml
+          retention-days: 14
+
   frontend-ci:
     name: Frontend Lint, Test & Production Build
     runs-on: ubuntu-latest
@@ -125,6 +133,10 @@ jobs:
       - name: Install Frontend Dependencies
         working-directory: frontend
         run: npm ci
+
+      - name: Run Frontend Dependency Vulnerability Audit
+        working-directory: frontend
+        run: npm audit --audit-level=high
 
       - name: Run Frontend Linters
         working-directory: frontend
@@ -167,10 +179,28 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Run Python Dependency Vulnerability Scan (pip-audit)
+        run: |
+          pip install pip-audit
+          pip-audit --requirement backend/requirements.txt --format json --output backend-audit.json || {
+            echo "Critical Python dependency vulnerabilities detected!"
+            exit 1
+          }
+
       - name: Run Static Security Analysis (Bandit)
         run: |
           pip install bandit
-          bandit -r backend/app -ll -ii
+          bandit -r backend/app -ll -ii -f json -o bandit-report.json
+
+      - name: Upload Security Reports Artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ci-security-reports
+          path: |
+            backend-audit.json
+            bandit-report.json
+          retention-days: 30
 
       - name: Run Phase 10 Dedicated Security Test Suite
         env:
@@ -182,7 +212,7 @@ jobs:
           pytest tests/unit/test_phase10_*.py -v
 
   docker-build-and-scan:
-    name: Container Build & Image Vulnerability Scan
+    name: Container Build, SBOM & Vulnerability Scan
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -196,6 +226,7 @@ jobs:
       - name: Build Backend Image (Immutable Tag)
         run: |
           docker build \
+            --load \
             -f docker/production/app.dockerfile \
             -t aegisai-backend:${{ github.sha }} \
             -t aegisai-backend:ci .
@@ -203,6 +234,7 @@ jobs:
       - name: Build Frontend Image (Immutable Tag)
         run: |
           docker build \
+            --load \
             -f docker/production/frontend.dockerfile \
             -t aegisai-frontend:${{ github.sha }} \
             -t aegisai-frontend:ci .
@@ -210,14 +242,66 @@ jobs:
       - name: Build Worker Image (Immutable Tag)
         run: |
           docker build \
+            --load \
             -f docker/production/worker.dockerfile \
             -t aegisai-worker:${{ github.sha }} \
             -t aegisai-worker:ci .
 
-      - name: Scan Backend Image for Critical Vulnerabilities
+      - name: Generate Backend Image SBOM (Syft / SPDX)
+        uses: anchore/sbom-action@v0
+        with:
+          image: aegisai-backend:${{ github.sha }}
+          format: 'spdx-json'
+          output-file: 'sbom-backend.spdx.json'
+
+      - name: Generate Frontend Image SBOM (Syft / SPDX)
+        uses: anchore/sbom-action@v0
+        with:
+          image: aegisai-frontend:${{ github.sha }}
+          format: 'spdx-json'
+          output-file: 'sbom-frontend.spdx.json'
+
+      - name: Generate Worker Image SBOM (Syft / SPDX)
+        uses: anchore/sbom-action@v0
+        with:
+          image: aegisai-worker:${{ github.sha }}
+          format: 'spdx-json'
+          output-file: 'sbom-worker.spdx.json'
+
+      - name: Upload SBOM Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-image-sboms
+          path: |
+            sbom-backend.spdx.json
+            sbom-frontend.spdx.json
+            sbom-worker.spdx.json
+          retention-days: 30
+
+      - name: Scan Backend Image for Critical Vulnerabilities (Trivy)
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: aegisai-backend:${{ github.sha }}
+          format: 'table'
+          exit-code: '0'
+          ignore-unfixed: true
+          vuln-type: 'os,library'
+          severity: 'CRITICAL,HIGH'
+
+      - name: Scan Frontend Image for Critical Vulnerabilities (Trivy)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: aegisai-frontend:${{ github.sha }}
+          format: 'table'
+          exit-code: '0'
+          ignore-unfixed: true
+          vuln-type: 'os,library'
+          severity: 'CRITICAL,HIGH'
+
+      - name: Scan Worker Image for Critical Vulnerabilities (Trivy)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: aegisai-worker:${{ github.sha }}
           format: 'table'
           exit-code: '0'
           ignore-unfixed: true

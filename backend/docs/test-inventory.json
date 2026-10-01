@@ -1,6 +1,6 @@
 {
   "total_test_files": 224,
-  "total_tests": 884,
+  "total_tests": 897,
   "files": [
     {
       "file": "tests\\\\unit\\test_agent_engine.py",
@@ -420,7 +420,7 @@
     },
     {
       "file": "tests\\\\unit\\test_p11_6_ci_cd_delivery.py",
-      "test_count": 28
+      "test_count": 41
     },
     {
       "file": "tests\\\\unit\\test_pdf_extractor.py",

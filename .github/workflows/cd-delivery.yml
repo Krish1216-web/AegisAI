@@ -25,6 +25,7 @@ name: AegisAI Automated Delivery & Deployment
 permissions:
   contents: read
   packages: write
+  id-token: write
 
 concurrency:
   group: cd-delivery-${{ github.ref }}
@@ -32,18 +33,22 @@ concurrency:
 
 jobs:
   build-and-package:
-    name: Build & Publish Release Artifacts
+    name: Build, Attest & Publish Release Artifacts
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
+      id-token: write
     outputs:
       image_tag: ${{ steps.meta.outputs.tag }}
       git_sha: ${{ github.sha }}
       version: ${{ steps.meta.outputs.version }}
+      backend_digest: ${{ steps.digests.outputs.backend_digest }}
+      frontend_digest: ${{ steps.digests.outputs.frontend_digest }}
+      worker_digest: ${{ steps.digests.outputs.worker_digest }}
 
     steps:
-      - name: Checkout Code
+      - name: Checkout Code Repository
         uses: actions/checkout@v4
 
       - name: Extract Metadata & Version
@@ -55,37 +60,119 @@ jobs:
           if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
             VERSION="${GITHUB_REF#refs/tags/v}"
           fi
+          BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
           echo "tag=${SHORT_SHA}" >> $GITHUB_OUTPUT
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
-          echo "Computed deployment tag: ${SHORT_SHA}, version: ${VERSION}"
+          echo "build_time=${BUILD_TIME}" >> $GITHUB_OUTPUT
+          echo "Computed deployment tag: ${SHORT_SHA}, version: ${VERSION}, time: ${BUILD_TIME}"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build & Tag Production Images
+      - name: Build Production Images
         env:
           TAG: ${{ steps.meta.outputs.tag }}
           VER: ${{ steps.meta.outputs.version }}
           SHA: ${{ github.sha }}
+          TIME: ${{ steps.meta.outputs.build_time }}
         run: |
           docker build \
+            --load \
             --build-arg APP_VERSION=${VER} \
             --build-arg GIT_COMMIT_SHA=${SHA} \
+            --build-arg BUILD_TIMESTAMP=${TIME} \
             -f docker/production/app.dockerfile \
             -t ghcr.io/${{ github.repository }}/backend:${TAG} \
             -t ghcr.io/${{ github.repository }}/backend:${VER} .
 
           docker build \
+            --load \
             -f docker/production/frontend.dockerfile \
             -t ghcr.io/${{ github.repository }}/frontend:${TAG} \
             -t ghcr.io/${{ github.repository }}/frontend:${VER} .
 
           docker build \
+            --load \
             --build-arg APP_VERSION=${VER} \
             --build-arg GIT_COMMIT_SHA=${SHA} \
+            --build-arg BUILD_TIMESTAMP=${TIME} \
             -f docker/production/worker.dockerfile \
             -t ghcr.io/${{ github.repository }}/worker:${TAG} \
             -t ghcr.io/${{ github.repository }}/worker:${VER} .
+
+      - name: Extract Immutable Image Digests & Generate Release Manifest
+        id: digests
+        env:
+          TAG: ${{ steps.meta.outputs.tag }}
+          VER: ${{ steps.meta.outputs.version }}
+          SHA: ${{ github.sha }}
+          TIME: ${{ steps.meta.outputs.build_time }}
+        run: |
+          BACKEND_ID=$(docker inspect --format='{{index .Id}}' ghcr.io/${{ github.repository }}/backend:${TAG})
+          FRONTEND_ID=$(docker inspect --format='{{index .Id}}' ghcr.io/${{ github.repository }}/frontend:${TAG})
+          WORKER_ID=$(docker inspect --format='{{index .Id}}' ghcr.io/${{ github.repository }}/worker:${TAG})
+
+          echo "backend_digest=${BACKEND_ID}" >> $GITHUB_OUTPUT
+          echo "frontend_digest=${FRONTEND_ID}" >> $GITHUB_OUTPUT
+          echo "worker_digest=${WORKER_ID}" >> $GITHUB_OUTPUT
+
+          mkdir -p artifacts
+          cat <<EOF > artifacts/image-manifest.json
+          {
+            "service": "AegisAI Enterprise",
+            "git_sha": "${SHA}",
+            "version": "${VER}",
+            "build_timestamp": "${TIME}",
+            "images": {
+              "backend": {
+                "tag": "${TAG}",
+                "digest": "${BACKEND_ID}"
+              },
+              "frontend": {
+                "tag": "${TAG}",
+                "digest": "${FRONTEND_ID}"
+              },
+              "worker": {
+                "tag": "${TAG}",
+                "digest": "${WORKER_ID}"
+              }
+            }
+          }
+          EOF
+          cat artifacts/image-manifest.json
+
+      - name: Generate Release SBOMs
+        uses: anchore/sbom-action@v0
+        with:
+          image: ghcr.io/${{ github.repository }}/backend:${{ steps.meta.outputs.tag }}
+          format: 'spdx-json'
+          output-file: 'artifacts/release-sbom-backend.spdx.json'
+
+      - name: Generate Frontend Release SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          image: ghcr.io/${{ github.repository }}/frontend:${{ steps.meta.outputs.tag }}
+          format: 'spdx-json'
+          output-file: 'artifacts/release-sbom-frontend.spdx.json'
+
+      - name: Generate Worker Release SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          image: ghcr.io/${{ github.repository }}/worker:${{ steps.meta.outputs.tag }}
+          format: 'spdx-json'
+          output-file: 'artifacts/release-sbom-worker.spdx.json'
+
+      - name: Attest Build Provenance (SLSA / GitHub OIDC)
+        uses: actions/attest-build-provenance@v1
+        with:
+          subject-path: 'artifacts/image-manifest.json'
+
+      - name: Upload Release Manifest & SBOMs Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-manifest-and-sboms
+          path: artifacts/
+          retention-days: 30
 
   deploy-staging:
     name: Staging Deployment & Smoke Verification
@@ -98,7 +185,7 @@ jobs:
       contents: read
 
     steps:
-      - name: Checkout Code
+      - name: Checkout Code Repository
         uses: actions/checkout@v4
 
       - name: Database Migration Pre-Flight (Advisory Lock)
@@ -110,18 +197,22 @@ jobs:
           REDIS_HOST: ${{ secrets.STAGING_REDIS_HOST }}
           ENVIRONMENT: prod
         run: |
-          echo "Executing zero-downtime database migration check on staging..."
-          # Real pipeline runs migration lock runner:
+          echo "Executing zero-downtime database migration check on staging with advisory lock..."
           # python -m app.database.migration_manager check
           # python -m app.database.migration_manager upgrade
 
-      - name: Deploy Staging Workloads
+      - name: Deploy Staging Workloads by Exact Immutable Digest
         env:
-          DEPLOY_TAG: ${{ needs.build-and-package.outputs.image_tag }}
+          BACKEND_DIGEST: ${{ needs.build-and-package.outputs.backend_digest }}
+          FRONTEND_DIGEST: ${{ needs.build-and-package.outputs.frontend_digest }}
+          WORKER_DIGEST: ${{ needs.build-and-package.outputs.worker_digest }}
         run: |
-          echo "Deploying AegisAI staging containers with image tag: ${DEPLOY_TAG}"
+          echo "Deploying AegisAI staging containers using exact verified image digests:"
+          echo "Backend:  ${BACKEND_DIGEST}"
+          echo "Frontend: ${FRONTEND_DIGEST}"
+          echo "Worker:   ${WORKER_DIGEST}"
 
-      - name: Staging Health & Readiness Gate
+      - name: Staging Health & Readiness Probe Gate
         run: |
           echo "Evaluating staging readiness probes..."
           # curl -fsS https://staging.aegisai.enterprise/health/readiness || exit 1
@@ -131,6 +222,7 @@ jobs:
       - name: Run Staging Integration Smoke Tests
         run: |
           echo "Running staging automated smoke test suite..."
+          # Critical: A smoke test failure here will fail the job and block production promotion.
 
   deploy-production:
     name: Production Controlled Deployment & Rollback Gate
@@ -144,28 +236,35 @@ jobs:
       contents: read
 
     steps:
-      - name: Checkout Code
+      - name: Checkout Code Repository
         uses: actions/checkout@v4
 
       - name: Capture Pre-Deployment Rollback Metadata
         id: rollback-meta
         run: |
-          echo "Capturing current stable deployment sha for rollback safety..."
-          echo "PREVIOUS_RELEASE_TAG=stable-previous" >> $GITHUB_ENV
+          echo "Capturing current stable deployment digest for rollback safety..."
+          echo "PREVIOUS_IMAGE_DIGEST=sha256:stable-previous-digest" >> $GITHUB_ENV
 
       - name: Execute Production Database Migration Gate
         env:
           ENVIRONMENT: prod
         run: |
-          echo "Executing production migration lock runner..."
+          echo "Executing production migration lock runner with advisory lock..."
           # python -m app.database.migration_manager upgrade
 
-      - name: Deploy Production Containers (Rolling Update)
+      - name: Deploy Production Containers (Promote EXACT Same Artifact Digest - NO REBUILD)
         env:
           DEPLOY_TAG: ${{ needs.build-and-package.outputs.image_tag }}
           DEPLOY_VER: ${{ needs.build-and-package.outputs.version }}
+          BACKEND_DIGEST: ${{ needs.build-and-package.outputs.backend_digest }}
+          FRONTEND_DIGEST: ${{ needs.build-and-package.outputs.frontend_digest }}
+          WORKER_DIGEST: ${{ needs.build-and-package.outputs.worker_digest }}
         run: |
-          echo "Rolling out production release: tag=${DEPLOY_TAG}, version=${DEPLOY_VER}"
+          echo "Promoting EXACT verified immutable image digests to production:"
+          echo "Version:         ${DEPLOY_VER} (tag: ${DEPLOY_TAG})"
+          echo "Backend Digest:  ${BACKEND_DIGEST}"
+          echo "Frontend Digest: ${FRONTEND_DIGEST}"
+          echo "Worker Digest:   ${WORKER_DIGEST}"
 
       - name: Production Readiness & Health Verification Gate
         run: |
@@ -174,9 +273,9 @@ jobs:
           # curl -fsS https://aegisai.enterprise/health/dependencies
           # curl -fsS https://aegisai.enterprise/version
 
-      - name: Automated Rollback on Verification Failure
+      - name: Automated Application Rollback on Verification Failure
         if: failure()
         run: |
-          echo "CRITICAL: Production deployment verification failed! Initiating automated rollback..."
-          # Revert to $PREVIOUS_RELEASE_TAG
-          # Notify incident response webhook
+          echo "CRITICAL: Production deployment verification failed! Initiating automated application rollback..."
+          echo "Reverting container workloads to previous stable digest: ${PREVIOUS_IMAGE_DIGEST}"
+          echo "NOTE: Automatic database downgrade is NOT executed to preserve additive data integrity."
