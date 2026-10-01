@@ -49,6 +49,9 @@ services:
     restart: always
     ports:
       - "80:80"
+      - "443:443"
+    volumes:
+      - ./certs:/etc/nginx/certs:ro
     networks:
       - aegis-internal-net
       - aegis-public-net

@@ -126,6 +126,7 @@ def check_rate_limit(
         logger.error(f"Redis rate limiting error: {e}")
 
 from fastapi import Request
+from app.core.network import get_trusted_client_ip
 
 def check_ip_rate_limit(
     request: Request,
@@ -135,9 +136,9 @@ def check_ip_rate_limit(
 ) -> None:
     """
     Enforces rate limits by client IP address for unauthenticated / sensitive endpoints.
-    Directly extracts client IP without blindly trusting client-supplied spoofable headers.
+    Resolves client IP securely via trusted proxy validation.
     """
-    client_ip = request.client.host if request.client else "unknown"
+    client_ip = get_trusted_client_ip(request)
     minute_timestamp = int(time.time() // 60)
     key = f"aegis:ratelimit:ip:{action}:{client_ip}:{minute_timestamp}"
     

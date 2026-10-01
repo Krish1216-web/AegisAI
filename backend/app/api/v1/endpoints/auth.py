@@ -11,6 +11,9 @@ from app.services.auth import AuthService
 from app.api.dependencies import get_current_user, RoleChecker
 from app.models.user import User
 
+from app.core.config import settings
+from app.core.network import get_trusted_client_ip
+
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
@@ -32,16 +35,17 @@ def login(
     """
     Verifies credentials and returns access token + sets HTTP-Only refresh cookie.
     """
-    client_ip = request.client.host if request.client else None
+    client_ip = get_trusted_client_ip(request)
     auth_service = AuthService(db, redis_client)
     result = auth_service.login_user(form_data.username, form_data.password, ip_address=client_ip)
     
-    # Set the refresh token as a secure, HTTP-Only cookie
+    # Set the refresh token as a secure, HTTP-Only cookie in production TLS
+    is_secure = settings.ENVIRONMENT == "prod" or getattr(settings, "ENABLE_HSTS", False)
     response.set_cookie(
         key="refresh_token",
         value=result["refresh_token"],
         httponly=True,
-        secure=False,  # Set to True in production with TLS
+        secure=is_secure,
         samesite="lax",
         max_age=7 * 24 * 60 * 60  # 7 days
     )

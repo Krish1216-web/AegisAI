@@ -73,9 +73,12 @@ class BaseConfig(BaseSettings):
         "http://127.0.0.1:3000"
     ]
     ALLOWED_HOSTS: list[str] = ["localhost", "127.0.0.1", "testserver", "*.aegisai.enterprise"]
+    TRUSTED_PROXIES: list[str] = ["127.0.0.1", "::1", "localhost", "172.16.0.0/12", "10.0.0.0/8", "192.168.0.0/16"]
     MAX_REQUEST_BODY_BYTES: int = 10 * 1024 * 1024   # 10 MB limit for JSON / standard requests
     MAX_UPLOAD_BYTES: int = 50 * 1024 * 1024         # 50 MB limit for document uploads
     ENABLE_HSTS: bool = False
+    TLS_CERT_PATH: Optional[str] = Field(default=None, env="TLS_CERT_PATH")
+    TLS_KEY_PATH: Optional[str] = Field(default=None, env="TLS_KEY_PATH")
     
     MODEL_PRICING: Dict[str, Dict[str, Dict[str, float]]] = {
         "openai": {
@@ -147,7 +150,21 @@ def validate_production_configuration(cfg: BaseConfig) -> list[str]:
         if "*" in cfg.CORS_ORIGINS:
             errors.append("Production CORS_ORIGINS must not contain wildcard '*' when allow_credentials=True.")
 
-        # 5. Storage directory configuration
+        # 5. Trusted hosts & proxy validation
+        if "*" in cfg.ALLOWED_HOSTS:
+            errors.append("Production ALLOWED_HOSTS must not contain wildcard '*' to protect against Host header attacks.")
+        if not cfg.ALLOWED_HOSTS:
+            errors.append("Production ALLOWED_HOSTS must be explicitly configured.")
+        if "*" in getattr(cfg, "TRUSTED_PROXIES", []):
+            errors.append("Production TRUSTED_PROXIES must not contain wildcard '*' to prevent IP spoofing.")
+
+        # 6. TLS certificate and key consistency
+        if cfg.TLS_CERT_PATH and not cfg.TLS_KEY_PATH:
+            errors.append("TLS_KEY_PATH must be provided when TLS_CERT_PATH is specified.")
+        if cfg.TLS_KEY_PATH and not cfg.TLS_CERT_PATH:
+            errors.append("TLS_CERT_PATH must be provided when TLS_KEY_PATH is specified.")
+
+        # 7. Storage directory configuration
         if not cfg.DOCUMENT_STORAGE_PATH:
             errors.append("DOCUMENT_STORAGE_PATH must be explicitly configured in production.")
 
