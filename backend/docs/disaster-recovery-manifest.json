@@ -1,0 +1,184 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AegisAI Disaster Recovery & Rollback Manifest",
+  "version": "1.0.0",
+  "app_version": "1.0.0",
+  "last_updated": "2026-10-01T19:00:00Z",
+  "recovery_objectives": {
+    "rpo": {
+      "target_value": "15 minutes",
+      "status": "TARGET — NOT YET MEASURED IN PRODUCTION",
+      "description": "Maximum data loss window achievable via automated WAL archiving and 15-minute point-in-time incremental snapshots."
+    },
+    "rto": {
+      "target_value": "10 minutes",
+      "status": "TARGET — NOT YET MEASURED IN PRODUCTION",
+      "description": "Maximum elapsed time from disaster detection to verified operational recovery on standby infrastructure."
+    }
+  },
+  "data_classification": {
+    "critical_durable": {
+      "storage_engine": "PostgreSQL 16",
+      "entities": [
+        "users",
+        "workspaces",
+        "workspace_members",
+        "teams",
+        "team_memberships",
+        "projects",
+        "documents",
+        "document_chunks",
+        "memories",
+        "knowledge_graph_nodes",
+        "knowledge_graph_edges",
+        "workflows",
+        "workflow_executions",
+        "background_jobs",
+        "audit_logs",
+        "security_events",
+        "mcp_servers"
+      ],
+      "backup_strategy": "Daily full physical/logical dump + continuous WAL archiving / 15-min snapshots",
+      "verification_status": "IMPLEMENTED"
+    },
+    "derived": {
+      "storage_engine": "Qdrant / Postgres vector embeddings",
+      "entities": [
+        "document_embeddings",
+        "qdrant_points",
+        "analytics_aggregates"
+      ],
+      "recovery_strategy": "Recomputed asynchronously from Document and DocumentChunk records post-restore",
+      "verification_status": "IMPLEMENTED"
+    },
+    "ephemeral": {
+      "storage_engine": "Redis 7.2",
+      "entities": [
+        "session_cache",
+        "live_websocket_channels",
+        "rate_limit_counters",
+        "temporary_locks"
+      ],
+      "recovery_strategy": "Cold restart allowed; state regenerated on reconnect. Durable jobs sourced from PostgreSQL.",
+      "verification_status": "VERIFIED LOCALLY"
+    },
+    "document_storage": {
+      "storage_engine": "Encrypted Local Volume / S3-compatible Object Storage",
+      "entities": [
+        "raw_uploaded_files",
+        "generated_artifacts",
+        "exports"
+      ],
+      "backup_strategy": "Replicated object storage with SHA-256 manifest reconciliation",
+      "verification_status": "IMPLEMENTED"
+    }
+  },
+  "disaster_recovery_scenarios": [
+    {
+      "id": "DR-01",
+      "title": "Corrupted or Missing Database Volume",
+      "detection": "PostgreSQL container fails health check; connections refused; I/O corruption errors in logs.",
+      "containment": "Isolate database container, freeze write traffic via 503 Maintenance page, lock storage volume.",
+      "recovery": "Provision clean volume, restore latest verified backup using backup_manager with SHA-256 verification, replay WAL.",
+      "validation": "Execute verify_post_restore_integrity to validate all table counts, foreign keys, and tenant boundaries.",
+      "status": "VERIFIED LOCALLY",
+      "test_reference": "test_p11_9_backup_recovery.py::test_dr01_database_volume_recovery"
+    },
+    {
+      "id": "DR-02",
+      "title": "Accidental Table Drop or Malicious Truncate",
+      "detection": "API 500 error spikes; critical tables return 0 rows; AuditLog/SecurityEvent alert triggered.",
+      "containment": "Immediately revoke application write credentials, terminate rogue sessions, acquire advisory lock.",
+      "recovery": "Perform point-in-time recovery (PITR) to timestamp immediately preceding truncation.",
+      "validation": "Verify table row counts and verify tenant isolation consistency across all workspaces.",
+      "status": "VERIFIED LOCALLY",
+      "test_reference": "test_p11_9_backup_recovery.py::test_dr02_accidental_table_drop_recovery"
+    },
+    {
+      "id": "DR-03",
+      "title": "Failed Alembic Migration at Deployment",
+      "detection": "Migration runner non-zero exit; advisory lock timeout; schema version mismatch on container startup.",
+      "containment": "CD deployment gate halts roll-out, prevents traffic routing to new containers, holds old version.",
+      "recovery": "Analyze non-destructive failure; if unrecoverable, abort rollout and retain current running image.",
+      "validation": "Inspect alembic_version table, run test_migration_chain, confirm schema backward compatibility.",
+      "status": "VERIFIED LOCALLY",
+      "test_reference": "test_p11_9_backup_recovery.py::test_dr03_failed_migration_handling"
+    },
+    {
+      "id": "DR-04",
+      "title": "Worker Crash During In-Flight Background Job",
+      "detection": "Worker heartbeat expires; job remains in RUNNING state beyond lock timeout.",
+      "containment": "Worker pool supervisor replaces dead worker container; dead worker removed from node registry.",
+      "recovery": "Stale job recovery sweeper reclaims expired lock, increments retry count, moves to dead-letter queue if max retries exceeded.",
+      "validation": "Verify job transitions from RUNNING -> PENDING (retry) or RUNNING -> DEAD_LETTER without task duplication.",
+      "status": "VERIFIED LOCALLY",
+      "test_reference": "test_p11_9_backup_recovery.py::test_dr04_worker_crash_stale_job_recovery"
+    },
+    {
+      "id": "DR-05",
+      "title": "Total Redis Node Loss / Cache Flush",
+      "detection": "Redis connection timeout in API/Worker; cache misses jump to 100%; health probe returns degraded.",
+      "containment": "Fallback to database direct reads; bypass cache layer gracefully without application panics.",
+      "recovery": "Restart Redis instance; workers automatically reconnect with exponential backoff; PostgreSQL remains source of truth for jobs.",
+      "validation": "Verify BackgroundJob queue continues draining from DB and API services serve authenticated requests.",
+      "status": "VERIFIED LOCALLY",
+      "test_reference": "test_p11_9_backup_recovery.py::test_dr05_redis_loss_resilience"
+    },
+    {
+      "id": "DR-06",
+      "title": "Document Storage File Loss / Missing Physical Assets",
+      "detection": "verify_post_restore_integrity flags missing physical storage paths or mismatched checksums.",
+      "containment": "Mark affected Document records as 'CORRUPT_STORAGE' or 'RECOVERY_PENDING', prevent download 500s.",
+      "recovery": "Sync physical files from replicated object storage bucket / backup volume matching Document SHA-256.",
+      "validation": "Run document storage reconciliation check until 100% checksum match is achieved.",
+      "status": "VERIFIED LOCALLY",
+      "test_reference": "test_p11_9_backup_recovery.py::test_dr06_document_storage_reconciliation"
+    },
+    {
+      "id": "DR-07",
+      "title": "Cross-Environment Database Restore Attempt (Staging -> Prod)",
+      "detection": "restore_database_with_guard detects environment mismatch (target_env=prod without force).",
+      "containment": "Fail-closed RestoreSafetyError raised immediately before any schema or table modification.",
+      "recovery": "Halt execution; operator must confirm appropriate target environment or use explicit override.",
+      "validation": "Assert that database state and tables remain completely untouched.",
+      "status": "VERIFIED LOCALLY",
+      "test_reference": "test_p11_9_backup_recovery.py::test_dr07_cross_environment_restore_prevention"
+    },
+    {
+      "id": "DR-08",
+      "title": "Corrupted Backup File Restore Attempt",
+      "detection": "verify_backup_integrity calculates SHA-256 digest differing from manifest.",
+      "containment": "Restore rejected with RestoreSafetyError before touching target database.",
+      "recovery": "Reject corrupt artifact, alert on-call engineer, fetch previous verified backup artifact from catalog.",
+      "validation": "Confirm target database was not modified and error details identify checksum discrepancy.",
+      "status": "VERIFIED LOCALLY",
+      "test_reference": "test_p11_9_backup_recovery.py::test_dr08_corrupted_backup_rejection"
+    },
+    {
+      "id": "DR-09",
+      "title": "Unhealthy Image Deployment / Rollback to Previous Immutable Digest",
+      "detection": "Container health checks fail consecutive probes post-deploy; CD health gate triggers rollback.",
+      "containment": "Reverse proxy traffic routing kept on prior healthy task definition / container set.",
+      "recovery": "Deploy prior immutable image digest without running automated destructive database downgrade.",
+      "validation": "Verify prior container health check passes 200 OK and backward-compatible schema functions seamlessly.",
+      "status": "VERIFIED LOCALLY",
+      "test_reference": "test_p11_9_backup_recovery.py::test_dr09_immutable_image_rollback"
+    },
+    {
+      "id": "DR-10",
+      "title": "Split-Brain Scheduler Lock Contention",
+      "detection": "Multiple scheduler replicas attempt concurrent interval ticks; advisory lock contention logged.",
+      "containment": "PostgreSQL advisory locking ensures exactly one leader holds the execution lease.",
+      "recovery": "Non-leader replicas stand by; upon leader termination or lease expiration, next replica acquires lock.",
+      "validation": "Verify zero duplicate job dispatches during concurrent scheduler execution.",
+      "status": "VERIFIED LOCALLY",
+      "test_reference": "test_p11_9_backup_recovery.py::test_dr10_scheduler_leader_election"
+    }
+  ],
+  "infrastructure_dependencies": {
+    "s3_immutable_lock": "REQUIRES PRODUCTION INFRASTRUCTURE",
+    "multi_region_replication": "REQUIRES PRODUCTION INFRASTRUCTURE",
+    "automated_wal_s3_shipping": "REQUIRES PRODUCTION INFRASTRUCTURE",
+    "pagerduty_escalation": "REQUIRES PRODUCTION INFRASTRUCTURE"
+  }
+}
