@@ -1,6 +1,25 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Bot, Database, Server, Key, LogOut, Terminal, Info } from 'lucide-react';
+import {
+  Search,
+  Bot,
+  Database,
+  Server,
+  LogOut,
+  LayoutDashboard,
+  Workflow,
+  FileText,
+  GitBranch,
+  ListTodo,
+  TrendingUp,
+  Sun,
+  Moon,
+  Users,
+  ShieldAlert,
+  BrainCircuit,
+  Plus
+} from 'lucide-react';
+import { useTheme } from '../context/ThemeContext';
 
 export default function CommandPalette({ onClose, role }) {
   const [query, setQuery] = useState('');
@@ -8,16 +27,15 @@ export default function CommandPalette({ onClose, role }) {
   const containerRef = useRef(null);
   const inputRef = useRef(null);
   const navigate = useNavigate();
+  const { theme, toggleTheme } = useTheme();
 
-  // Focus input on load
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
 
-  // Close command palette on clicking outside
   useEffect(() => {
     const handleClickOutside = (e) => {
-      if (containerRef.current && !containerRef.ref?.current && !containerRef.current.contains(e.target)) {
+      if (containerRef.current && !containerRef.current.contains(e.target)) {
         onClose();
       }
     };
@@ -25,78 +43,137 @@ export default function CommandPalette({ onClose, role }) {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [onClose]);
 
-  // List of commands based on roles
   const allCommands = [
     {
       id: 'nav-dashboard',
-      label: 'Navigate: Dashboard',
-      subtitle: 'Open primary workspace telemetry metrics',
-      icon: <Terminal size={14} className="text-cyan-400" />,
-      action: () => navigate(role === 'admin' ? '/admin/dashboard' : '/user/dashboard'),
-      roles: ['user', 'admin']
+      label: 'Open Dashboard',
+      subtitle: 'Navigate to system analytics and overview',
+      category: 'Navigation',
+      icon: <LayoutDashboard size={16} className="text-cyan-400" />,
+      action: () => navigate(role === 'admin' || role === 'super admin' ? '/admin/dashboard' : '/user/dashboard'),
+      roles: ['user', 'admin', 'super admin']
     },
     {
-      id: 'nav-workspace',
-      label: role === 'admin' ? 'Navigate: Agent Monitoring' : 'Navigate: AI Chat Workspace',
-      subtitle: 'Inspect running agents and model workflows',
-      icon: <Bot size={14} className="text-purple-400" />,
-      action: () => navigate(role === 'admin' ? '/admin/agents' : '/user/chat'),
-      roles: ['user', 'admin']
+      id: 'nav-platform',
+      label: 'Open Platform Engine',
+      subtitle: 'Execute multi-agent workflows and inspect execution logs',
+      category: 'Workspace',
+      icon: <BrainCircuit size={16} className="text-cyan-400" />,
+      action: () => navigate('/user/platform'),
+      roles: ['user']
+    },
+    {
+      id: 'nav-chat',
+      label: 'Open AI Workspace',
+      subtitle: 'Engage with autonomous multi-agent copilot',
+      category: 'Workspace',
+      icon: <Bot size={16} className="text-purple-400" />,
+      action: () => navigate('/user/chat'),
+      roles: ['user']
+    },
+    {
+      id: 'nav-workflows',
+      label: 'Open Workflow Builder',
+      subtitle: 'Design visual DAG agent automation workflows',
+      category: 'Workspace',
+      icon: <Workflow size={16} className="text-indigo-400" />,
+      action: () => navigate('/user/workflows'),
+      roles: ['user']
+    },
+    {
+      id: 'nav-documents',
+      label: 'Open Documents Hub',
+      subtitle: 'Manage indexed files, embeddings, and RAG knowledge',
+      category: 'Knowledge',
+      icon: <FileText size={16} className="text-blue-400" />,
+      action: () => navigate('/user/documents'),
+      roles: ['user']
     },
     {
       id: 'nav-memory',
-      label: role === 'admin' ? 'Navigate: Security Audit Logs' : 'Navigate: Memory Explorer',
-      subtitle: 'View cognitive profiles and audit files',
-      icon: <Database size={14} className="text-green-400" />,
-      action: () => navigate(role === 'admin' ? '/admin/security' : '/user/memory'),
-      roles: ['user', 'admin']
+      label: 'Open Memory Vault',
+      subtitle: 'Inspect cognitive long-term episodic & semantic memories',
+      category: 'Knowledge',
+      icon: <Database size={16} className="text-emerald-400" />,
+      action: () => navigate('/user/memory'),
+      roles: ['user']
+    },
+    {
+      id: 'nav-graph',
+      label: 'Open Knowledge Graph',
+      subtitle: 'Explore entity relationships and multi-hop graph triples',
+      category: 'Knowledge',
+      icon: <GitBranch size={16} className="text-teal-400" />,
+      action: () => navigate('/user/graph'),
+      roles: ['user']
     },
     {
       id: 'nav-mcp',
-      label: 'Navigate: MCP Servers list',
-      subtitle: 'Configure external tool connections',
-      icon: <Server size={14} className="text-yellow-400" />,
-      action: () => navigate(role === 'admin' ? '/admin/mcp' : '/user/dashboard'),
-      roles: ['user', 'admin']
+      label: 'Open MCP Marketplace',
+      subtitle: 'Manage Model Context Protocol server capabilities',
+      category: 'Integrations',
+      icon: <Server size={16} className="text-amber-400" />,
+      action: () => navigate(role === 'admin' || role === 'super admin' ? '/admin/mcp' : '/user/mcp-marketplace'),
+      roles: ['user', 'admin', 'super admin']
     },
     {
-      id: 'sys-reboot',
-      label: 'System Action: Reboot Aegis Core',
-      subtitle: 'Flushes cache buffers and re-runs system schemas',
-      icon: <Info size={14} className="text-red-400 animate-pulse" />,
-      action: () => {
-        alert('System Reboot sequence initiated. Reloading node...');
-        window.location.reload();
-      },
-      roles: ['admin']
+      id: 'nav-teams',
+      label: 'Open Teams & Collaboration',
+      subtitle: 'Manage collaborative projects, teams, and resource access',
+      category: 'Collaboration',
+      icon: <Users size={16} className="text-sky-400" />,
+      action: () => navigate('/user/teams'),
+      roles: ['user']
     },
     {
-      id: 'sys-lock',
-      label: 'System Action: Lock Node Terminal',
-      subtitle: 'Terminate active session and return to decrypt portal',
-      icon: <LogOut size={14} className="text-rose-400" />,
+      id: 'nav-admin-security',
+      label: 'Open Security & Audit Logs',
+      subtitle: 'Inspect tamper-evident cryptographic security audit trails',
+      category: 'Administration',
+      icon: <ShieldAlert size={16} className="text-rose-400" />,
+      action: () => navigate('/admin/security'),
+      roles: ['admin', 'super admin']
+    },
+    {
+      id: 'action-theme',
+      label: `Switch Theme to ${theme === 'dark' ? 'Light' : 'Dark'} Mode`,
+      subtitle: 'Toggle user interface appearance',
+      category: 'Preferences',
+      icon: theme === 'dark' ? <Sun size={16} className="text-amber-400" /> : <Moon size={16} className="text-cyan-400" />,
+      action: () => toggleTheme(),
+      roles: ['user', 'admin', 'super admin']
+    },
+    {
+      id: 'action-logout',
+      label: 'Lock Node (Log Out)',
+      subtitle: 'Safely terminate active session and purge tokens',
+      category: 'Session',
+      icon: <LogOut size={16} className="text-rose-400" />,
       action: () => {
+        localStorage.removeItem('aegis_access_token');
         localStorage.removeItem('aegis_auth_logged');
         localStorage.removeItem('aegis_auth_role');
         window.location.reload();
       },
-      roles: ['user', 'admin']
+      roles: ['user', 'admin', 'super admin']
     }
   ];
 
-  // Filter commands by query and role permissions
   const filtered = allCommands
-    .filter(c => c.roles.includes(role))
-    .filter(c => c.label.toLowerCase().includes(query.toLowerCase()) || c.subtitle.toLowerCase().includes(query.toLowerCase()));
+    .filter(c => c.roles.includes(role || 'user'))
+    .filter(c =>
+      c.label.toLowerCase().includes(query.toLowerCase()) ||
+      c.subtitle.toLowerCase().includes(query.toLowerCase()) ||
+      c.category.toLowerCase().includes(query.toLowerCase())
+    );
 
-  // Handle keys (up, down, enter, escape)
   const handleKeyDown = (e) => {
     if (e.key === 'ArrowDown') {
       e.preventDefault();
-      setSelectedIndex(prev => (prev + 1) % filtered.length);
+      setSelectedIndex(prev => (filtered.length ? (prev + 1) % filtered.length : 0));
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
-      setSelectedIndex(prev => (prev - 1 + filtered.length) % filtered.length);
+      setSelectedIndex(prev => (filtered.length ? (prev - 1 + filtered.length) % filtered.length : 0));
     } else if (e.key === 'Enter') {
       e.preventDefault();
       if (filtered[selectedIndex]) {
@@ -109,75 +186,41 @@ export default function CommandPalette({ onClose, role }) {
   };
 
   return (
-    <div style={{
-      position: 'fixed',
-      inset: 0,
-      backgroundColor: 'rgba(0, 0, 0, 0.65)',
-      backdropFilter: 'blur(8px)',
-      display: 'flex',
-      alignItems: 'start',
-      justifyContent: 'center',
-      paddingTop: '15vh',
-      zIndex: 100
-    }}
-    onKeyDown={handleKeyDown}
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Command Palette"
+      className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-start justify-center pt-[12vh] p-4 animate-fade-in"
+      onKeyDown={handleKeyDown}
     >
-      <div 
+      <div
         ref={containerRef}
-        className="glass-panel-glow" 
-        style={{
-          width: '100%',
-          maxWidth: '540px',
-          backgroundColor: '#0a0d14ea',
-          border: '1px solid rgba(0, 240, 255, 0.2)',
-          boxShadow: '0 0 35px rgba(0, 240, 255, 0.08)',
-          borderRadius: '12px',
-          overflow: 'hidden'
-        }}
+        className="w-full max-w-xl bg-[#0d1017] border border-white/15 rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[70vh] animate-scale-up"
       >
         {/* Search Bar Input */}
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '12px',
-          padding: '16px',
-          borderBottom: '1px solid rgba(255,255,255,0.06)',
-          backgroundColor: 'rgba(0, 0, 0, 0.2)'
-        }}>
-          <Search size={18} className="text-slate-400" />
+        <div className="flex items-center gap-3 px-4 py-3.5 border-b border-white/[0.08] bg-white/[0.02]">
+          <Search size={18} className="text-slate-400 shrink-0" />
           <input
             ref={inputRef}
             type="text"
+            role="combobox"
+            aria-expanded={filtered.length > 0}
+            aria-autocomplete="list"
             value={query}
             onChange={(e) => { setQuery(e.target.value); setSelectedIndex(0); }}
-            placeholder="Type a command or file path..."
-            style={{
-              flex: 1,
-              background: 'transparent',
-              border: 'none',
-              outline: 'none',
-              color: '#fff',
-              fontSize: '0.9rem',
-              fontFamily: 'var(--font-sans)'
-            }}
+            placeholder="Type a command or search workspace... (e.g. Workflow, Theme, Memory)"
+            className="flex-1 bg-transparent border-none text-sm text-slate-100 outline-none placeholder:text-slate-500"
           />
-          <span style={{
-            fontSize: '0.65rem',
-            padding: '2px 6px',
-            backgroundColor: 'rgba(255,255,255,0.05)',
-            border: '1px solid rgba(255,255,255,0.08)',
-            borderRadius: '4px',
-            color: 'var(--text-secondary)'
-          }}>
+          <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/10 text-slate-400 font-mono border border-white/10">
             ESC
           </span>
         </div>
 
         {/* Command list results */}
-        <div style={{ maxHeight: '320px', overflowY: 'auto', padding: '8px' }}>
+        <div role="listbox" className="overflow-y-auto p-2 divide-y divide-white/[0.02]">
           {filtered.length === 0 ? (
-            <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.8rem' }}>
-              No console matches found for: "{query}"
+            <div className="py-10 text-center text-xs text-slate-500">
+              No matching commands found for "{query}"
             </div>
           ) : (
             filtered.map((cmd, index) => {
@@ -185,42 +228,31 @@ export default function CommandPalette({ onClose, role }) {
               return (
                 <div
                   key={cmd.id}
+                  role="option"
+                  aria-selected={active}
                   onClick={() => { cmd.action(); onClose(); }}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    padding: '10px 14px',
-                    borderRadius: '8px',
-                    backgroundColor: active ? 'rgba(0, 240, 255, 0.05)' : 'transparent',
-                    border: `1px solid ${active ? 'rgba(0, 240, 255, 0.15)' : 'transparent'}`,
-                    cursor: 'pointer',
-                    transition: 'all 0.15s ease'
-                  }}
                   onMouseEnter={() => setSelectedIndex(index)}
+                  className={`flex items-center justify-between p-3 rounded-lg cursor-pointer transition-all duration-100 ${
+                    active ? 'bg-cyan-500/10 text-cyan-300 border border-cyan-500/20' : 'text-slate-300 hover:bg-white/[0.03] border border-transparent'
+                  }`}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <div className="flex-center" style={{
-                      width: '28px',
-                      height: '28px',
-                      borderRadius: '6px',
-                      backgroundColor: 'rgba(255,255,255,0.02)',
-                      border: '1px solid rgba(255,255,255,0.04)'
-                    }}>
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="p-2 rounded-lg bg-white/[0.04] border border-white/[0.06] shrink-0">
                       {cmd.icon}
                     </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', textAlign: 'left' }}>
-                      <span style={{ fontSize: '0.85rem', fontWeight: 600, color: active ? '#fff' : 'var(--text-primary)' }}>{cmd.label}</span>
-                      <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>{cmd.subtitle}</span>
+                    <div className="flex flex-col min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-semibold text-slate-100 truncate">{cmd.label}</span>
+                        <span className="text-[10px] px-1.5 py-0.2 rounded bg-white/[0.06] text-slate-400 font-medium">
+                          {cmd.category}
+                        </span>
+                      </div>
+                      <span className="text-[11px] text-slate-400 truncate mt-0.5">{cmd.subtitle}</span>
                     </div>
                   </div>
-                  
+
                   {active && (
-                    <span style={{
-                      fontSize: '0.7rem',
-                      color: 'var(--neon-cyan)',
-                      fontFamily: 'var(--font-mono)'
-                    }}>
+                    <span className="text-[10px] font-mono text-cyan-400 shrink-0 ml-2">
                       ENTER ↵
                     </span>
                   )}
