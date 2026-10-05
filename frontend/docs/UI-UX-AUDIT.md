@@ -30,18 +30,19 @@ Prior to Phase 12.1, a comprehensive inspection of the AegisAI frontend was cond
 | **Memory Vault / Long-Term Intelligence** | Hardcoded mock preferences with fake vector download | Comprehensive Long-Term Intelligence & Context Center with 9 canonical memory types, pgvector metrics, Knowledge Graph sync matrix, inspector drawer, and safe deletion | `VERIFIED LOCALLY` |
 | **MCP Center / Integration Control Plane** | Generic tool catalog without live transports | Enterprise Tool & Integration Control Plane with 4 transports (SSE, HTTP, Stdio), dynamic schema introspection, safe vs restricted tool confirmation, inspector drawer, and security audit | `VERIFIED LOCALLY` |
 | **Workflow Studio / AI Automation** | Disconnected basic editor without accessible DAG representation | Visual AI Automation Studio with @xyflow/react canvas, 13 node types across 3 categories, topological auto-layout, live execution state sync, accessible linear text outline, and timezone-aware scheduling | `VERIFIED LOCALLY` |
+| **Knowledge Intelligence Center (Docs, RAG, Graph)** | Fragmented document list, RAG search, and graph explorer | Unified Knowledge Intelligence Center with ingestion pipeline tracking, vector RAG / Hybrid RAG composer, grounding Evidence Drawer, interactive force-directed SVG graph, Pathfinder, and multi-agent graph reasoning | `VERIFIED LOCALLY` |
 
 ---
 
 ## 3. Responsive Adaptations Across Viewport Tiers
 
-The application shell, landing page, AI OS workspace, Agent Center, Memory Vault, MCP Center, Workflow Studio, and layout frames adapt dynamically across standard responsive breakpoints:
+The application shell, landing page, AI OS workspace, Agent Center, Memory Vault, MCP Center, Workflow Studio, and Knowledge Intelligence Center adapt dynamically across standard responsive breakpoints:
 
 - **Mobile (360px – 767px)**:
   - Sidebar automatically collapses to a high-density 16-character icon bar.
   - Landing navigation switches to compact header with essential CTAs; pipeline steps stack responsively.
   - Primary AI Workspace Console stacks mode selectors, prompt textarea, and action buttons cleanly.
-  - Agent Center, Memory Vault, MCP Center, and Workflow Studio grids collapse to a single-column layout; Drawers open to full viewport width with touch-friendly dismiss.
+  - Agent Center, Memory Vault, MCP Center, Workflow Studio, and Knowledge Center grids collapse to a single-column layout; Drawers open to full viewport width with touch-friendly dismiss.
   - Top bar breadcrumbs collapse gracefully; search triggers modal command palette.
   - Tables enable horizontal scroll wrappers without breaking container layouts.
 - **Tablet & Laptop (768px – 1024px)**:

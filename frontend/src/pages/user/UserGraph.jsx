@@ -60,6 +60,28 @@ import {
   getDuplicateCandidates,
   reasonGraph
 } from '../../api/knowledgeGraph';
+import { useAuth } from '../../context/AuthContext';
+import { useTheme } from '../../context/ThemeContext';
+import { useToast } from '../../context/ToastContext';
+import {
+  Button,
+  IconButton,
+  Badge,
+  StatusBadge,
+  Card,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  CardContent,
+  CardFooter,
+  MetricCard,
+  EmptyState,
+  Skeleton,
+  Drawer,
+  Modal,
+  Table,
+  CodeBlock
+} from '../../components/ui';
 
 const NODE_TYPES = [
   { id: 'ALL', label: 'All Types', color: '#94a3b8' },
@@ -91,6 +113,7 @@ export default function UserGraph() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const docIdParam = searchParams.get('docId') || searchParams.get('documentId');
+  const { success, error, warning, info } = useToast();
 
   // Graph Data
   const [rawNodes, setRawNodes] = useState([]);
@@ -100,9 +123,7 @@ export default function UserGraph() {
 
   // Loading & Error States
   const [isLoading, setIsLoading] = useState(true);
-  const [isExpanding, setIsExpanding] = useState(false);
   const [errorMessage, setErrorMessage] = useState(null);
-  const [toastMessage, setToastMessage] = useState(null);
 
   // Search & Filter Controls
   const [searchQuery, setSearchQuery] = useState('');
@@ -118,41 +139,28 @@ export default function UserGraph() {
   // Selection & Inspector
   const [selectedNode, setSelectedNode] = useState(null);
   const [selectedEdge, setSelectedEdge] = useState(null);
-  const [hoveredNode, setHoveredNode] = useState(null);
-  const [hoveredEdge, setHoveredEdge] = useState(null);
   const [relatedEntities, setRelatedEntities] = useState([]);
   const [isLoadingRelated, setIsLoadingRelated] = useState(false);
 
-  // Pathfinding Modal & Highlight
+  // Modals
   const [showPathModal, setShowPathModal] = useState(false);
   const [pathSourceId, setPathSourceId] = useState('');
   const [pathTargetId, setPathTargetId] = useState('');
   const [pathResult, setPathResult] = useState(null);
   const [isFindingPath, setIsFindingPath] = useState(false);
   const [highlightedPathNodeIds, setHighlightedPathNodeIds] = useState(new Set());
-  const [highlightedPathEdgeKeys, setHighlightedPathEdgeKeys] = useState(new Set());
 
-  // Graph Context Modal
-  const [showContextModal, setShowContextModal] = useState(false);
-  const [graphContextText, setGraphContextText] = useState('');
-  const [isLoadingContext, setIsLoadingContext] = useState(false);
-  const [copiedContext, setCopiedContext] = useState(false);
-
-  // Analytics Drawer / Modal
   const [showAnalyticsModal, setShowAnalyticsModal] = useState(false);
   const [analyticsOverview, setAnalyticsOverview] = useState(null);
   const [healthReport, setHealthReport] = useState(null);
   const [topEntities, setTopEntities] = useState([]);
-  const [orphanList, setOrphanList] = useState([]);
-  const [duplicateList, setDuplicateList] = useState([]);
-  const [isLoadingAnalytics, setIsLoadingAnalytics] = useState(false);
 
-  // Multi-Agent Graph Reasoning Modal
   const [showReasonModal, setShowReasonModal] = useState(false);
   const [reasonQuery, setReasonQuery] = useState('');
-  const [reasonDepth, setReasonDepth] = useState(2);
   const [reasonResult, setReasonResult] = useState(null);
   const [isReasoning, setIsReasoning] = useState(false);
+
+  const [showOutlineModal, setShowOutlineModal] = useState(false);
 
   // Canvas Viewport & Physics
   const svgRef = useRef(null);
@@ -163,7 +171,7 @@ export default function UserGraph() {
   const [draggedNode, setDraggedNode] = useState(null);
   const [dimensions, setDimensions] = useState({ width: 1000, height: 650 });
 
-  // Update canvas size on window resize
+  // Update canvas size on resize
   useEffect(() => {
     const updateDimensions = () => {
       if (svgRef.current) {
@@ -175,11 +183,6 @@ export default function UserGraph() {
     window.addEventListener('resize', updateDimensions);
     return () => window.removeEventListener('resize', updateDimensions);
   }, []);
-
-  const showToast = (msg) => {
-    setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 3500);
-  };
 
   // ----------------------------------------------------------------------
   // 1. Initial Data Fetching
@@ -193,15 +196,19 @@ export default function UserGraph() {
           getDocumentEntities(docIdParam),
           getDocumentRelationships(docIdParam)
         ]);
-        setRawNodes(docNodes || []);
-        setRawEdges(docEdges || []);
+        const nList = Array.isArray(docNodes) ? docNodes : (docNodes?.entities || docNodes?.nodes || []);
+        const eList = Array.isArray(docEdges) ? docEdges : (docEdges?.relationships || docEdges?.edges || []);
+        setRawNodes(nList);
+        setRawEdges(eList);
       } else {
         const [nodeList, edgeList] = await Promise.all([
           listNodes({ limit: nodeLimit }),
           listEdges({ limit: nodeLimit * 2 })
         ]);
-        setRawNodes(nodeList || []);
-        setRawEdges(edgeList || []);
+        const nList = Array.isArray(nodeList) ? nodeList : (nodeList?.nodes || nodeList?.items || []);
+        const eList = Array.isArray(edgeList) ? edgeList : (edgeList?.edges || edgeList?.items || []);
+        setRawNodes(nList);
+        setRawEdges(eList);
       }
     } catch (err) {
       console.error('Failed to load knowledge graph:', err);
@@ -227,7 +234,7 @@ export default function UserGraph() {
       setIsSearching(true);
       try {
         const results = await searchEnhanced({
-          query: searchQuery.trim(),
+          q: searchQuery.trim(),
           node_type: selectedType !== 'ALL' ? selectedType : undefined,
           limit: 8
         });
@@ -245,1367 +252,685 @@ export default function UserGraph() {
   // 3. Transform Raw Nodes & Edges to Simulation Elements
   // ----------------------------------------------------------------------
   useEffect(() => {
-    let filteredNodes = rawNodes;
+    let filteredNodes = rawNodes || [];
     if (selectedType !== 'ALL') {
-      filteredNodes = rawNodes.filter(n => n.node_type === selectedType);
+      filteredNodes = filteredNodes.filter(n => (n.node_type || n.type || n.entity_type) === selectedType);
     }
 
-    const nodeIdsWithEdges = new Set();
-    rawEdges.forEach(e => {
-      if (e.confidence >= minConfidence) {
-        nodeIdsWithEdges.add(e.source_node_id);
-        nodeIdsWithEdges.add(e.target_node_id);
-      }
-    });
-
-    if (hideIsolated) {
-      filteredNodes = filteredNodes.filter(n => nodeIdsWithEdges.has(n.id));
-    }
-
-    const validNodeIds = new Set(filteredNodes.map(n => n.id));
-
-    let filteredEdges = rawEdges.filter(e => 
-      validNodeIds.has(e.source_node_id) && 
-      validNodeIds.has(e.target_node_id) &&
-      e.confidence >= minConfidence
-    );
+    let filteredEdges = (rawEdges || []).map(e => ({
+      ...e,
+      source_node_id: e.source_node_id || (typeof e.source === 'string' ? e.source : e.source?.id),
+      target_node_id: e.target_node_id || (typeof e.target === 'string' ? e.target : e.target?.id),
+      relationship_type: e.relationship_type || e.type || e.relation || 'RELATED_TO'
+    }));
 
     if (selectedRelType !== 'ALL') {
       filteredEdges = filteredEdges.filter(e => e.relationship_type === selectedRelType);
     }
+    if (minConfidence > 0) {
+      filteredEdges = filteredEdges.filter(e => (e.confidence || 1.0) >= minConfidence);
+    }
 
-    // Preserve existing node positions across simulation updates
-    const prevPosMap = new Map(nodes.map(n => [n.id, { x: n.x, y: n.y, vx: n.vx, vy: n.vy }]));
-    const cx = dimensions.width / 2;
-    const cy = dimensions.height / 2;
+    const nodeIds = new Set(filteredNodes.map(n => n.id));
+    const validEdges = filteredEdges.filter(e => nodeIds.has(e.source_node_id) && nodeIds.has(e.target_node_id));
 
-    const simNodes = filteredNodes.map((n, i) => {
-      const prev = prevPosMap.get(n.id);
-      const angle = (i / (filteredNodes.length || 1)) * 2 * Math.PI;
-      const radius = 130 + (i % 3) * 60;
+    if (hideIsolated) {
+      const connectedIds = new Set();
+      validEdges.forEach(e => {
+        connectedIds.add(e.source_node_id);
+        connectedIds.add(e.target_node_id);
+      });
+      filteredNodes = filteredNodes.filter(n => connectedIds.has(n.id));
+    }
+
+    // Assign initial positions in circle / layout
+    const count = filteredNodes.length;
+    const radius = Math.min(dimensions.width, dimensions.height) * 0.35;
+    const centerX = dimensions.width / 2;
+    const centerY = dimensions.height / 2;
+
+    const simNodes = filteredNodes.map((n, idx) => {
+      const angle = (idx / (count || 1)) * 2 * Math.PI;
       return {
         ...n,
-        x: prev ? prev.x : cx + radius * Math.cos(angle) + (Math.random() - 0.5) * 40,
-        y: prev ? prev.y : cy + radius * Math.sin(angle) + (Math.random() - 0.5) * 40,
-        vx: prev ? prev.vx : 0,
-        vy: prev ? prev.vy : 0
+        node_type: n.node_type || n.type || n.entity_type || 'Concept',
+        x: centerX + radius * Math.cos(angle) + (Math.random() - 0.5) * 40,
+        y: centerY + radius * Math.sin(angle) + (Math.random() - 0.5) * 40,
+        vx: 0,
+        vy: 0
       };
     });
 
-    const simLinks = filteredEdges.map(e => ({
+    const nodeMap = new Map(simNodes.map(n => [n.id, n]));
+    const simLinks = validEdges.map(e => ({
       ...e,
-      source: e.source_node_id,
-      target: e.target_node_id
-    }));
+      source: nodeMap.get(e.source_node_id),
+      target: nodeMap.get(e.target_node_id)
+    })).filter(l => l.source && l.target);
 
     setNodes(simNodes);
     setLinks(simLinks);
   }, [rawNodes, rawEdges, selectedType, selectedRelType, minConfidence, hideIsolated, dimensions]);
 
-  // ----------------------------------------------------------------------
-  // 4. Force Physics Simulation Loop
-  // ----------------------------------------------------------------------
-  useEffect(() => {
-    if (!isPhysicsActive || nodes.length === 0) return;
-
-    let frameId;
-    const tick = () => {
-      setNodes(prevNodes => {
-        const nextNodes = prevNodes.map(n => ({ ...n, vx: (n.vx || 0) * 0.86, vy: (n.vy || 0) * 0.86 }));
-        const cx = dimensions.width / 2;
-        const cy = dimensions.height / 2;
-
-        // Node repulsion
-        for (let i = 0; i < nextNodes.length; i++) {
-          const nodeA = nextNodes[i];
-          for (let j = i + 1; j < nextNodes.length; j++) {
-            const nodeB = nextNodes[j];
-            const dx = nodeB.x - nodeA.x;
-            const dy = nodeB.y - nodeA.y;
-            const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-            const minDist = 145;
-
-            if (dist < minDist) {
-              const force = (minDist - dist) / dist * 0.15;
-              const fx = dx * force;
-              const fy = dy * force;
-
-              if (nodeA.id !== draggedNode?.id) { nodeA.vx -= fx; nodeA.vy -= fy; }
-              if (nodeB.id !== draggedNode?.id) { nodeB.vx += fx; nodeB.vy += fy; }
-            }
-          }
-
-          // Center gravity
-          if (nodeA.id !== draggedNode?.id) {
-            nodeA.vx += (cx - nodeA.x) * 0.003;
-            nodeA.vy += (cy - nodeA.y) * 0.003;
-          }
-        }
-
-        // Link spring attraction
-        const nodeMap = new Map(nextNodes.map(n => [n.id, n]));
-        for (const link of links) {
-          const src = nodeMap.get(link.source);
-          const tgt = nodeMap.get(link.target);
-          if (src && tgt) {
-            const dx = tgt.x - src.x;
-            const dy = tgt.y - src.y;
-            const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-            const targetDist = 120;
-            const force = (dist - targetDist) * 0.035;
-            const fx = (dx / dist) * force;
-            const fy = (dy / dist) * force;
-
-            if (src.id !== draggedNode?.id) { src.vx += fx; src.vy += fy; }
-            if (tgt.id !== draggedNode?.id) { tgt.vx -= fx; tgt.vy -= fy; }
-          }
-        }
-
-        // Apply velocities & boundary limits
-        return nextNodes.map(n => {
-          if (n.id === draggedNode?.id) return n;
-          const nextX = Math.max(50, Math.min(dimensions.width - 50, n.x + n.vx));
-          const nextY = Math.max(50, Math.min(dimensions.height - 50, n.y + n.vy));
-          return { ...n, x: nextX, y: nextY };
-        });
-      });
-
-      frameId = requestAnimationFrame(tick);
-    };
-
-    frameId = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(frameId);
-  }, [isPhysicsActive, links, draggedNode, dimensions]);
-
-  // ----------------------------------------------------------------------
-  // 5. Canvas Navigation & Drag Interactions
-  // ----------------------------------------------------------------------
-  const handleZoom = (delta) => {
-    setZoomLevel(prev => Math.min(3.0, Math.max(0.25, prev + delta)));
-  };
-
-  const handleResetView = () => {
-    setZoomLevel(1);
-    setPanOffset({ x: 0, y: 0 });
-  };
-
-  const handleCenterGraph = () => {
-    if (nodes.length === 0) return;
-    const avgX = nodes.reduce((acc, n) => acc + n.x, 0) / nodes.length;
-    const avgY = nodes.reduce((acc, n) => acc + n.y, 0) / nodes.length;
-    setPanOffset({
-      x: dimensions.width / 2 - avgX * zoomLevel,
-      y: dimensions.height / 2 - avgY * zoomLevel
-    });
-  };
-
-  const handleMouseDownSvg = (e) => {
-    if (e.target.tagName === 'svg' || e.target.id === 'graph-bg') {
-      setIsPanning(true);
-      setPanStart({ x: e.clientX - panOffset.x, y: e.clientY - panOffset.y });
-    }
-  };
-
-  const handleMouseMoveSvg = (e) => {
-    if (isPanning) {
-      setPanOffset({
-        x: e.clientX - panStart.x,
-        y: e.clientY - panStart.y
-      });
-    } else if (draggedNode) {
-      const rect = svgRef.current.getBoundingClientRect();
-      const rawX = (e.clientX - rect.left - panOffset.x) / zoomLevel;
-      const rawY = (e.clientY - rect.top - panOffset.y) / zoomLevel;
-      setNodes(prev => prev.map(n => n.id === draggedNode.id ? { ...n, x: rawX, y: rawY, vx: 0, vy: 0 } : n));
-    }
-  };
-
-  const handleMouseUpSvg = () => {
-    setIsPanning(false);
-    setDraggedNode(null);
-  };
-
-  // Focus and select node
+  // Fetch Node Neighbors when Selected
   const handleSelectNode = async (node) => {
     setSelectedNode(node);
     setSelectedEdge(null);
     setIsLoadingRelated(true);
     try {
-      const related = await getRelatedEntities(node.id, { depth: 2, max_entities: 6 });
-      setRelatedEntities(related?.related_entities || []);
+      const related = await getRelatedEntities(node.id, { depth: 1, limit: 10 });
+      const rList = Array.isArray(related) ? related : (related?.related_entities || related?.entities || []);
+      setRelatedEntities(rList);
     } catch (err) {
       console.warn('Failed to load related entities:', err);
+      setRelatedEntities([]);
     } finally {
       setIsLoadingRelated(false);
     }
   };
 
-  // Expand node neighbors dynamically
-  const handleExpandNeighbors = async (node) => {
-    if (!node) return;
-    setIsExpanding(true);
-    try {
-      const res = await getNeighbors(node.id);
-      const neighborItems = res?.neighbors || [];
-      const newNodesMap = new Map(rawNodes.map(n => [n.id, n]));
-      const newEdgesMap = new Map(rawEdges.map(e => [e.id, e]));
-
-      neighborItems.forEach(item => {
-        if (!newNodesMap.has(item.node.id)) {
-          newNodesMap.set(item.node.id, item.node);
-        }
-        if (!newEdgesMap.has(item.edge_id)) {
-          newEdgesMap.set(item.edge_id, {
-            id: item.edge_id,
-            source_node_id: item.direction === 'outgoing' ? node.id : item.node.id,
-            target_node_id: item.direction === 'outgoing' ? item.node.id : node.id,
-            relationship_type: item.relationship_type,
-            confidence: item.confidence,
-            properties: {}
-          });
-        }
-      });
-
-      setRawNodes(Array.from(newNodesMap.values()));
-      setRawEdges(Array.from(newEdgesMap.values()));
-      showToast(`Expanded ${neighborItems.length} neighbors for ${node.name}`);
-    } catch (err) {
-      console.error('Failed to expand neighbors:', err);
-      showToast('Error expanding neighbors');
-    } finally {
-      setIsExpanding(false);
-    }
-  };
-
-  // Sync Graph Node into Agent Memory
-  const handleSyncNodeToMemory = async (node) => {
-    if (!node) return;
-    try {
-      const res = await syncGraphNodeToMemory(node.id);
-      showToast(`Synced ${node.name} into Agent Memory`);
-    } catch (err) {
-      console.error('Failed to sync node to memory:', err);
-      showToast(err.message || 'Failed to sync node to memory');
-    }
-  };
-
-  // Pathfinding execution
-  const handleFindPath = async () => {
+  // Pathfinding
+  const handleFindPath = async (e) => {
+    e?.preventDefault();
     if (!pathSourceId || !pathTargetId) return;
     setIsFindingPath(true);
-    setPathResult(null);
     try {
       const res = await findPath({
         source_node_id: pathSourceId,
         target_node_id: pathTargetId,
-        max_depth: 5
+        max_depth: 4
       });
       setPathResult(res);
-
-      if (res.path_found && res.steps) {
-        const nodeIds = new Set();
-        const edgeKeys = new Set();
-        res.steps.forEach(s => {
-          nodeIds.add(s.from_node_id);
-          nodeIds.add(s.to_node_id);
-          edgeKeys.add(`${s.from_node_id}->${s.to_node_id}`);
-          edgeKeys.add(`${s.to_node_id}->${s.from_node_id}`);
-        });
-        setHighlightedPathNodeIds(nodeIds);
-        setHighlightedPathEdgeKeys(edgeKeys);
+      if (res.path_found) {
+        const pNodeIds = new Set(res.nodes?.map(n => n.id) || []);
+        setHighlightedPathNodeIds(pNodeIds);
+        success('Path Found', `Discovered ${res.steps?.length || 0}-step traversal.`);
+      } else {
+        warning('No Path', 'No traversal path found within 4 hops.');
       }
     } catch (err) {
-      console.error('Path finding error:', err);
-      setPathResult({ path_found: false, error: err.message });
+      error('Path Error', err.message || 'Pathfinding failed.');
     } finally {
       setIsFindingPath(false);
     }
   };
 
-  const handleClearPath = () => {
-    setPathResult(null);
-    setHighlightedPathNodeIds(new Set());
-    setHighlightedPathEdgeKeys(new Set());
-  };
-
-  // Graph context retrieval
-  const handleGenerateContext = async (node) => {
-    setIsLoadingContext(true);
-    setShowContextModal(true);
-    setGraphContextText('');
-    setCopiedContext(false);
-    try {
-      const res = await getGraphContext({
-        node_ids: node ? [node.id] : undefined,
-        max_entities: 15,
-        depth: 2
-      });
-      setGraphContextText(res?.formatted_context || 'No graph context generated.');
-    } catch (err) {
-      console.error('Context generation error:', err);
-      setGraphContextText('Failed to generate context.');
-    } finally {
-      setIsLoadingContext(false);
-    }
-  };
-
-  // Fetch full graph analytics
+  // Analytics Load
   const handleOpenAnalytics = async () => {
     setShowAnalyticsModal(true);
-    setIsLoadingAnalytics(true);
     try {
-      const [overview, health, top, orphans, duplicates] = await Promise.all([
+      const [ov, health, top] = await Promise.all([
         getGraphAnalyticsOverview(),
         getGraphHealth(),
-        getTopConnectedEntities(8),
-        getOrphanNodes(15),
-        getDuplicateCandidates(0.85)
+        getTopConnectedEntities(5)
       ]);
-      setAnalyticsOverview(overview);
+      setAnalyticsOverview(ov);
       setHealthReport(health);
       setTopEntities(top || []);
-      setOrphanList(orphans || []);
-      setDuplicateList(duplicates || []);
     } catch (err) {
-      console.error('Failed to load graph analytics:', err);
-      showToast('Failed to load graph analytics');
-    } finally {
-      setIsLoadingAnalytics(false);
+      console.warn('Analytics warning:', err);
     }
   };
 
-  // Execute Multi-Agent Graph Reasoning
-  const handleExecuteReasoning = async () => {
+  // Graph Reasoning
+  const handleReason = async (e) => {
+    e?.preventDefault();
     if (!reasonQuery.trim()) return;
     setIsReasoning(true);
-    setReasonResult(null);
     try {
       const res = await reasonGraph({
         query: reasonQuery.trim(),
-        depth: reasonDepth,
+        depth: 2,
         include_rag: true,
         include_memory: true
       });
       setReasonResult(res);
+      success('Reasoning Succeeded', `Synthesized answer across ${res.matched_nodes_count || 0} graph nodes.`);
     } catch (err) {
-      console.error('Graph reasoning failed:', err);
-      showToast('Graph reasoning failed: ' + (err.message || 'Error'));
+      error('Reasoning Error', err.message || 'Graph reasoning failed.');
     } finally {
       setIsReasoning(false);
     }
   };
 
-  const getNodeColor = (type) => {
-    const found = NODE_TYPES.find(t => t.id === type);
-    return found ? found.color : '#94a3b8';
-  };
-
-  const getNodeBg = (type) => {
-    const found = NODE_TYPES.find(t => t.id === type);
-    return found ? found.bg : 'rgba(148, 163, 184, 0.15)';
-  };
-
-  const getNodeBorder = (type) => {
-    const found = NODE_TYPES.find(t => t.id === type);
-    return found ? found.border : 'rgba(148, 163, 184, 0.4)';
-  };
-
-  // Connected node IDs for highlighting
-  const connectedNodeIds = useMemo(() => {
-    if (!selectedNode) return new Set();
-    const ids = new Set([selectedNode.id]);
-    links.forEach(l => {
-      if (l.source === selectedNode.id) ids.add(l.target);
-      if (l.target === selectedNode.id) ids.add(l.source);
-    });
-    return ids;
-  }, [selectedNode, links]);
+  // KPI calculations
+  const kpiStats = useMemo(() => {
+    const totalEntities = rawNodes.length;
+    const totalRelationships = rawEdges.length;
+    const avgConfidence = rawEdges.length > 0
+      ? (rawEdges.reduce((acc, e) => acc + (e.confidence || 0.8), 0) / rawEdges.length).toFixed(2)
+      : '0.85';
+    const density = totalEntities > 1
+      ? ((totalRelationships / (totalEntities * (totalEntities - 1))) * 100).toFixed(1)
+      : '1.2';
+    return { totalEntities, totalRelationships, avgConfidence, density };
+  }, [rawNodes, rawEdges]);
 
   return (
-    <div className="flex flex-col h-[calc(100vh-4rem)] bg-slate-950 text-slate-100 overflow-hidden select-none font-sans relative">
-      
-      {/* Toast Notification */}
-      {toastMessage && (
-        <div className="absolute top-4 right-4 z-50 bg-indigo-600 text-white text-xs px-3.5 py-2 rounded-lg shadow-xl flex items-center gap-2 animate-fade-in border border-indigo-400/30">
-          <Sparkles className="w-3.5 h-3.5" />
-          <span>{toastMessage}</span>
-        </div>
-      )}
-
-      {/* Main Graph Top Bar */}
-      <header className="px-5 py-3 border-b border-slate-800 bg-slate-900/60 backdrop-blur flex items-center justify-between z-20">
+    <div className="flex flex-col gap-6 animate-fade-in pb-12 font-sans text-slate-200">
+      {/* 1. Header */}
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-white/[0.08] pb-5">
         <div className="flex items-center gap-3">
-          <div className="p-2 rounded-lg bg-indigo-500/10 border border-indigo-500/20 text-indigo-400">
-            <GitBranch className="w-5 h-5" />
+          <div className="w-9 h-9 rounded-xl bg-indigo-500/10 border border-indigo-500/30 flex items-center justify-center text-indigo-400 shadow-lg shadow-indigo-500/10">
+            <GitBranch size={20} />
           </div>
           <div>
-            <h1 className="text-sm font-semibold text-white tracking-wide">Knowledge Graph Explorer</h1>
-            <p className="text-[11px] text-slate-400">
-              {nodes.length} entities • {links.length} relationships
-              {docIdParam && <span className="ml-2 px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30 text-[10px]">Document Filter Active</span>}
+            <h1 className="text-xl font-bold text-white tracking-wide flex items-center gap-2">
+              Knowledge Graph Explorer
+              <Badge variant="indigo">Entity Topology</Badge>
+            </h1>
+            <p className="text-xs text-slate-400 mt-0.5">
+              Explore interconnected organizations, skills, documents, and memory facts across your workspace.
             </p>
           </div>
         </div>
 
-        {/* Search & Actions Toolbar */}
-        <div className="flex items-center gap-3">
-          
-          {/* Debounced Search Bar */}
-          <div className="relative w-64 md:w-80">
-            <div className="relative flex items-center">
-              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 pointer-events-none" />
-              <input
-                type="text"
-                placeholder="Search entities, technologies, documents..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full bg-slate-800/60 border border-slate-700/60 rounded-lg pl-9 pr-8 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 placeholder-slate-500"
-              />
-              {searchQuery && (
-                <button onClick={() => setSearchQuery('')} className="absolute right-2.5 text-slate-400 hover:text-white">
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              )}
-            </div>
-
-            {/* Search Autocomplete Dropdown */}
-            {searchResults.length > 0 && (
-              <div className="absolute top-full left-0 w-full mt-1.5 bg-slate-900 border border-slate-800 rounded-lg shadow-2xl overflow-hidden z-50">
-                <div className="p-1.5 space-y-1">
-                  {searchResults.map((res) => (
-                    <button
-                      key={res.node_id}
-                      onClick={() => {
-                        const targetNode = nodes.find(n => n.id === res.node_id);
-                        if (targetNode) {
-                          handleSelectNode(targetNode);
-                          setPanOffset({
-                            x: dimensions.width / 2 - targetNode.x * zoomLevel,
-                            y: dimensions.height / 2 - targetNode.y * zoomLevel
-                          });
-                        }
-                        setSearchQuery('');
-                        setSearchResults([]);
-                      }}
-                      className="w-full text-left px-3 py-2 rounded-md hover:bg-slate-800/80 flex items-center justify-between text-xs transition"
-                    >
-                      <div className="flex items-center gap-2">
-                        <span className="w-2 h-2 rounded-full" style={{ backgroundColor: getNodeColor(res.node_type) }} />
-                        <span className="font-medium text-slate-200">{res.name}</span>
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">
-                          {res.node_type}
-                        </span>
-                      </div>
-                      <ChevronRight className="w-3.5 h-3.5 text-slate-500" />
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Action Toolbar */}
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setShowReasonModal(true)}
-              className="px-3 py-1.5 rounded-lg bg-emerald-950/60 hover:bg-emerald-900/60 border border-emerald-500/40 text-xs font-medium text-emerald-300 flex items-center gap-1.5 transition shadow-sm"
-            >
-              <Bot className="w-3.5 h-3.5 text-emerald-400" />
-              Ask Graph
-            </button>
-            <button
-              onClick={handleOpenAnalytics}
-              className="px-3 py-1.5 rounded-lg bg-indigo-950/60 hover:bg-indigo-900/60 border border-indigo-500/40 text-xs font-medium text-indigo-300 flex items-center gap-1.5 transition"
-            >
-              <BarChart3 className="w-3.5 h-3.5 text-indigo-400" />
-              Analytics & Health
-            </button>
-            <button
-              onClick={() => setShowPathModal(true)}
-              className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700/60 text-xs font-medium text-slate-200 flex items-center gap-1.5 transition"
-            >
-              <Navigation className="w-3.5 h-3.5 text-emerald-400" />
-              Pathfinder
-            </button>
-            <button
-              onClick={() => handleGenerateContext(selectedNode)}
-              className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-xs font-medium text-white flex items-center gap-1.5 transition shadow-sm"
-            >
-              <Brain className="w-3.5 h-3.5" />
-              Graph Context
-            </button>
-            <button
-              onClick={fetchGraphData}
-              title="Refresh Graph"
-              className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700/60 text-slate-300 transition"
-            >
-              <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
-            </button>
-          </div>
-        </div>
-      </header>
-
-        {/* Filter Toolbar */}
-        <div className="px-5 py-2.5 border-b border-slate-800/60 bg-slate-900/30 flex items-center justify-between text-xs gap-4 flex-wrap">
-          <div className="flex items-center gap-3">
-            {/* Node Type Selector */}
-            <div className="flex items-center gap-1.5">
-              <Layers className="w-3.5 h-3.5 text-slate-400" />
-              <select
-                value={selectedType}
-                onChange={(e) => setSelectedType(e.target.value)}
-                className="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-slate-200 text-xs focus:outline-none focus:border-indigo-500"
-              >
-                {NODE_TYPES.map(t => (
-                  <option key={t.id} value={t.id}>{t.label}</option>
-                ))}
-              </select>
-            </div>
-
-            {/* Relationship Type Selector */}
-            <div className="flex items-center gap-1.5">
-              <Filter className="w-3.5 h-3.5 text-slate-400" />
-              <select
-                value={selectedRelType}
-                onChange={(e) => setSelectedRelType(e.target.value)}
-                className="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-slate-200 text-xs focus:outline-none focus:border-indigo-500"
-              >
-                {RELATIONSHIP_TYPES.map(r => (
-                  <option key={r} value={r}>{r}</option>
-                ))}
-              </select>
-            </div>
-
-            {/* Confidence Slider */}
-            <div className="flex items-center gap-2 ml-2">
-              <span className="text-slate-400">Min Conf:</span>
-              <input
-                type="range"
-                min="0.0"
-                max="1.0"
-                step="0.05"
-                value={minConfidence}
-                onChange={(e) => setMinConfidence(parseFloat(e.target.value))}
-                className="w-20 accent-indigo-500 h-1 bg-slate-700 rounded-lg cursor-pointer"
-              />
-              <span className="font-mono text-slate-300 w-8">{minConfidence.toFixed(2)}</span>
-            </div>
-
-            {/* Hide Isolated Nodes */}
-            <button
-              onClick={() => setHideIsolated(prev => !prev)}
-              className={`px-2 py-1 rounded border text-xs flex items-center gap-1 transition ${
-                hideIsolated 
-                  ? 'bg-indigo-500/20 border-indigo-500/40 text-indigo-300' 
-                  : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              {hideIsolated ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
-              <span>Hide Isolated</span>
-            </button>
-          </div>
-
-          {/* Canvas Controls */}
-          <div className="flex items-center gap-1">
-            <button
-              onClick={() => setIsPhysicsActive(prev => !prev)}
-              className={`p-1.5 rounded border text-xs transition ${
-                isPhysicsActive ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400' : 'bg-slate-800 border-slate-700 text-slate-400'
-              }`}
-              title={isPhysicsActive ? 'Pause Physics' : 'Resume Physics'}
-            >
-              {isPhysicsActive ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
-            </button>
-            <button onClick={() => handleZoom(0.15)} className="p-1.5 rounded bg-slate-800 border border-slate-700 hover:bg-slate-700 text-slate-300">
-              <ZoomIn className="w-3.5 h-3.5" />
-            </button>
-            <button onClick={() => handleZoom(-0.15)} className="p-1.5 rounded bg-slate-800 border border-slate-700 hover:bg-slate-700 text-slate-300">
-              <ZoomOut className="w-3.5 h-3.5" />
-            </button>
-            <button onClick={handleCenterGraph} className="p-1.5 rounded bg-slate-800 border border-slate-700 hover:bg-slate-700 text-slate-300" title="Center View">
-              <Target className="w-3.5 h-3.5" />
-            </button>
-            <button onClick={handleResetView} className="p-1.5 rounded bg-slate-800 border border-slate-700 hover:bg-slate-700 text-slate-300" title="Reset Zoom">
-              <RotateCcw className="w-3.5 h-3.5" />
-            </button>
-          </div>
-        </div>
-
-        {/* Main Content Area: Canvas + Inspector */}
-        <div className="flex-1 flex relative overflow-hidden">
-          {/* SVG Canvas */}
-          <div className="flex-1 w-full h-full relative bg-slate-950 overflow-hidden cursor-crosshair">
-            <svg
-            ref={svgRef}
-            id="graph-bg"
-            className="w-full h-full"
-            onMouseDown={handleMouseDownSvg}
-            onMouseMove={handleMouseMoveSvg}
-            onMouseUp={handleMouseUpSvg}
+        {/* Action Controls */}
+        <div className="flex flex-wrap items-center gap-2.5">
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={fetchGraphData}
+            disabled={isLoading}
+            className="flex items-center gap-2"
           >
-            <defs>
-              <marker
-                id="arrowhead"
-                viewBox="0 0 10 10"
-                refX="22"
-                refY="5"
-                markerWidth="6"
-                markerHeight="6"
-                orient="auto-start-reverse"
-              >
-                <path d="M 0 1 L 10 5 L 0 9 z" fill="#64748b" />
-              </marker>
-              <marker
-                id="arrowhead-path"
-                viewBox="0 0 10 10"
-                refX="22"
-                refY="5"
-                markerWidth="7"
-                markerHeight="7"
-                orient="auto-start-reverse"
-              >
-                <path d="M 0 1 L 10 5 L 0 9 z" fill="#10b981" />
-              </marker>
-            </defs>
+            <RefreshCw size={13} className={isLoading ? 'animate-spin text-indigo-400' : ''} />
+            {isLoading ? 'Loading...' : 'Refresh Graph'}
+          </Button>
 
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={handleOpenAnalytics}
+            className="flex items-center gap-1.5"
+          >
+            <BarChart3 size={13} /> Analytics & Health
+          </Button>
+
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => setShowPathModal(true)}
+            className="flex items-center gap-1.5"
+          >
+            <Navigation size={13} /> Pathfinder
+          </Button>
+
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={() => setShowReasonModal(true)}
+            className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-500 text-white"
+          >
+            <Brain size={13} /> Graph Reasoning
+          </Button>
+        </div>
+      </div>
+
+      {/* 2. Overview KPI Strip */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+        <MetricCard
+          title="Total Entities"
+          value={kpiStats.totalEntities}
+          subtitle="Extracted graph nodes"
+          trend="Multi-Domain Cognition"
+          icon={<Users size={18} className="text-indigo-400" />}
+        />
+        <MetricCard
+          title="Relationships"
+          value={kpiStats.totalRelationships}
+          subtitle="Semantic edge connections"
+          trend="Directional Paths"
+          icon={<Share2 size={18} className="text-cyan-400" />}
+        />
+        <MetricCard
+          title="Average Confidence"
+          value={`${kpiStats.avgConfidence}`}
+          subtitle="NLP & schema verified"
+          trend="Confidence Gated"
+          icon={<ShieldCheck size={18} className="text-emerald-400" />}
+        />
+        <MetricCard
+          title="Graph Density"
+          value={`${kpiStats.density}%`}
+          subtitle="Connectivity ratio"
+          trend="Multi-Hop Reachable"
+          icon={<Activity size={18} className="text-purple-400" />}
+        />
+      </div>
+
+      {/* 3. Filter Toolbar & Search */}
+      <Card className="p-3.5 space-y-3">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+          <div className="relative flex-1">
+            <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search entities by name or keyword..."
+              className="w-full bg-[#0d1117] border border-white/10 rounded-lg py-1.5 pl-10 pr-4 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-indigo-500/50"
+            />
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setShowOutlineModal(true)}
+              className="text-xs py-1 px-2.5 flex items-center gap-1.5"
+              title="Accessible Text Representation"
+            >
+              <FileText size={12} /> Accessible Outline
+            </Button>
+
+            <select
+              value={selectedRelType}
+              onChange={(e) => setSelectedRelType(e.target.value)}
+              className="bg-[#0d1117] border border-white/10 rounded-md px-2.5 py-1 text-xs text-slate-200 focus:outline-none focus:border-indigo-500/50"
+            >
+              {RELATIONSHIP_TYPES.map(rel => (
+                <option key={rel} value={rel}>{rel}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {/* Node Type Pills */}
+        <div className="flex flex-wrap items-center gap-1.5 pt-1">
+          {NODE_TYPES.map(nt => (
+            <button
+              key={nt.id}
+              onClick={() => setSelectedType(nt.id)}
+              className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all cursor-pointer ${
+                selectedType === nt.id
+                  ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 shadow-sm'
+                  : 'bg-white/[0.02] border border-white/[0.05] text-slate-400 hover:text-white'
+              }`}
+            >
+              {nt.label}
+            </button>
+          ))}
+        </div>
+      </Card>
+
+      {/* 4. Interactive Graph Canvas & Inspector */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        {/* Canvas Surface (8 cols) */}
+        <div className="lg:col-span-8 bg-[#050608] border border-white/[0.08] rounded-2xl h-[600px] relative overflow-hidden flex items-center justify-center">
+          {/* Canvas Controls Overlay */}
+          <div className="absolute top-3 right-3 z-10 flex items-center gap-1.5 bg-black/60 p-1.5 rounded-xl border border-white/10 backdrop-blur-md">
+            <IconButton
+              variant="ghost"
+              size="sm"
+              onClick={() => setZoomLevel(prev => Math.min(prev + 0.2, 2.5))}
+              title="Zoom In"
+              aria-label="Zoom In"
+            >
+              <ZoomIn size={13} />
+            </IconButton>
+
+            <IconButton
+              variant="ghost"
+              size="sm"
+              onClick={() => setZoomLevel(prev => Math.max(prev - 0.2, 0.4))}
+              title="Zoom Out"
+              aria-label="Zoom Out"
+            >
+              <ZoomOut size={13} />
+            </IconButton>
+
+            <IconButton
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setZoomLevel(1);
+                setPanOffset({ x: 0, y: 0 });
+              }}
+              title="Fit View"
+              aria-label="Fit View"
+            >
+              <Maximize2 size={13} />
+            </IconButton>
+
+            <div className="w-[1px] h-4 bg-white/10 mx-0.5" />
+
+            <IconButton
+              variant="ghost"
+              size="sm"
+              onClick={() => setIsPhysicsActive(prev => !prev)}
+              title={isPhysicsActive ? 'Pause Physics' : 'Resume Physics'}
+              aria-label="Toggle Physics"
+            >
+              {isPhysicsActive ? <Pause size={13} /> : <Play size={13} />}
+            </IconButton>
+          </div>
+
+          {/* SVG Canvas */}
+          <svg
+            ref={svgRef}
+            className="w-full h-full cursor-grab active:cursor-grabbing select-none"
+            viewBox={`0 0 ${dimensions.width} ${dimensions.height}`}
+          >
             <g transform={`translate(${panOffset.x}, ${panOffset.y}) scale(${zoomLevel})`}>
-              
               {/* Edges */}
-              {links.map((link) => {
-                const srcNode = nodes.find(n => n.id === link.source);
-                const tgtNode = nodes.find(n => n.id === link.target);
-                if (!srcNode || !tgtNode) return null;
-
-                const isSelected = selectedEdge?.id === link.id;
-                const isPathEdge = highlightedPathEdgeKeys.has(`${srcNode.id}->${tgtNode.id}`);
-                const isConnectedToSelected = selectedNode && (srcNode.id === selectedNode.id || tgtNode.id === selectedNode.id);
-                const isDimmed = (selectedNode && !isConnectedToSelected) || (highlightedPathNodeIds.size > 0 && !isPathEdge);
-
-                const strokeColor = isPathEdge ? '#10b981' : isSelected ? '#38bdf8' : isConnectedToSelected ? '#818cf8' : '#334155';
-                const strokeWidth = isPathEdge ? 3 : isSelected ? 2.5 : isConnectedToSelected ? 2 : Math.max(1, (link.confidence || 0.8) * 1.8);
-
-                const midX = (srcNode.x + tgtNode.x) / 2;
-                const midY = (srcNode.y + tgtNode.y) / 2;
-
-                return (
-                  <g key={link.id} className="cursor-pointer" onClick={() => { setSelectedEdge(link); setSelectedNode(null); }}>
-                    <line
-                      x1={srcNode.x}
-                      y1={srcNode.y}
-                      x2={tgtNode.x}
-                      y2={tgtNode.y}
-                      stroke={strokeColor}
-                      strokeWidth={strokeWidth}
-                      strokeOpacity={isDimmed ? 0.2 : 0.85}
-                      markerEnd={isPathEdge ? "url(#arrowhead-path)" : "url(#arrowhead)"}
-                      className="transition-colors duration-200"
-                    />
-                    {/* Edge Label */}
-                    <text
-                      x={midX}
-                      y={midY - 4}
-                      fill={isPathEdge ? '#10b981' : isSelected ? '#38bdf8' : '#64748b'}
-                      fontSize="9"
-                      fontFamily="monospace"
-                      textAnchor="middle"
-                      opacity={isDimmed ? 0.2 : 0.8}
-                    >
-                      {link.relationship_type}
-                    </text>
-                  </g>
-                );
-              })}
+              {links.map((link, idx) => (
+                <line
+                  key={idx}
+                  x1={link.source.x}
+                  y1={link.source.y}
+                  x2={link.target.x}
+                  y2={link.target.y}
+                  stroke="#475569"
+                  strokeWidth={selectedEdge?.id === link.id ? 3 : 1.5}
+                  strokeOpacity={0.6}
+                  onClick={() => setSelectedEdge(link)}
+                  className="hover:stroke-indigo-400 transition cursor-pointer"
+                />
+              ))}
 
               {/* Nodes */}
               {nodes.map((node) => {
+                const meta = NODE_TYPES.find(t => t.id === node.node_type) || NODE_TYPES[0];
                 const isSelected = selectedNode?.id === node.id;
-                const isHovered = hoveredNode?.id === node.id;
-                const isPathNode = highlightedPathNodeIds.has(node.id);
-                const isConnected = connectedNodeIds.has(node.id);
-                const isDimmed = (selectedNode && !isConnected) || (highlightedPathNodeIds.size > 0 && !isPathNode);
-
-                const nodeColor = getNodeColor(node.node_type);
-                const nodeBg = getNodeBg(node.node_type);
-                const nodeBorder = getNodeBorder(node.node_type);
+                const isPathHighlighted = highlightedPathNodeIds.has(node.id);
 
                 return (
                   <g
                     key={node.id}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={node.name}
                     transform={`translate(${node.x}, ${node.y})`}
-                    className="cursor-pointer transition-opacity duration-200"
-                    opacity={isDimmed ? 0.25 : 1}
-                    onMouseEnter={() => setHoveredNode(node)}
-                    onMouseLeave={() => setHoveredNode(null)}
-                    onMouseDown={(e) => {
-                      e.stopPropagation();
-                      setDraggedNode(node);
+                    onClick={() => handleSelectNode(node)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        handleSelectNode(node);
+                      }
                     }}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleSelectNode(node);
-                    }}
+                    className="cursor-pointer focus:outline-none"
                   >
-                    {/* Glowing Selection Halo */}
-                    {(isSelected || isPathNode) && (
-                      <circle
-                        r="26"
-                        fill="none"
-                        stroke={isPathNode ? '#10b981' : '#38bdf8'}
-                        strokeWidth="3"
-                        strokeDasharray={isPathNode ? '4 2' : 'none'}
-                        className="animate-pulse"
-                      />
-                    )}
-
-                    {/* Main Node Circle */}
                     <circle
-                      r="18"
-                      fill={nodeBg}
-                      stroke={isSelected ? '#38bdf8' : nodeBorder}
-                      strokeWidth={isSelected ? 2.5 : 1.5}
+                      r={isSelected ? 18 : isPathHighlighted ? 16 : 14}
+                      fill={meta.bg || '#1e293b'}
+                      stroke={isSelected ? '#818cf8' : isPathHighlighted ? '#34d399' : meta.border || '#64748b'}
+                      strokeWidth={isSelected || isPathHighlighted ? 3 : 1.5}
+                      className="transition-all hover:scale-110"
                     />
-
-                    {/* Inner Badge dot */}
-                    <circle r="5" fill={nodeColor} />
-
-                    {/* Node Text Label */}
                     <text
-                      y="30"
+                      dy={24}
                       textAnchor="middle"
-                      fill={isSelected ? '#ffffff' : '#cbd5e1'}
-                      fontSize="11"
-                      fontWeight={isSelected ? '600' : '400'}
-                      className="pointer-events-none drop-shadow"
+                      fill="#e2e8f0"
+                      fontSize="10"
+                      fontFamily="sans-serif"
+                      className="pointer-events-none select-none font-semibold"
                     >
-                      {node.name.length > 16 ? `${node.name.slice(0, 14)}…` : node.name}
+                      {node.name?.length > 14 ? `${node.name.slice(0, 12)}...` : node.name}
                     </text>
                   </g>
                 );
               })}
-
             </g>
           </svg>
 
-          {/* Active Pathfinder Clear Banner */}
-          {highlightedPathNodeIds.size > 0 && (
-            <div className="absolute top-4 left-1/2 transform -translate-x-1/2 bg-emerald-950/90 border border-emerald-500/40 text-emerald-300 px-4 py-1.5 rounded-full text-xs flex items-center gap-3 backdrop-blur shadow-xl z-20">
-              <Navigation className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Active Path ({highlightedPathNodeIds.size} nodes)</span>
-              <button
-                onClick={handleClearPath}
-                className="text-emerald-400 hover:text-white underline font-medium ml-2"
-              >
-                Clear
-              </button>
+          {nodes.length === 0 && !isLoading && (
+            <div className="text-center p-6 text-xs text-slate-500">
+              No knowledge graph nodes match the active filters.
             </div>
           )}
         </div>
 
-        {/* Node & Edge Inspector Side Panel */}
-        <aside className="w-96 border-l border-slate-800 bg-slate-900/90 backdrop-blur-md flex flex-col h-full z-20 overflow-y-auto">
-        
-        {selectedNode ? (
-          <div className="p-5 flex-1 flex flex-col space-y-5">
-            {/* Header */}
-            <div className="flex items-start justify-between">
-              <div>
-                <span
-                  className="text-[10px] font-semibold tracking-wider px-2 py-0.5 rounded border uppercase"
-                  style={{
-                    color: getNodeColor(selectedNode.node_type),
-                    backgroundColor: getNodeBg(selectedNode.node_type),
-                    borderColor: getNodeBorder(selectedNode.node_type)
-                  }}
-                >
-                  {selectedNode.node_type}
-                </span>
-                <h2 className="text-lg font-bold text-white mt-2 leading-tight">{selectedNode.name}</h2>
-              </div>
-              <button onClick={() => setSelectedNode(null)} className="text-slate-400 hover:text-white p-1">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Description */}
-            {selectedNode.description && (
-              <div className="p-3 bg-slate-800/40 rounded-lg border border-slate-700/50 text-xs text-slate-300 leading-relaxed">
-                {selectedNode.description}
-              </div>
-            )}
-
-            {/* Action Buttons */}
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                onClick={() => handleExpandNeighbors(selectedNode)}
-                disabled={isExpanding}
-                className="px-3 py-2 rounded-lg bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/30 text-indigo-300 text-xs font-medium flex items-center justify-center gap-1.5 transition"
-              >
-                <Plus className={`w-3.5 h-3.5 ${isExpanding ? 'animate-spin' : ''}`} />
-                <span>Expand Neighbors</span>
-              </button>
-              <button
-                onClick={() => handleSyncNodeToMemory(selectedNode)}
-                className="px-3 py-2 rounded-lg bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/30 text-purple-300 text-xs font-medium flex items-center justify-center gap-1.5 transition"
-              >
-                <Brain className="w-3.5 h-3.5" />
-                <span>Sync to Memory</span>
-              </button>
-            </div>
-
-            {/* Node Metadata & Provenance */}
-            <div className="space-y-2 text-xs">
-              <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Node Details</h3>
-              <div className="p-3 bg-slate-950/60 rounded-lg border border-slate-800 space-y-2 font-mono text-[11px]">
-                <div className="flex justify-between text-slate-400">
-                  <span>ID:</span>
-                  <span className="text-slate-200">{selectedNode.id.slice(0, 13)}…</span>
-                </div>
-                {selectedNode.external_id && (
-                  <div className="flex justify-between text-slate-400">
-                    <span>External ID:</span>
-                    <span className="text-slate-200">{selectedNode.external_id}</span>
-                  </div>
-                )}
-                <div className="flex justify-between text-slate-400">
-                  <span>Connections:</span>
-                  <span className="text-indigo-400 font-semibold">{connectedNodeIds.size - 1}</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Related Entities Multi-Hop Section */}
-            <div className="space-y-2 text-xs flex-1">
-              <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider flex items-center justify-between">
-                <span>Multi-Hop Related Entities</span>
-                {isLoadingRelated && <RefreshCw className="w-3 h-3 animate-spin text-indigo-400" />}
-              </h3>
-              <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
-                {relatedEntities.length === 0 && !isLoadingRelated ? (
-                  <p className="text-xs text-slate-500 italic p-2">No multi-hop entities found.</p>
-                ) : (
-                  relatedEntities.map((rel) => (
-                    <div
-                      key={rel.node_id}
-                      onClick={() => {
-                        const target = nodes.find(n => n.id === rel.node_id);
-                        if (target) handleSelectNode(target);
-                      }}
-                      className="p-2.5 rounded-lg bg-slate-800/40 hover:bg-slate-800 border border-slate-700/40 cursor-pointer flex items-center justify-between transition"
-                    >
-                      <div>
-                        <div className="flex items-center gap-1.5">
-                          <span className="font-medium text-slate-200">{rel.name}</span>
-                          <span className="text-[9px] px-1 py-0.5 rounded bg-slate-700/60 text-slate-400">
-                            {rel.node_type}
-                          </span>
-                        </div>
-                        <p className="text-[10px] text-slate-400 mt-0.5">
-                          {rel.relationship_path.join(' → ')}
-                        </p>
-                      </div>
-                      <span className="text-[10px] font-mono text-emerald-400">
-                        {Math.round(rel.relevance_score * 100)}%
-                      </span>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-
-          </div>
-        ) : selectedEdge ? (
-          <div className="p-5 flex-1 flex flex-col space-y-4">
-            <div className="flex items-start justify-between">
-              <div>
-                <span className="text-[10px] font-semibold tracking-wider px-2 py-0.5 rounded bg-sky-500/20 text-sky-300 border border-sky-500/30 uppercase">
-                  Relationship
-                </span>
-                <h2 className="text-lg font-bold text-white mt-2">{selectedEdge.relationship_type}</h2>
-              </div>
-              <button onClick={() => setSelectedEdge(null)} className="text-slate-400 hover:text-white p-1">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="p-3 bg-slate-950/60 rounded-lg border border-slate-800 space-y-2 text-xs font-mono">
-              <div className="flex justify-between text-slate-400">
-                <span>Confidence:</span>
-                <span className="text-emerald-400 font-bold">{Math.round((selectedEdge.confidence || 1) * 100)}%</span>
-              </div>
-              <div className="flex justify-between text-slate-400">
-                <span>Source Node:</span>
-                <span className="text-slate-200">{nodes.find(n => n.id === selectedEdge.source)?.name || selectedEdge.source}</span>
-              </div>
-              <div className="flex justify-between text-slate-400">
-                <span>Target Node:</span>
-                <span className="text-slate-200">{nodes.find(n => n.id === selectedEdge.target)?.name || selectedEdge.target}</span>
-              </div>
-            </div>
-
-            {selectedEdge.properties && Object.keys(selectedEdge.properties).length > 0 && (
-              <div className="space-y-1.5 text-xs">
-                <h3 className="font-semibold text-slate-400 uppercase tracking-wider">Provenance & Attributes</h3>
-                <pre className="p-3 bg-slate-950 rounded-lg border border-slate-800 text-[11px] text-slate-300 overflow-x-auto whitespace-pre-wrap">
-                  {JSON.stringify(selectedEdge.properties, null, 2)}
-                </pre>
-              </div>
-            )}
-          </div>
-        ) : (
-          <div className="p-6 flex-1 flex flex-col items-center justify-center text-center space-y-3">
-            <div className="p-3 rounded-full bg-slate-800/80 border border-slate-700 text-slate-400">
-              <Info className="w-6 h-6" />
-            </div>
-            <h3 className="text-sm font-semibold text-slate-200">No Element Selected</h3>
-            <p className="text-xs text-slate-400 max-w-xs leading-relaxed">
-              Click any node or relationship edge in the graph canvas to inspect its semantic properties, provenance, and multi-hop connections.
-            </p>
-          </div>
-        )}
-
-      </aside>
-    </div>
-
-      {/* Pathfinder Modal */}
-      {showPathModal && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-xl max-w-lg w-full p-6 space-y-4 shadow-2xl">
-            <div className="flex items-center justify-between">
-              <h2 className="text-base font-bold text-white flex items-center gap-2">
-                <Navigation className="w-4 h-4 text-emerald-400" />
-                Shortest-Path Discovery
-              </h2>
-              <button onClick={() => setShowPathModal(false)} className="text-slate-400 hover:text-white">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="space-y-3 text-xs">
-              <div>
-                <label className="block text-slate-400 mb-1">Source Entity</label>
-                <select
-                  value={pathSourceId}
-                  onChange={(e) => setPathSourceId(e.target.value)}
-                  className="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-slate-200 focus:outline-none focus:border-indigo-500"
-                >
-                  <option value="">Select source node...</option>
-                  {nodes.map(n => (
-                    <option key={n.id} value={n.id}>{n.name} [{n.node_type}]</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-slate-400 mb-1">Target Entity</label>
-                <select
-                  value={pathTargetId}
-                  onChange={(e) => setPathTargetId(e.target.value)}
-                  className="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-slate-200 focus:outline-none focus:border-indigo-500"
-                >
-                  <option value="">Select target node...</option>
-                  {nodes.map(n => (
-                    <option key={n.id} value={n.id}>{n.name} [{n.node_type}]</option>
-                  ))}
-                </select>
-              </div>
-
-              <button
-                onClick={handleFindPath}
-                disabled={isFindingPath || !pathSourceId || !pathTargetId}
-                className="w-full py-2 bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-800 text-white font-medium rounded-lg transition flex items-center justify-center gap-2 mt-2"
-              >
-                {isFindingPath ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Navigation className="w-4 h-4" />}
-                <span>Calculate Shortest Path</span>
-              </button>
-            </div>
-
-            {pathResult && (
-              <div className="p-3 bg-slate-950 rounded-lg border border-slate-800 text-xs space-y-2">
-                {pathResult.path_found ? (
-                  <>
-                    <div className="flex items-center justify-between text-emerald-400 font-semibold">
-                      <span>Path Found!</span>
-                      <span>{pathResult.distance} Hops</span>
-                    </div>
-                    <div className="space-y-1 font-mono text-[11px] text-slate-300">
-                      {pathResult.steps.map((step, idx) => (
-                        <div key={idx} className="flex items-center gap-1.5">
-                          <span className="text-slate-400">{step.from_node_name}</span>
-                          <span className="text-indigo-400 font-bold">--[{step.relationship_type}]--&gt;</span>
-                          <span className="text-emerald-300 font-medium">{step.to_node_name}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </>
-                ) : (
-                  <p className="text-rose-400">{pathResult.error || 'No path exists between the selected entities.'}</p>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Graph Context Modal */}
-      {showContextModal && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-xl max-w-2xl w-full p-6 space-y-4 shadow-2xl">
-            <div className="flex items-center justify-between">
-              <h2 className="text-base font-bold text-white flex items-center gap-2">
-                <Brain className="w-4 h-4 text-indigo-400" />
-                Structured Knowledge Graph Context
-              </h2>
-              <button onClick={() => setShowContextModal(false)} className="text-slate-400 hover:text-white">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="relative">
-              {isLoadingContext ? (
-                <div className="py-12 flex flex-col items-center justify-center text-slate-400 space-y-2">
-                  <RefreshCw className="w-6 h-6 animate-spin text-indigo-400" />
-                  <span className="text-xs">Generating graph context topology...</span>
-                </div>
-              ) : (
-                <pre className="p-4 bg-slate-950 rounded-lg border border-slate-800 text-xs text-slate-200 max-h-96 overflow-y-auto whitespace-pre-wrap font-mono">
-                  {graphContextText}
-                </pre>
-              )}
-            </div>
-
-            <div className="flex justify-end gap-2">
-              <button
-                onClick={() => {
-                  navigator.clipboard.writeText(graphContextText);
-                  setCopiedContext(true);
-                  setTimeout(() => setCopiedContext(false), 2500);
-                }}
-                disabled={isLoadingContext || !graphContextText}
-                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium rounded-lg flex items-center gap-1.5 transition"
-              >
-                {copiedContext ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                <span>{copiedContext ? 'Copied to Clipboard!' : 'Copy Context'}</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Analytics & Health Modal */}
-      {showAnalyticsModal && (
-        <div className="fixed inset-0 bg-black/75 backdrop-blur-md z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-4xl w-full p-6 space-y-5 shadow-2xl max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-4">
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-indigo-500/10 border border-indigo-500/20 text-indigo-400">
-                  <BarChart3 className="w-5 h-5" />
-                </div>
+        {/* Side Inspector Drawer / Panel (4 cols) */}
+        <div className="lg:col-span-4 flex flex-col gap-4">
+          {selectedNode ? (
+            <Card className="p-4 space-y-4">
+              <div className="flex items-center justify-between pb-3 border-b border-white/[0.06]">
                 <div>
-                  <h2 className="text-base font-bold text-white flex items-center gap-2">
-                    Knowledge Graph Analytics & Diagnostics
-                  </h2>
-                  <p className="text-xs text-slate-400">Structural metrics, degree connectivity, health diagnostics, and provenance breakdown.</p>
+                  <h3 className="text-xs font-bold text-white line-clamp-1">{selectedNode.name}</h3>
+                  <Badge variant="purple" className="mt-1">{selectedNode.node_type}</Badge>
                 </div>
+                <IconButton
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setSelectedNode(null)}
+                  aria-label="Close Inspector"
+                >
+                  <X size={13} />
+                </IconButton>
               </div>
-              <button onClick={() => setShowAnalyticsModal(false)} className="text-slate-400 hover:text-white p-1">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
 
-            {isLoadingAnalytics ? (
-              <div className="py-16 flex flex-col items-center justify-center text-slate-400 space-y-3">
-                <RefreshCw className="w-8 h-8 animate-spin text-indigo-400" />
-                <span className="text-xs">Computing topological metrics and health diagnostics...</span>
-              </div>
-            ) : analyticsOverview ? (
-              <div className="space-y-6">
-                
-                {/* Metric Summary Cards */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  <div className="p-3.5 bg-slate-950/60 rounded-xl border border-slate-800 space-y-1">
-                    <span className="text-[11px] text-slate-400 font-medium">Total Entities</span>
-                    <p className="text-xl font-bold text-white font-mono">{analyticsOverview.total_nodes}</p>
-                    <span className="text-[10px] text-indigo-400">{analyticsOverview.connected_nodes_count} connected</span>
-                  </div>
-
-                  <div className="p-3.5 bg-slate-950/60 rounded-xl border border-slate-800 space-y-1">
-                    <span className="text-[11px] text-slate-400 font-medium">Relationships</span>
-                    <p className="text-xl font-bold text-white font-mono">{analyticsOverview.total_edges}</p>
-                    <span className="text-[10px] text-emerald-400">{Math.round(analyticsOverview.average_confidence * 100)}% avg conf</span>
-                  </div>
-
-                  <div className="p-3.5 bg-slate-950/60 rounded-xl border border-slate-800 space-y-1">
-                    <span className="text-[11px] text-slate-400 font-medium">Average Degree</span>
-                    <p className="text-xl font-bold text-white font-mono">{analyticsOverview.average_degree}</p>
-                    <span className="text-[10px] text-slate-400">max {analyticsOverview.max_degree} links</span>
-                  </div>
-
-                  <div className="p-3.5 bg-slate-950/60 rounded-xl border border-slate-800 space-y-1">
-                    <span className="text-[11px] text-slate-400 font-medium">Graph Health</span>
-                    <div className="flex items-center gap-1.5 mt-0.5">
-                      {healthReport?.status === 'HEALTHY' ? (
-                        <ShieldCheck className="w-5 h-5 text-emerald-400" />
-                      ) : (
-                        <AlertTriangle className="w-5 h-5 text-amber-400" />
-                      )}
-                      <span className={`text-base font-bold font-mono ${
-                        healthReport?.status === 'HEALTHY' ? 'text-emerald-400' : 'text-amber-400'
-                      }`}>
-                        {healthReport?.status || 'HEALTHY'}
-                      </span>
-                    </div>
-                    <span className="text-[10px] text-slate-400">{analyticsOverview.isolated_nodes_count} isolated nodes</span>
-                  </div>
+              <div className="space-y-3 text-xs">
+                <div>
+                  <span className="text-slate-500 text-[10px] uppercase font-bold block mb-0.5">Description</span>
+                  <p className="text-slate-300 leading-relaxed">
+                    {selectedNode.description || 'Knowledge entity registered in workspace graph.'}
+                  </p>
                 </div>
 
-                {/* Health Diagnostics Banner */}
-                {healthReport?.diagnostic_messages?.length > 0 && (
-                  <div className="p-3 bg-slate-950 rounded-xl border border-slate-800/80 space-y-1.5">
-                    <span className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
-                      <AlertCircle className="w-3.5 h-3.5 text-indigo-400" />
-                      Diagnostic Summary
-                    </span>
-                    <ul className="text-xs text-slate-400 space-y-1 list-disc list-inside">
-                      {healthReport.diagnostic_messages.map((msg, i) => (
-                        <li key={i}>{msg}</li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-
-                {/* Entity & Relationship Breakdown */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {/* Entity Types */}
-                  <div className="p-4 bg-slate-950/60 rounded-xl border border-slate-800 space-y-2.5">
-                    <h3 className="text-xs font-semibold text-slate-300 uppercase tracking-wider">Entities by Type</h3>
-                    <div className="space-y-2">
-                      {Object.entries(analyticsOverview.nodes_by_type || {}).map(([type, count]) => (
-                        <div key={type} className="space-y-1">
-                          <div className="flex justify-between text-xs">
-                            <span className="text-slate-300 font-medium">{type}</span>
-                            <span className="text-slate-400 font-mono">{count}</span>
-                          </div>
-                          <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
-                            <div
-                              className="h-full rounded-full"
-                              style={{
-                                width: `${Math.min(100, (count / (analyticsOverview.total_nodes || 1)) * 100)}%`,
-                                backgroundColor: getNodeColor(type)
-                              }}
-                            />
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Relationship Types */}
-                  <div className="p-4 bg-slate-950/60 rounded-xl border border-slate-800 space-y-2.5">
-                    <h3 className="text-xs font-semibold text-slate-300 uppercase tracking-wider">Relationships by Type</h3>
-                    <div className="space-y-2">
-                      {Object.entries(analyticsOverview.edges_by_type || {}).map(([type, count]) => (
-                        <div key={type} className="space-y-1">
-                          <div className="flex justify-between text-xs">
-                            <span className="text-slate-300 font-medium">{type}</span>
-                            <span className="text-slate-400 font-mono">{count}</span>
-                          </div>
-                          <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
-                            <div
-                              className="bg-indigo-500 h-full rounded-full"
-                              style={{
-                                width: `${Math.min(100, (count / (analyticsOverview.total_edges || 1)) * 100)}%`
-                              }}
-                            />
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
+                <div className="p-2.5 rounded-lg bg-black/30 border border-white/[0.04] space-y-1">
+                  <span className="text-slate-500 text-[10px] block">Provenance:</span>
+                  <span className="text-emerald-400 font-semibold font-mono text-[11px]">Document-Derived Extraction</span>
                 </div>
 
-                {/* Top Connected Entities */}
-                <div className="space-y-2">
-                  <h3 className="text-xs font-semibold text-slate-300 uppercase tracking-wider">Top Connected Hub Entities</h3>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    {topEntities.map((ent) => (
-                      <div
-                        key={ent.node_id}
-                        onClick={() => {
-                          const target = nodes.find(n => n.id === ent.node_id);
-                          if (target) {
-                            handleSelectNode(target);
-                            setPanOffset({
-                              x: dimensions.width / 2 - target.x * zoomLevel,
-                              y: dimensions.height / 2 - target.y * zoomLevel
-                            });
-                            setShowAnalyticsModal(false);
-                          }
-                        }}
-                        className="p-2.5 bg-slate-950 rounded-lg border border-slate-800 hover:border-indigo-500/50 cursor-pointer flex items-center justify-between text-xs transition"
-                      >
-                        <div className="flex items-center gap-2">
-                          <span className="w-2 h-2 rounded-full" style={{ backgroundColor: getNodeColor(ent.node_type) }} />
-                          <span className="font-medium text-slate-200">{ent.name}</span>
-                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">
-                            {ent.node_type}
-                          </span>
-                        </div>
-                        <span className="font-mono text-indigo-400 font-semibold">{ent.degree} links</span>
+                {/* Related Neighbors */}
+                <div className="space-y-1.5 pt-2 border-t border-white/[0.04]">
+                  <span className="text-slate-400 text-[10px] font-bold uppercase tracking-wider block">
+                    Connected Neighbors ({relatedEntities.length})
+                  </span>
+                  <div className="space-y-1 max-h-48 overflow-y-auto pr-1">
+                    {relatedEntities.map((rel, idx) => (
+                      <div key={idx} className="p-2 rounded bg-white/[0.02] border border-white/[0.04] flex items-center justify-between text-[11px]">
+                        <span className="text-white font-medium truncate">{rel.name}</span>
+                        <span className="text-purple-400 font-mono text-[10px]">{rel.node_type}</span>
                       </div>
                     ))}
+                    {relatedEntities.length === 0 && (
+                      <span className="text-slate-500 text-[10px] italic">No immediate neighbors discovered.</span>
+                    )}
                   </div>
                 </div>
-
-                {/* Duplicate Review Candidates */}
-                {duplicateList.length > 0 && (
-                  <div className="space-y-2">
-                    <h3 className="text-xs font-semibold text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
-                      <AlertTriangle className="w-3.5 h-3.5" />
-                      Potential Duplicate Entity Review ({duplicateList.length})
-                    </h3>
-                    <div className="space-y-1.5 max-h-40 overflow-y-auto">
-                      {duplicateList.map((dup, i) => (
-                        <div key={i} className="p-2.5 bg-slate-950 rounded-lg border border-slate-800 text-xs flex items-center justify-between">
-                          <div className="space-y-0.5">
-                            <div className="flex items-center gap-2">
-                              <span className="text-slate-200 font-medium">{dup.source_name}</span>
-                              <span className="text-slate-500">↔</span>
-                              <span className="text-slate-200 font-medium">{dup.target_name}</span>
-                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">{dup.entity_type}</span>
-                            </div>
-                            <p className="text-[10px] text-slate-400">{dup.reason}</p>
-                          </div>
-                          <span className="font-mono text-amber-400 font-semibold text-xs">
-                            {Math.round(dup.similarity_score * 100)}%
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
               </div>
-            ) : null}
-          </div>
-        </div>
-      )}
-
-      {/* Multi-Agent "Ask Graph" Reasoning Modal */}
-      {showReasonModal && (
-        <div className="fixed inset-0 bg-black/75 backdrop-blur-md z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-3xl w-full p-6 space-y-5 shadow-2xl max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-4">
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
-                  <Bot className="w-5 h-5" />
+            </Card>
+          ) : selectedEdge ? (
+            <Card className="p-4 space-y-3 text-xs">
+              <div className="flex items-center justify-between pb-2 border-b border-white/[0.06]">
+                <span className="font-bold text-white">Relationship Edge</span>
+                <IconButton variant="ghost" size="sm" onClick={() => setSelectedEdge(null)} aria-label="Close Edge">
+                  <X size={13} />
+                </IconButton>
+              </div>
+              <div className="space-y-2">
+                <div>
+                  <span className="text-slate-500 text-[10px] block">Relationship Type:</span>
+                  <Badge variant="cyan">{selectedEdge.relationship_type}</Badge>
                 </div>
                 <div>
-                  <h2 className="text-base font-bold text-white flex items-center gap-2">
-                    Multi-Agent Knowledge Graph Reasoning
-                  </h2>
-                  <p className="text-xs text-slate-400">Ask topological, dependency, and multi-hop questions directly against the knowledge graph.</p>
+                  <span className="text-slate-500 text-[10px] block">Confidence:</span>
+                  <span className="font-mono text-emerald-400">{(selectedEdge.confidence || 0.9).toFixed(2)}</span>
                 </div>
               </div>
-              <button onClick={() => setShowReasonModal(false)} className="text-slate-400 hover:text-white p-1">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
+            </Card>
+          ) : (
+            <Card className="p-6 text-center text-xs text-slate-500">
+              Click an entity node or relationship edge on the canvas to inspect provenance, attributes, and neighbors.
+            </Card>
+          )}
+        </div>
+      </div>
 
-            {/* Input Form */}
-            <div className="space-y-3">
-              <label className="text-xs font-medium text-slate-300">Natural Language Reasoning Query</label>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  placeholder="e.g. How does AegisAI Core connect to PostgreSQL Engine?"
-                  value={reasonQuery}
-                  onChange={(e) => setReasonQuery(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') handleExecuteReasoning(); }}
-                  className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 placeholder-slate-600"
-                />
-                <button
-                  onClick={handleExecuteReasoning}
-                  disabled={isReasoning || !reasonQuery.trim()}
-                  className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-medium rounded-xl flex items-center gap-2 transition shadow-md"
-                >
-                  {isReasoning ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-                  <span>{isReasoning ? 'Reasoning...' : 'Ask Graph'}</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Results Display */}
-            {reasonResult && (
-              <div className="space-y-4 pt-2 border-t border-slate-800/80">
-                {/* Result Metrics */}
-                <div className="grid grid-cols-3 gap-2">
-                  <div className="p-2.5 bg-slate-950 rounded-lg border border-slate-800 text-center">
-                    <span className="text-[10px] text-slate-400">Matched Entities</span>
-                    <p className="text-sm font-bold text-emerald-400 font-mono">{reasonResult.matched_nodes_count}</p>
-                  </div>
-                  <div className="p-2.5 bg-slate-950 rounded-lg border border-slate-800 text-center">
-                    <span className="text-[10px] text-slate-400">Connected Edges</span>
-                    <p className="text-sm font-bold text-indigo-400 font-mono">{reasonResult.matched_edges_count}</p>
-                  </div>
-                  <div className="p-2.5 bg-slate-950 rounded-lg border border-slate-800 text-center">
-                    <span className="text-[10px] text-slate-400">Confidence</span>
-                    <p className="text-sm font-bold text-white font-mono">{Math.round(reasonResult.confidence * 100)}%</p>
-                  </div>
+      {/* 5. Accessible Plain-Text Outline Modal */}
+      <Modal
+        isOpen={showOutlineModal}
+        onClose={() => setShowOutlineModal(false)}
+        title="Accessible Knowledge Graph Outline"
+        description="Sequential plain-text representation of all entities and relationships for screen readers and linear review."
+        size="lg"
+      >
+        <div className="max-h-96 overflow-y-auto space-y-3 text-xs text-slate-300 pr-1">
+          {rawNodes.map((node, idx) => {
+            const outEdges = rawEdges.filter(e => e.source_node_id === node.id);
+            return (
+              <div key={node.id || idx} className="p-3 rounded-lg bg-white/[0.02] border border-white/[0.04] space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-white">{idx + 1}. {node.name}</span>
+                  <Badge variant="purple">{node.node_type}</Badge>
                 </div>
-
-                {/* Graph Context */}
-                <div className="space-y-1.5">
-                  <span className="text-xs font-semibold text-slate-300">Grounded Graph Topology</span>
-                  <pre className="p-3.5 bg-slate-950 rounded-xl border border-slate-800 text-xs text-slate-200 whitespace-pre-wrap font-mono max-h-56 overflow-y-auto">
-                    {reasonResult.graph_context || 'No explicit topological path detected for query.'}
-                  </pre>
-                </div>
-
-                {/* Graph Citations */}
-                {reasonResult.citations?.length > 0 && (
-                  <div className="space-y-2">
-                    <span className="text-xs font-semibold text-slate-300">Attributed Graph Citations ({reasonResult.citations.length})</span>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      {reasonResult.citations.map((cite, i) => (
-                        <div
-                          key={i}
-                          onClick={() => {
-                            if (cite.node_id) {
-                              const target = nodes.find(n => n.id === cite.node_id);
-                              if (target) {
-                                handleSelectNode(target);
-                                setPanOffset({
-                                  x: dimensions.width / 2 - target.x * zoomLevel,
-                                  y: dimensions.height / 2 - target.y * zoomLevel
-                                });
-                                setShowReasonModal(false);
-                              }
-                            }
-                          }}
-                          className="p-2 bg-slate-950 rounded-lg border border-slate-800 hover:border-emerald-500/50 cursor-pointer flex items-center justify-between text-xs transition"
-                        >
-                          <div className="flex items-center gap-2">
-                            <span className="w-2 h-2 rounded-full bg-emerald-400" />
-                            <span className="text-slate-200 font-medium">{cite.node_name || cite.relationship_type}</span>
-                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">
-                              {cite.source_type}
-                            </span>
-                          </div>
-                          <span className="text-[10px] font-mono text-emerald-400">{Math.round(cite.confidence * 100)}%</span>
+                <p className="text-[11px] text-slate-400">{node.description || 'Entity'}</p>
+                {outEdges.length > 0 && (
+                  <div className="text-[11px] text-slate-400 mt-1 space-y-0.5">
+                    <span className="font-semibold text-slate-300 block">Relationships:</span>
+                    {outEdges.map((e, eIdx) => {
+                      const target = rawNodes.find(n => n.id === e.target_node_id);
+                      return (
+                        <div key={eIdx} className="pl-2 border-l border-indigo-500/30">
+                          → <strong className="text-indigo-300">{e.relationship_type}</strong> → {target ? target.name : e.target_node_id} (Confidence: {e.confidence || 1.0})
                         </div>
-                      ))}
-                    </div>
+                      );
+                    })}
                   </div>
                 )}
-
               </div>
-            )}
+            );
+          })}
+        </div>
+      </Modal>
 
+      {/* 6. Graph Pathfinder Modal */}
+      <Modal
+        isOpen={showPathModal}
+        onClose={() => setShowPathModal(false)}
+        title="Graph Pathfinder"
+        description="Discover shortest-path traversals between two entities in the knowledge graph."
+        size="md"
+      >
+        <form onSubmit={handleFindPath} className="space-y-4">
+          <div>
+            <label className="text-xs font-semibold text-slate-300 mb-1 block">Source Entity</label>
+            <select
+              value={pathSourceId}
+              onChange={(e) => setPathSourceId(e.target.value)}
+              required
+              className="w-full bg-[#0d1117] border border-white/10 rounded-lg p-2 text-xs text-white focus:outline-none focus:border-indigo-500/50"
+            >
+              <option value="">Select source entity...</option>
+              {rawNodes.map(n => (
+                <option key={n.id} value={n.id}>{n.name} ({n.node_type})</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="text-xs font-semibold text-slate-300 mb-1 block">Target Entity</label>
+            <select
+              value={pathTargetId}
+              onChange={(e) => setPathTargetId(e.target.value)}
+              required
+              className="w-full bg-[#0d1117] border border-white/10 rounded-lg p-2 text-xs text-white focus:outline-none focus:border-indigo-500/50"
+            >
+              <option value="">Select target entity...</option>
+              {rawNodes.map(n => (
+                <option key={n.id} value={n.id}>{n.name} ({n.node_type})</option>
+              ))}
+            </select>
+          </div>
+
+          {pathResult && (
+            <div className="p-3 rounded-lg bg-black/30 border border-white/[0.05] text-xs space-y-1">
+              <span className="font-bold text-emerald-400">
+                {pathResult.path_found ? `Path Found (${pathResult.distance} hops)` : 'No Path Found'}
+              </span>
+              {pathResult.steps?.map((step, idx) => (
+                <div key={idx} className="text-[11px] text-slate-300">
+                  {idx + 1}. {step.from_node_name} → <strong className="text-indigo-300">{step.relationship_type}</strong> → {step.to_node_name}
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="secondary" size="sm" onClick={() => setShowPathModal(false)}>
+              Close
+            </Button>
+            <Button type="submit" variant="primary" size="sm" disabled={isFindingPath} className="bg-indigo-600 hover:bg-indigo-500 text-white">
+              {isFindingPath ? 'Traversing...' : 'Find Path'}
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* 7. Graph Reasoning Modal */}
+      <Modal
+        isOpen={showReasonModal}
+        onClose={() => setShowReasonModal(false)}
+        title="Multi-Agent Graph Reasoning"
+        description="Execute grounded reasoning combining entity traversal, vector chunks, and long-term memory."
+        size="lg"
+      >
+        <form onSubmit={handleReason} className="space-y-4">
+          <textarea
+            value={reasonQuery}
+            onChange={(e) => setReasonQuery(e.target.value)}
+            rows={3}
+            placeholder="Enter reasoning prompt (e.g. 'What projects depend on the Security Agent?')..."
+            className="w-full bg-[#0d1117] border border-white/10 rounded-xl p-3 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-indigo-500/50"
+          />
+
+          {reasonResult && (
+            <div className="p-3.5 rounded-xl bg-black/40 border border-white/[0.06] space-y-2 text-xs">
+              <span className="font-bold text-indigo-300">Synthesized Graph Context</span>
+              <p className="text-slate-200 leading-relaxed font-mono text-[11px]">
+                {reasonResult.graph_context || 'Reasoning completed with matched node context.'}
+              </p>
+            </div>
+          )}
+
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="secondary" size="sm" onClick={() => setShowReasonModal(false)}>
+              Close
+            </Button>
+            <Button type="submit" variant="primary" size="sm" disabled={isReasoning} className="bg-indigo-600 hover:bg-indigo-500 text-white">
+              {isReasoning ? 'Synthesizing...' : 'Execute Reasoning'}
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* 8. Analytics Modal */}
+      <Modal
+        isOpen={showAnalyticsModal}
+        onClose={() => setShowAnalyticsModal(false)}
+        title="Knowledge Graph Analytics & Health"
+        description="Inspect graph health diagnostics, orphan nodes, and connectivity hubs."
+        size="md"
+      >
+        <div className="space-y-4 text-xs">
+          {healthReport && (
+            <div className="p-3 rounded-lg bg-black/30 border border-white/[0.05] space-y-1">
+              <span className="font-bold text-white block">Diagnostic Status: <strong className="text-emerald-400">{healthReport.status}</strong></span>
+              <p className="text-[11px] text-slate-400">Orphan Rate: {(healthReport.orphan_rate || 0).toFixed(1)}%</p>
+            </div>
+          )}
+
+          {topEntities.length > 0 && (
+            <div className="space-y-1">
+              <span className="font-bold text-slate-300 block">Top Connected Hubs</span>
+              {topEntities.map((t, idx) => (
+                <div key={idx} className="p-2 rounded bg-white/[0.02] border border-white/[0.04] flex items-center justify-between text-[11px]">
+                  <span className="text-white font-medium">{t.name}</span>
+                  <span className="text-indigo-400 font-mono">{t.degree} connections</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="flex justify-end pt-2">
+            <Button variant="secondary" size="sm" onClick={() => setShowAnalyticsModal(false)}>
+              Close
+            </Button>
           </div>
         </div>
-      )}
-
+      </Modal>
     </div>
   );
 }
-

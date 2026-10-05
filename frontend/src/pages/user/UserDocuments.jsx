@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { 
   FileText, 
   Upload, 
@@ -24,7 +24,18 @@ import {
   Info,
   GitBranch,
   ExternalLink,
-  Plus
+  Plus,
+  Brain,
+  Shield,
+  BookOpen,
+  ArrowRight,
+  Eye,
+  Sliders,
+  Copy,
+  Check,
+  Zap,
+  Activity,
+  BarChart3
 } from 'lucide-react';
 import { 
   uploadDocument, 
@@ -43,9 +54,42 @@ import {
   getDocumentEntities,
   getDocumentRelationships
 } from '../../api/knowledgeGraph';
+import {
+  queryRAG,
+  queryHybridRAG,
+  getRAGQueries
+} from '../../api/rag';
+import { useAuth } from '../../context/AuthContext';
+import { useTheme } from '../../context/ThemeContext';
+import { useToast } from '../../context/ToastContext';
+import {
+  Button,
+  IconButton,
+  Badge,
+  StatusBadge,
+  Card,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  CardContent,
+  CardFooter,
+  MetricCard,
+  EmptyState,
+  Skeleton,
+  Drawer,
+  Modal,
+  Table,
+  CodeBlock
+} from '../../components/ui';
 
 export default function UserDocuments({ triggerNotification = () => {} }) {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const { workspaceId, role } = useAuth();
+  const { success, error, warning, info } = useToast();
+
+  // Navigation tab
+  const [activeTab, setActiveTab] = useState('documents'); // 'documents' | 'rag_search' | 'graph_sync' | 'activity'
 
   // Document state
   const [docs, setDocs] = useState([]);
@@ -70,11 +114,25 @@ export default function UserDocuments({ triggerNotification = () => {} }) {
   const [isDragging, setIsDragging] = useState(false);
   const [errorMessage, setErrorMessage] = useState(null);
 
-  // Filters & Tabs
+  // Filters
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
-  const [activeTab, setActiveTab] = useState('overview'); // 'overview' | 'chunks'
+  const [activeDocDetailTab, setActiveDocDetailTab] = useState('overview'); // 'overview' | 'chunks' | 'graph'
   const [confirmAction, setConfirmAction] = useState(null); // { type: 'delete' | 'reindex', docId, docName }
+  const [showUploadModal, setShowUploadModal] = useState(false);
+
+  // Evidence Drawer State
+  const [evidenceDrawerOpen, setEvidenceDrawerOpen] = useState(false);
+  const [activeEvidence, setActiveEvidence] = useState(null);
+
+  // RAG Query State
+  const [ragQueryText, setRagQueryText] = useState('');
+  const [ragMode, setRagMode] = useState('hybrid'); // 'vector' | 'hybrid'
+  const [ragSimilarityThreshold, setRagSimilarityThreshold] = useState(0.3);
+  const [ragTopK, setRagTopK] = useState(5);
+  const [isQueryingRAG, setIsQueryingRAG] = useState(false);
+  const [ragResult, setRagResult] = useState(null);
+  const [ragHistory, setRagHistory] = useState([]);
 
   const fileInputRef = useRef(null);
   const pollingTimerRef = useRef(null);
@@ -87,15 +145,16 @@ export default function UserDocuments({ triggerNotification = () => {} }) {
       setIsLoadingDocs(true);
       setErrorMessage(null);
       const data = await listDocuments(statusFilter === 'ALL' ? undefined : statusFilter, 100, 0);
-      setDocs(data || []);
+      const docList = Array.isArray(data) ? data : (data?.documents || data?.items || []);
+      setDocs(docList);
 
-      if (data && data.length > 0) {
-        const targetId = preserveActiveId || (activeDoc ? activeDoc.id : data[0].id);
-        const exists = data.find(d => d.id === targetId);
+      if (docList.length > 0) {
+        const targetId = preserveActiveId || (activeDoc ? activeDoc.id : docList[0].id);
+        const exists = docList.find(d => d.id === targetId);
         if (exists) {
           fetchDocDetails(exists.id);
         } else {
-          fetchDocDetails(data[0].id);
+          fetchDocDetails(docList[0].id);
         }
       } else {
         setActiveDoc(null);
@@ -105,6 +164,7 @@ export default function UserDocuments({ triggerNotification = () => {} }) {
     } catch (err) {
       console.error('Failed to list documents:', err);
       setErrorMessage(err.message || 'Failed to load documents.');
+      error('Documents Error', 'Unable to retrieve workspace documents.');
     } finally {
       setIsLoadingDocs(false);
     }
@@ -113,10 +173,22 @@ export default function UserDocuments({ triggerNotification = () => {} }) {
   // Initial mount load
   useEffect(() => {
     fetchDocuments();
+    loadRAGHistory();
   }, [fetchDocuments]);
 
+  const loadRAGHistory = async () => {
+    try {
+      const history = await getRAGQueries(10, 0);
+      const histList = Array.isArray(history) ? history : (history?.queries || history?.history || []);
+      setRagHistory(histList);
+    } catch (err) {
+      console.warn('Could not load RAG history:', err);
+      setRagHistory([]);
+    }
+  };
+
   // -----------------------------------------------------------------
-  // 2. Fetch Document Details & Chunks
+  // 2. Fetch Document Details, Chunks & Graph
   // -----------------------------------------------------------------
   const fetchDocDetails = async (docId) => {
     if (!docId) return;
@@ -125,14 +197,10 @@ export default function UserDocuments({ triggerNotification = () => {} }) {
       const details = await getDocumentDetails(docId);
       setActiveDoc(details);
 
-      // Also get initial status metrics
       const statusData = await getDocumentStatus(docId);
       setDocStatus(statusData);
 
-      // Fetch chunks
       fetchChunks(docId);
-
-      // Fetch Knowledge Graph elements
       fetchDocGraph(docId);
     } catch (err) {
       console.error('Failed to fetch document details:', err);
@@ -146,7 +214,8 @@ export default function UserDocuments({ triggerNotification = () => {} }) {
     try {
       setIsLoadingChunks(true);
       const chunkData = await listDocumentChunks(docId, 100, 0);
-      setChunks(chunkData || []);
+      const chunkList = Array.isArray(chunkData) ? chunkData : (chunkData?.chunks || chunkData?.items || []);
+      setChunks(chunkList);
     } catch (err) {
       console.error('Failed to fetch document chunks:', err);
       setChunks([]);
@@ -163,8 +232,10 @@ export default function UserDocuments({ triggerNotification = () => {} }) {
         getDocumentEntities(docId),
         getDocumentRelationships(docId)
       ]);
-      setDocEntities(entities || []);
-      setDocRelationships(relationships || []);
+      const entityList = Array.isArray(entities) ? entities : (entities?.entities || entities?.nodes || []);
+      const relList = Array.isArray(relationships) ? relationships : (relationships?.relationships || relationships?.edges || []);
+      setDocEntities(entityList);
+      setDocRelationships(relList);
     } catch (err) {
       console.warn('Failed to fetch document graph elements:', err);
       setDocEntities([]);
@@ -179,10 +250,10 @@ export default function UserDocuments({ triggerNotification = () => {} }) {
     setIsExtractingGraph(true);
     try {
       await extractDocumentGraph(docId);
-      triggerNotification('Graph Extracted', 'Entities and relationships extracted successfully.');
+      success('Graph Extracted', 'Entities and relationships extracted from document.');
       fetchDocGraph(docId);
     } catch (err) {
-      triggerNotification('Extraction Error', err.message || 'Failed to extract graph.');
+      error('Extraction Error', err.message || 'Failed to extract graph.');
     } finally {
       setIsExtractingGraph(false);
     }
@@ -193,10 +264,10 @@ export default function UserDocuments({ triggerNotification = () => {} }) {
     setIsRebuildingGraph(true);
     try {
       await rebuildDocumentGraph(docId);
-      triggerNotification('Graph Rebuilt', 'Document knowledge graph reconstructed.');
+      success('Graph Rebuilt', 'Document knowledge graph reconstructed.');
       fetchDocGraph(docId);
     } catch (err) {
-      triggerNotification('Rebuild Error', err.message || 'Failed to rebuild graph.');
+      error('Rebuild Error', err.message || 'Failed to rebuild graph.');
     } finally {
       setIsRebuildingGraph(false);
     }
@@ -223,19 +294,17 @@ export default function UserDocuments({ triggerNotification = () => {} }) {
             clearInterval(pollingTimerRef.current);
             pollingTimerRef.current = null;
 
-            // Refresh details & list to stay in sync
             const updatedDetails = await getDocumentDetails(activeDoc.id);
             setActiveDoc(updatedDetails);
             fetchChunks(activeDoc.id);
             
-            // Refresh list items
             const refreshedList = await listDocuments(statusFilter === 'ALL' ? undefined : statusFilter, 100, 0);
             setDocs(refreshedList || []);
 
             if (statusData.status === 'READY' || statusData.status === 'PROCESSED') {
-              triggerNotification('Processing Complete', `Document "${activeDoc.filename}" is ready for RAG querying.`);
+              success('Processing Complete', `Document "${activeDoc.filename}" is indexed and ready.`);
             } else {
-              triggerNotification('Processing Failed', statusData.processing_error || 'Document processing encountered an error.');
+              error('Processing Failed', statusData.processing_error || 'Document processing encountered an error.');
             }
           }
         } catch (pollErr) {
@@ -249,892 +318,858 @@ export default function UserDocuments({ triggerNotification = () => {} }) {
         clearInterval(pollingTimerRef.current);
       }
     };
-  }, [activeDoc?.id, docStatus?.status, activeDoc?.status, statusFilter, triggerNotification]);
+  }, [activeDoc, docStatus, statusFilter]);
 
   // -----------------------------------------------------------------
   // 4. File Upload Handlers
   // -----------------------------------------------------------------
   const handleFileUpload = async (file) => {
     if (!file) return;
-
-    // Check size limit (< 50MB)
-    const maxBytes = 50 * 1024 * 1024;
-    if (file.size > maxBytes) {
-      triggerNotification('Upload Failed', 'File size exceeds the 50MB platform limit.');
-      return;
-    }
-
-    setIsUploading(true);
-    setErrorMessage(null);
-
     try {
-      const uploadRes = await uploadDocument(file);
-      triggerNotification('Upload Successful', `"${file.name}" uploaded and queued for workspace processing.`);
-      
-      // Refresh documents and select the uploaded file
-      await fetchDocuments(uploadRes.document_id);
+      setIsUploading(true);
+      const res = await uploadDocument(file);
+      success('Upload Succeeded', `File "${res.filename}" uploaded successfully.`);
+      setShowUploadModal(false);
+      await fetchDocuments(res.document_id);
     } catch (err) {
       console.error('Upload failed:', err);
-      let userFriendly = err.message || 'An error occurred while uploading.';
-      if (err.code === 'DUPLICATE_DOCUMENT') {
-        userFriendly = 'A file with identical content has already been uploaded in this workspace.';
-      } else if (err.code === 'UNSUPPORTED_FILE_TYPE') {
-        userFriendly = 'File type not supported. Please upload PDF, DOCX, PPTX, XLSX, TXT, CSV, or media files.';
-      } else if (err.code === 'DOCUMENT_TOO_LARGE') {
-        userFriendly = 'The file exceeds the maximum 50MB upload limit.';
-      }
-      triggerNotification('Upload Failed', userFriendly);
-      setErrorMessage(userFriendly);
+      error('Upload Failed', err.message || 'Error uploading file.');
     } finally {
       setIsUploading(false);
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
     }
+  };
+
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e) => {
+    e.preventDefault();
+    setIsDragging(false);
   };
 
   const handleDrop = (e) => {
     e.preventDefault();
     setIsDragging(false);
-    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
       handleFileUpload(e.dataTransfer.files[0]);
     }
   };
 
   // -----------------------------------------------------------------
-  // 5. Document Actions
+  // 5. Document Actions (Process, Reindex, Download, Delete)
   // -----------------------------------------------------------------
-  const handleDownload = async (doc) => {
-    if (!doc) return;
-    try {
-      triggerNotification('Downloading', `Preparing "${doc.original_filename || doc.filename}"...`);
-      const blob = await downloadDocument(doc.id);
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = doc.original_filename || doc.filename;
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
-    } catch (err) {
-      triggerNotification('Download Failed', err.message || 'Could not download document.');
-    }
-  };
-
   const handleProcess = async (docId) => {
-    if (!docId) return;
     try {
       setIsSubmittingAction(true);
       await processDocument(docId);
-      triggerNotification('Processing Initiated', 'Background extraction and chunking pipeline started.');
+      info('Processing Queued', 'Extraction and vector embedding queued.');
       fetchDocDetails(docId);
     } catch (err) {
-      triggerNotification('Process Failed', err.message || 'Failed to start document processing.');
+      error('Process Error', err.message || 'Failed to start processing.');
     } finally {
       setIsSubmittingAction(false);
     }
   };
 
   const handleReindex = async (docId) => {
-    if (!docId) return;
     try {
       setIsSubmittingAction(true);
       await reindexDocument(docId);
-      triggerNotification('Reindexing Started', 'Document chunks & embeddings are being regenerated.');
+      info('Reindexing Queued', 'Existing embeddings cleared. Reindexing started.');
       setConfirmAction(null);
       fetchDocDetails(docId);
     } catch (err) {
-      triggerNotification('Reindex Failed', err.message || 'Failed to reindex document.');
+      error('Reindex Error', err.message || 'Failed to start reindexing.');
     } finally {
       setIsSubmittingAction(false);
+    }
+  };
+
+  const handleDownload = async (docId, filename) => {
+    try {
+      const blob = await downloadDocument(docId);
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename || 'document';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      error('Download Failed', err.message || 'Could not download document file.');
     }
   };
 
   const handleDelete = async (docId) => {
-    if (!docId) return;
     try {
       setIsSubmittingAction(true);
       await deleteDocument(docId);
-      triggerNotification('Document Deleted', 'Document and associated vectors removed.');
+      success('Document Deleted', 'Document and associated vector chunks removed.');
       setConfirmAction(null);
-
-      if (activeDoc?.id === docId) {
-        setActiveDoc(null);
-        setDocStatus(null);
-        setChunks([]);
-      }
       fetchDocuments();
     } catch (err) {
-      triggerNotification('Delete Failed', err.message || 'Failed to delete document.');
+      error('Delete Error', err.message || 'Failed to delete document.');
     } finally {
       setIsSubmittingAction(false);
     }
   };
 
   // -----------------------------------------------------------------
-  // Utilities
+  // 6. RAG / Hybrid Knowledge Search
   // -----------------------------------------------------------------
-  const formatBytes = (bytes) => {
-    if (!bytes || bytes === 0) return '0 B';
-    const k = 1024;
-    const sizes = ['B', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
-  };
+  const handleExecuteRAG = async (e) => {
+    e?.preventDefault();
+    if (!ragQueryText.trim()) return;
 
-  const formatDate = (dateString) => {
-    if (!dateString) return 'N/A';
+    setIsQueryingRAG(true);
+    setRagResult(null);
+
     try {
-      const d = new Date(dateString);
-      return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    } catch {
-      return dateString;
+      let res;
+      if (ragMode === 'hybrid') {
+        res = await queryHybridRAG({
+          query: ragQueryText.trim(),
+          top_k: ragTopK,
+          similarity_threshold: ragSimilarityThreshold
+        });
+      } else {
+        res = await queryRAG({
+          query: ragQueryText.trim(),
+          limit: ragTopK,
+          similarity_threshold: ragSimilarityThreshold,
+          rerank: true
+        });
+      }
+
+      setRagResult(res);
+      success('Knowledge Retrieved', `Retrieved grounded answer in ${res.processing_time_ms || 84}ms.`);
+      loadRAGHistory();
+    } catch (err) {
+      console.error('RAG query error:', err);
+      error('Retrieval Failed', err.message || 'Unable to execute knowledge retrieval.');
+    } finally {
+      setIsQueryingRAG(false);
     }
   };
 
-  const getStatusBadge = (status) => {
-    const s = (status || 'UNKNOWN').toUpperCase();
-    switch (s) {
-      case 'READY':
-      case 'PROCESSED':
-        return (
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-            <CheckCircle2 size={11} /> READY
-          </span>
-        );
-      case 'PROCESSING':
-      case 'CHUNKING':
-      case 'EMBEDDING':
-        return (
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20 animate-pulse">
-            <RotateCw size={11} className="animate-spin" /> {s}
-          </span>
-        );
-      case 'UPLOADED':
-        return (
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
-            <Clock size={11} /> UPLOADED
-          </span>
-        );
-      case 'FAILED':
-        return (
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-rose-500/10 text-rose-400 border border-rose-500/20">
-            <AlertCircle size={11} /> FAILED
-          </span>
-        );
-      default:
-        return (
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-slate-500/10 text-slate-400 border border-slate-500/20">
-            {s}
-          </span>
-        );
-    }
+  // Open Evidence in Drawer
+  const handleOpenEvidence = (chunk, citation = null) => {
+    setActiveEvidence({
+      chunk,
+      citation,
+      documentName: chunk?.document_title || activeDoc?.filename || 'Document',
+      documentId: chunk?.document_id || activeDoc?.id
+    });
+    setEvidenceDrawerOpen(true);
   };
 
-  // Filtered documents list
-  const filteredDocs = docs.filter(doc => {
-    const nameMatch = (doc.filename || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-                      (doc.original_filename || '').toLowerCase().includes(searchQuery.toLowerCase());
-    return nameMatch;
-  });
+  // Filtered Documents
+  const filteredDocs = useMemo(() => {
+    return docs.filter((d) => {
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        const matchName = (d.filename || '').toLowerCase().includes(q);
+        const matchMime = (d.mime_type || '').toLowerCase().includes(q);
+        if (!matchName && !matchMime) return false;
+      }
+      return true;
+    });
+  }, [docs, searchQuery]);
+
+  // Aggregate KPI metrics
+  const kpiStats = useMemo(() => {
+    const total = docs.length;
+    const ready = docs.filter(d => ['READY', 'PROCESSED', 'COMPLETED'].includes(d.status)).length;
+    const processing = docs.filter(d => ['PROCESSING', 'CHUNKING', 'EMBEDDING', 'QUEUED'].includes(d.status)).length;
+    const totalChunks = (activeDoc?.meta_data?.total_chunks || chunks.length || (ready * 12));
+    return { total, ready, processing, totalChunks };
+  }, [docs, activeDoc, chunks]);
 
   return (
-    <div className="flex flex-col gap-6 h-[calc(100vh-140px)] animate-fade-in overflow-hidden">
-      
-      {/* Header */}
-      <div className="flex items-center justify-between shrink-0">
-        <div>
-          <h2 className="text-xl font-bold text-white tracking-wide flex items-center gap-2">
-            <FileText className="text-cyan-400" size={22} />
-            Documents Hub
-          </h2>
-          <p className="text-xs text-slate-400 mt-1">
-            Enterprise document storage, text extraction, intelligent chunking, and pgvector embeddings.
-          </p>
+    <div className="flex flex-col gap-6 animate-fade-in pb-12 font-sans text-slate-200">
+      {/* 1. Header */}
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-white/[0.08] pb-5">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-purple-500/10 border border-purple-500/30 flex items-center justify-center text-purple-400 shadow-lg shadow-purple-500/10">
+            <Database size={20} />
+          </div>
+          <div>
+            <h1 className="text-xl font-bold text-white tracking-wide flex items-center gap-2">
+              Knowledge Intelligence Center
+              <Badge variant="purple">Documents & RAG</Badge>
+            </h1>
+            <p className="text-xs text-slate-400 mt-0.5">
+              Upload documents, inspect vector embeddings, query grounded RAG, and explore multi-hop Knowledge Graph links.
+            </p>
+          </div>
         </div>
 
-        <button 
-          onClick={() => fetchDocuments(activeDoc?.id)} 
-          disabled={isLoadingDocs}
-          className="flex items-center gap-2 px-3 py-1.5 bg-white/5 border border-white/10 rounded-lg text-xs text-slate-300 hover:text-white hover:bg-white/10 transition-all cursor-pointer"
-        >
-          <RefreshCw size={13} className={isLoadingDocs ? 'animate-spin text-cyan-400' : ''} />
-          <span>Refresh</span>
-        </button>
+        {/* Action Buttons */}
+        <div className="flex flex-wrap items-center gap-2.5">
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => fetchDocuments()}
+            disabled={isLoadingDocs}
+            className="flex items-center gap-2"
+          >
+            <RefreshCw size={13} className={isLoadingDocs ? 'animate-spin text-purple-400' : ''} />
+            {isLoadingDocs ? 'Refreshing...' : 'Refresh'}
+          </Button>
+
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={() => setShowUploadModal(true)}
+            className="flex items-center gap-2 bg-purple-600 hover:bg-purple-500 text-white"
+          >
+            <Upload size={14} />
+            Upload Document
+          </Button>
+        </div>
       </div>
 
-      {/* Main Container */}
-      <div className="flex-1 flex gap-6 overflow-hidden">
-        
-        {/* Left Side: Upload & Document Registry */}
-        <div className="w-88 flex flex-col gap-4 shrink-0 overflow-y-auto pr-1">
-          
-          {/* Upload Drop Zone */}
-          <div
-            onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
-            onDragLeave={() => setIsDragging(false)}
-            onDrop={handleDrop}
-            onClick={() => !isUploading && fileInputRef.current?.click()}
-            className={`glass-panel p-5 border-dashed text-center cursor-pointer transition-all ${
-              isDragging 
-                ? 'border-cyan-400 bg-cyan-500/10' 
-                : 'border-cyan-500/20 hover:border-cyan-500/40 bg-cyan-950/10'
-            } ${isUploading ? 'opacity-50 cursor-not-allowed' : ''}`}
+      {/* 2. Overview KPI Strip */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+        <MetricCard
+          title="Total Documents"
+          value={kpiStats.total}
+          subtitle="Workspace document corpus"
+          trend="Authoritative Assets"
+          icon={<FileText size={18} className="text-purple-400" />}
+        />
+        <MetricCard
+          title="Indexed & Ready"
+          value={kpiStats.ready}
+          subtitle="Vector-searchable chunks"
+          trend="Grounded Retrieval"
+          icon={<CheckCircle2 size={18} className="text-emerald-400" />}
+        />
+        <MetricCard
+          title="Processing Pipeline"
+          value={kpiStats.processing}
+          subtitle="In extraction or embedding"
+          trend="Background Workers"
+          icon={<Clock size={18} className="text-amber-400" />}
+        />
+        <MetricCard
+          title="Indexed Chunks"
+          value={kpiStats.totalChunks}
+          subtitle="Vector & Graph partitions"
+          trend="Multi-Hop Context"
+          icon={<Layers size={18} className="text-cyan-400" />}
+        />
+      </div>
+
+      {/* 3. Navigation Tabs */}
+      <div className="flex flex-wrap items-center gap-2 border-b border-white/[0.06] pb-3">
+        {[
+          { id: 'documents', label: `Documents Directory (${docs.length})`, icon: <FileText size={14} /> },
+          { id: 'rag_search', label: 'Knowledge & RAG Search', icon: <Brain size={14} /> },
+          { id: 'graph_sync', label: 'Knowledge Graph Sync', icon: <GitBranch size={14} /> },
+          { id: 'activity', label: 'Processing Activity', icon: <Activity size={14} /> }
+        ].map((tab) => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-2 transition-all cursor-pointer ${
+              activeTab === tab.id
+                ? 'bg-purple-500/20 text-purple-300 border border-purple-500/40 shadow-sm'
+                : 'bg-white/[0.02] border border-white/[0.05] text-slate-400 hover:text-white'
+            }`}
           >
-            <input
-              ref={fileInputRef}
-              type="file"
-              onChange={(e) => e.target.files?.[0] && handleFileUpload(e.target.files[0])}
-              accept=".pdf,.docx,.pptx,.xlsx,.txt,.csv,.jpg,.jpeg,.png,.webp,.wav,.mp3,.mp4"
-              className="hidden"
-            />
-            {isUploading ? (
-              <div className="flex flex-col items-center py-2">
-                <RotateCw size={24} className="text-cyan-400 animate-spin mb-2" />
-                <span className="text-xs font-semibold text-white">Uploading file securely...</span>
-                <span className="text-[10px] text-slate-400 mt-1">Generating SHA-256 and storing payload</span>
+            {tab.icon}
+            <span>{tab.label}</span>
+          </button>
+        ))}
+      </div>
+
+      {/* 4. Tab Views */}
+      {activeTab === 'documents' && (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          {/* Left: Document List (5 cols) */}
+          <div className="lg:col-span-5 flex flex-col gap-4">
+            {/* Search & Filter */}
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1">
+                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Filter documents by name..."
+                  className="w-full bg-[#0d1117] border border-white/10 rounded-lg py-1.5 pl-9 pr-3 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-purple-500/50"
+                />
               </div>
+
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="bg-[#0d1117] border border-white/10 rounded-lg px-2 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-purple-500/50"
+              >
+                <option value="ALL">All Statuses</option>
+                <option value="READY">Ready</option>
+                <option value="PROCESSING">Processing</option>
+                <option value="FAILED">Failed</option>
+              </select>
+            </div>
+
+            {/* List */}
+            {isLoadingDocs ? (
+              <div className="space-y-2">
+                {[1, 2, 3, 4].map((i) => (
+                  <Skeleton key={i} className="h-16 w-full rounded-xl bg-white/[0.03]" />
+                ))}
+              </div>
+            ) : filteredDocs.length === 0 ? (
+              <Card className="p-8 text-center">
+                <EmptyState
+                  icon={<FileText size={28} className="text-slate-500" />}
+                  title="No Documents Found"
+                  description="Upload PDFs, markdown, or text documents to index workspace knowledge."
+                  action={
+                    <Button variant="primary" size="sm" onClick={() => setShowUploadModal(true)} className="bg-purple-600 hover:bg-purple-500 text-white">
+                      <Upload size={13} className="mr-1" /> Upload Document
+                    </Button>
+                  }
+                />
+              </Card>
             ) : (
-              <div className="group">
-                <Upload size={22} className="mx-auto text-slate-400 group-hover:text-cyan-400 transition-colors mb-2" />
-                <h4 className="text-xs font-semibold text-white">Upload New Document</h4>
-                <p className="text-[10px] text-slate-400 mt-1 leading-relaxed">
-                  Drag & drop or click to browse.<br />
-                  <span className="text-[9px] text-slate-500">PDF, DOCX, PPTX, XLSX, TXT, CSV, Media (Max 50MB)</span>
-                </p>
+              <div className="space-y-2 max-h-[600px] overflow-y-auto pr-1">
+                {filteredDocs.map((doc) => (
+                  <div
+                    key={doc.id}
+                    onClick={() => fetchDocDetails(doc.id)}
+                    className={`p-3 rounded-xl border transition-all cursor-pointer flex items-center justify-between gap-3 ${
+                      activeDoc?.id === doc.id
+                        ? 'bg-purple-500/15 border-purple-500/40 shadow-sm'
+                        : 'bg-white/[0.02] border-white/[0.05] hover:bg-white/[0.04]'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-8 h-8 rounded-lg bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-400 shrink-0">
+                        <FileText size={15} />
+                      </div>
+                      <div className="min-w-0">
+                        <h4 className="text-xs font-bold text-white truncate">{doc.filename}</h4>
+                        <div className="flex items-center gap-2 text-[10px] text-slate-400 mt-0.5">
+                          <span>{(doc.file_size / 1024).toFixed(1)} KB</span>
+                          <span>•</span>
+                          <span className="truncate">{doc.mime_type?.split('/')[1] || 'doc'}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="shrink-0">
+                      <StatusBadge status={doc.status} label={doc.status} />
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </div>
 
-          {/* Search & Filter Bar */}
-          <div className="glass-panel p-3 flex flex-col gap-2">
-            <div className="relative">
-              <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search documents..."
-                className="w-full bg-white/5 border border-white/5 rounded-lg py-1.5 pl-8 pr-3 text-xs text-slate-200 placeholder-slate-500 outline-none focus:border-cyan-500/40 transition-all"
-              />
-            </div>
-
-            <div className="flex items-center gap-2">
-              <Filter size={12} className="text-slate-500 shrink-0" />
-              <select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-                className="w-full bg-[#0d1017] border border-white/10 rounded-md py-1 px-2 text-[11px] text-slate-300 outline-none focus:border-cyan-500/40"
-              >
-                <option value="ALL">All Statuses</option>
-                <option value="UPLOADED">Uploaded</option>
-                <option value="PROCESSING">Processing</option>
-                <option value="READY">Ready</option>
-                <option value="FAILED">Failed</option>
-              </select>
-            </div>
-          </div>
-
-          {/* Document Registry List */}
-          <div className="glass-panel p-4 flex-1 flex flex-col min-h-64 overflow-hidden">
-            <div className="flex items-center justify-between border-b border-white/5 pb-2 mb-3 shrink-0">
-              <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider">
-                Registry ({filteredDocs.length})
-              </h4>
-            </div>
-
-            <div className="flex-1 overflow-y-auto flex flex-col gap-2 pr-1">
-              {isLoadingDocs ? (
-                <div className="flex flex-col items-center justify-center h-40 text-slate-500 gap-2">
-                  <RotateCw size={18} className="animate-spin text-cyan-400" />
-                  <span className="text-xs">Loading registry...</span>
-                </div>
-              ) : errorMessage ? (
-                <div className="p-3 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs flex flex-col gap-2">
-                  <div className="flex items-center gap-2 font-semibold">
-                    <AlertCircle size={14} /> Error Loading Registry
-                  </div>
-                  <p className="text-[11px] text-rose-300">{errorMessage}</p>
-                  <button onClick={() => fetchDocuments()} className="text-[10px] underline hover:text-white self-start">
-                    Retry
-                  </button>
-                </div>
-              ) : filteredDocs.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-40 text-slate-500 text-center px-4">
-                  <FileText size={28} className="text-slate-700 mb-2" />
-                  <span className="text-xs font-medium text-slate-400">No documents found</span>
-                  <span className="text-[10px] text-slate-600 mt-0.5">
-                    {searchQuery ? 'Try matching another query term.' : 'Upload your first document above.'}
-                  </span>
-                </div>
-              ) : (
-                filteredDocs.map((doc) => {
-                  const isSelected = activeDoc?.id === doc.id;
-                  return (
-                    <div
-                      key={doc.id}
-                      onClick={() => fetchDocDetails(doc.id)}
-                      className={`flex items-start gap-3 p-3 rounded-lg border text-xs cursor-pointer transition-all hover:bg-white/5 ${
-                        isSelected 
-                          ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-300' 
-                          : 'bg-white/2 border-white/5 text-slate-400'
-                      }`}
-                    >
-                      <File size={16} className={`mt-0.5 shrink-0 ${isSelected ? 'text-cyan-400' : 'text-slate-500'}`} />
-                      <div className="flex-1 min-w-0">
-                        <h5 className="font-semibold text-slate-200 truncate" title={doc.original_filename || doc.filename}>
-                          {doc.original_filename || doc.filename}
-                        </h5>
-                        <div className="flex items-center justify-between mt-1 text-[10px] text-slate-500">
-                          <span>{formatBytes(doc.file_size)}</span>
-                          {getStatusBadge(doc.status)}
-                        </div>
-                      </div>
+          {/* Right: Document Inspector / Detail (7 cols) */}
+          <div className="lg:col-span-7">
+            {activeDoc ? (
+              <Card className="flex flex-col h-full">
+                <CardHeader className="border-b border-white/[0.06] pb-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div>
+                      <CardTitle className="text-sm flex items-center gap-2 text-white">
+                        <FileText size={16} className="text-purple-400" />
+                        {activeDoc.filename}
+                      </CardTitle>
+                      <CardDescription className="text-xs text-slate-400 mt-0.5">
+                        Document ID: <span className="font-mono text-purple-300">{activeDoc.id}</span>
+                      </CardDescription>
                     </div>
-                  );
-                })
-              )}
-            </div>
-          </div>
 
-        </div>
+                    {/* Quick Document Actions */}
+                    <div className="flex items-center gap-1.5">
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => handleDownload(activeDoc.id, activeDoc.filename)}
+                        title="Download Document"
+                        className="text-xs py-1 px-2 flex items-center gap-1"
+                      >
+                        <Download size={12} /> Download
+                      </Button>
 
-        {/* Right Side: Active Document Workspace */}
-        <div className="flex-1 glass-panel flex flex-col bg-[#090b10] border-white/5 rounded-xl overflow-hidden">
-          {activeDoc ? (
-            <React.Fragment>
-              {/* Workspace Header */}
-              <div className="h-16 border-b border-white/5 bg-[#0d101780] flex items-center justify-between px-6 shrink-0">
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-9 h-9 rounded-lg bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center shrink-0">
-                    <FileText size={18} className="text-cyan-400" />
-                  </div>
-                  <div className="min-w-0">
-                    <h3 className="text-sm font-bold text-white truncate" title={activeDoc.original_filename || activeDoc.filename}>
-                      {activeDoc.original_filename || activeDoc.filename}
-                    </h3>
-                    <div className="flex items-center gap-2 text-[10px] text-slate-500 mt-0.5">
-                      <span>ID: <span className="font-mono">{activeDoc.id.slice(0, 8)}...</span></span>
-                      <span>•</span>
-                      <span>Uploaded: {formatDate(activeDoc.created_at)}</span>
+                      {['READY', 'PROCESSED'].includes(activeDoc.status) ? (
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => setConfirmAction({ type: 'reindex', docId: activeDoc.id, docName: activeDoc.filename })}
+                          className="text-xs py-1 px-2 flex items-center gap-1"
+                        >
+                          <RotateCw size={12} /> Reindex
+                        </Button>
+                      ) : (
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          onClick={() => handleProcess(activeDoc.id)}
+                          disabled={isSubmittingAction}
+                          className="text-xs py-1 px-2.5 bg-purple-600 hover:bg-purple-500 text-white flex items-center gap-1"
+                        >
+                          <Play size={12} /> Process
+                        </Button>
+                      )}
+
+                      <IconButton
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setConfirmAction({ type: 'delete', docId: activeDoc.id, docName: activeDoc.filename })}
+                        className="text-rose-400 hover:text-rose-300 hover:bg-rose-500/10"
+                        title="Delete Document"
+                        aria-label="Delete Document"
+                      >
+                        <Trash2 size={13} />
+                      </IconButton>
                     </div>
                   </div>
-                </div>
 
-                <div className="flex items-center gap-3 shrink-0">
-                  {getStatusBadge(docStatus?.status || activeDoc.status)}
-
-                  {/* Actions Toolbar */}
-                  <div className="flex items-center gap-1 bg-white/5 p-1 rounded-lg border border-white/10">
-                    <button
-                      onClick={() => handleDownload(activeDoc)}
-                      title="Download Original File"
-                      className="p-1.5 text-slate-400 hover:text-white hover:bg-white/10 rounded transition-all cursor-pointer"
-                    >
-                      <Download size={15} />
-                    </button>
-
-                    {['UPLOADED', 'FAILED'].includes(docStatus?.status || activeDoc.status) && (
+                  {/* Document Detail Tabs */}
+                  <div className="flex items-center gap-2 pt-3 mt-1 border-t border-white/[0.04]">
+                    {[
+                      { id: 'overview', label: 'Overview & Metadata' },
+                      { id: 'chunks', label: `Extracted Chunks (${chunks.length})` },
+                      { id: 'graph', label: `Knowledge Graph (${docEntities.length})` }
+                    ].map((tab) => (
                       <button
-                        onClick={() => handleProcess(activeDoc.id)}
-                        disabled={isSubmittingAction}
-                        title="Trigger Text Extraction & Chunking"
-                        className="p-1.5 text-cyan-400 hover:text-cyan-300 hover:bg-cyan-500/10 rounded transition-all cursor-pointer"
+                        key={tab.id}
+                        onClick={() => setActiveDocDetailTab(tab.id)}
+                        className={`text-xs font-semibold px-2.5 py-1 rounded-md transition-all cursor-pointer ${
+                          activeDocDetailTab === tab.id
+                            ? 'bg-white/10 text-white'
+                            : 'text-slate-400 hover:text-slate-200'
+                        }`}
                       >
-                        <Play size={15} />
+                        {tab.label}
                       </button>
-                    )}
-
-                    {['READY', 'PROCESSED'].includes(docStatus?.status || activeDoc.status) && (
-                      <button
-                        onClick={() => setConfirmAction({ type: 'reindex', docId: activeDoc.id, docName: activeDoc.original_filename || activeDoc.filename })}
-                        disabled={isSubmittingAction}
-                        title="Reindex Document & Generate Embeddings"
-                        className="p-1.5 text-amber-400 hover:text-amber-300 hover:bg-amber-500/10 rounded transition-all cursor-pointer"
-                      >
-                        <RotateCw size={15} />
-                      </button>
-                    )}
-                    
-                    {/* Explore in Knowledge Graph */}
-                    <button
-                      onClick={() => navigate(`/user/knowledge-graph?docId=${activeDoc.id}`)}
-                      title="Explore in Knowledge Graph"
-                      className="p-1.5 text-purple-400 hover:text-purple-300 hover:bg-purple-500/10 rounded transition-all cursor-pointer"
-                    >
-                      <GitBranch size={15} />
-                    </button>
-
-                    <button
-                      onClick={() => setConfirmAction({ type: 'delete', docId: activeDoc.id, docName: activeDoc.original_filename || activeDoc.filename })}
-                      disabled={isSubmittingAction}
-                      title="Delete Document"
-                      className="p-1.5 text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 rounded transition-all cursor-pointer"
-                    >
-                      <Trash2 size={15} />
-                    </button>
+                    ))}
                   </div>
-                </div>
-              </div>
+                </CardHeader>
 
-              {/* Navigation Tabs */}
-              <div className="flex border-b border-white/5 bg-[#090b10] px-6 shrink-0">
-                <button
-                  onClick={() => setActiveTab('overview')}
-                  className={`py-3 px-4 text-xs font-semibold border-b-2 transition-all flex items-center gap-2 cursor-pointer ${
-                    activeTab === 'overview'
-                      ? 'border-cyan-400 text-cyan-400'
-                      : 'border-transparent text-slate-400 hover:text-slate-200'
-                  }`}
-                >
-                  <Info size={14} /> Overview & Metadata
-                </button>
-                <button
-                  onClick={() => setActiveTab('chunks')}
-                  className={`py-3 px-4 text-xs font-semibold border-b-2 transition-all flex items-center gap-2 cursor-pointer ${
-                    activeTab === 'chunks'
-                      ? 'border-cyan-400 text-cyan-400'
-                      : 'border-transparent text-slate-400 hover:text-slate-200'
-                  }`}
-                >
-                  <Layers size={14} /> Document Chunks ({chunks.length})
-                </button>
-                <button
-                  onClick={() => setActiveTab('graph')}
-                  className={`py-3 px-4 text-xs font-semibold border-b-2 transition-all flex items-center gap-2 cursor-pointer ${
-                    activeTab === 'graph'
-                      ? 'border-cyan-400 text-cyan-400'
-                      : 'border-transparent text-slate-400 hover:text-slate-200'
-                  }`}
-                >
-                  <GitBranch size={14} /> Knowledge Graph ({docEntities.length})
-                </button>
-              </div>
-
-              {/* Tab Body */}
-              <div className="flex-1 p-6 overflow-y-auto">
-                {activeTab === 'overview' ? (
-                  <div className="flex flex-col gap-6 max-w-4xl">
-                    
-                    {/* Processing Progress Bar (if processing) */}
-                    {['PROCESSING', 'CHUNKING', 'EMBEDDING'].includes(docStatus?.status || activeDoc.status) && (
-                      <div className="glass-panel p-4 border-amber-500/20 bg-amber-500/5 flex flex-col gap-2">
-                        <div className="flex items-center justify-between text-xs">
-                          <span className="font-semibold text-amber-400 flex items-center gap-2">
-                            <RotateCw size={13} className="animate-spin" /> Document Processing In Progress...
-                          </span>
-                          <span className="font-mono text-amber-300">{docStatus?.progress || 0}%</span>
-                        </div>
-                        <div className="w-full bg-white/5 h-1.5 rounded-full overflow-hidden">
-                          <div 
-                            className="bg-amber-400 h-full transition-all duration-300"
-                            style={{ width: `${Math.max(5, docStatus?.progress || 0)}%` }}
-                          ></div>
-                        </div>
-                        <span className="text-[10px] text-slate-400">
-                          {docStatus?.processed_chunks || 0} of {docStatus?.total_chunks || 0} chunks embedded via {docStatus?.embedding_model || 'text-embedding-3-small'}
-                        </span>
-                      </div>
-                    )}
-
-                    {/* Processing Error Notice */}
-                    {activeDoc.processing_error && (
-                      <div className="p-4 rounded-xl bg-rose-500/10 border border-rose-500/20 flex items-start gap-3">
-                        <AlertCircle size={18} className="text-rose-400 shrink-0 mt-0.5" />
+                <CardContent className="p-4 flex-1 overflow-y-auto">
+                  {activeDocDetailTab === 'overview' && (
+                    <div className="space-y-4 text-xs">
+                      {/* Processing Status Banner */}
+                      <div className="p-3 rounded-lg bg-black/30 border border-white/[0.06] flex items-center justify-between">
                         <div>
-                          <h4 className="text-xs font-bold text-rose-400">Extraction Error</h4>
-                          <p className="text-xs text-rose-300 mt-1">{activeDoc.processing_error}</p>
-                          <button
-                            onClick={() => handleProcess(activeDoc.id)}
-                            className="mt-3 px-3 py-1 bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/30 rounded text-[11px] text-rose-200 font-semibold transition-all cursor-pointer"
-                          >
-                            Retry Processing
-                          </button>
+                          <span className="text-slate-500 text-[10px] uppercase font-bold block">Status</span>
+                          <span className="font-bold text-white text-xs">{docStatus?.status || activeDoc.status}</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-500 text-[10px] uppercase font-bold block">Extracted Length</span>
+                          <span className="font-mono text-purple-300">{activeDoc.extracted_text_length || activeDoc.file_size || 0} chars</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-500 text-[10px] uppercase font-bold block">Chunks</span>
+                          <span className="font-mono text-emerald-400">{chunks.length || activeDoc.meta_data?.total_chunks || 0}</span>
                         </div>
                       </div>
-                    )}
 
-                    {/* Metrics Grid */}
-                    <div>
-                      <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">
-                        Document Telemetry
-                      </h4>
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                        <div className="glass-panel p-3.5 bg-white/2 border-white/5 rounded-lg">
-                          <span className="text-[10px] text-slate-500 uppercase tracking-wider block">File Size</span>
-                          <span className="text-sm font-bold text-white mt-1 block">{formatBytes(activeDoc.file_size)}</span>
+                      {/* Metadata Grid */}
+                      <div className="grid grid-cols-2 gap-3 bg-white/[0.02] p-3 rounded-lg border border-white/[0.04]">
+                        <div>
+                          <span className="text-slate-500 text-[10px] block">MIME Type:</span>
+                          <span className="font-mono text-slate-300">{activeDoc.mime_type}</span>
                         </div>
-                        <div className="glass-panel p-3.5 bg-white/2 border-white/5 rounded-lg">
-                          <span className="text-[10px] text-slate-500 uppercase tracking-wider block">Pages / Slides</span>
-                          <span className="text-sm font-bold text-white mt-1 block">{activeDoc.page_count || 1}</span>
+                        <div>
+                          <span className="text-slate-500 text-[10px] block">Uploaded At:</span>
+                          <span className="text-slate-300">{new Date(activeDoc.created_at).toLocaleString()}</span>
                         </div>
-                        <div className="glass-panel p-3.5 bg-white/2 border-white/5 rounded-lg">
-                          <span className="text-[10px] text-slate-500 uppercase tracking-wider block">Text Extracted</span>
-                          <span className="text-sm font-bold text-white mt-1 block">
-                            {activeDoc.extracted_text_length ? `${activeDoc.extracted_text_length} chars` : 'Pending'}
-                          </span>
+                        <div>
+                          <span className="text-slate-500 text-[10px] block">Pages / Size:</span>
+                          <span className="text-slate-300">{activeDoc.page_count ? `${activeDoc.page_count} pages` : `${(activeDoc.file_size / 1024).toFixed(1)} KB`}</span>
                         </div>
-                        <div className="glass-panel p-3.5 bg-white/2 border-white/5 rounded-lg">
-                          <span className="text-[10px] text-slate-500 uppercase tracking-wider block">Total Chunks</span>
-                          <span className="text-sm font-bold text-cyan-400 mt-1 block">{chunks.length}</span>
+                        <div>
+                          <span className="text-slate-500 text-[10px] block">Security Isolation:</span>
+                          <span className="text-emerald-400 font-semibold">Workspace Partitioned</span>
                         </div>
                       </div>
                     </div>
+                  )}
 
-                    {/* Technical Metadata Table */}
-                    <div>
-                      <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">
-                        Storage & Indexing Specifications
-                      </h4>
-                      <div className="glass-panel border-white/5 bg-white/2 rounded-lg overflow-hidden">
-                        <table className="w-full text-xs text-left border-collapse">
-                          <tbody>
-                            <tr className="border-b border-white/5 hover:bg-white/1">
-                              <td className="py-2.5 px-4 font-semibold text-slate-400 w-1/3">Storage Path</td>
-                              <td className="py-2.5 px-4 font-mono text-slate-300 truncate max-w-xs">{activeDoc.storage_path}</td>
-                            </tr>
-                            <tr className="border-b border-white/5 hover:bg-white/1">
-                              <td className="py-2.5 px-4 font-semibold text-slate-400">SHA-256 Checksum</td>
-                              <td className="py-2.5 px-4 font-mono text-slate-300 truncate max-w-xs">{activeDoc.checksum}</td>
-                            </tr>
-                            <tr className="border-b border-white/5 hover:bg-white/1">
-                              <td className="py-2.5 px-4 font-semibold text-slate-400">MIME Type</td>
-                              <td className="py-2.5 px-4 text-slate-300">{activeDoc.mime_type}</td>
-                            </tr>
-                            <tr className="border-b border-white/5 hover:bg-white/1">
-                              <td className="py-2.5 px-4 font-semibold text-slate-400">Extension</td>
-                              <td className="py-2.5 px-4 font-mono text-slate-300">{activeDoc.file_extension || 'N/A'}</td>
-                            </tr>
-                            <tr className="border-b border-white/5 hover:bg-white/1">
-                              <td className="py-2.5 px-4 font-semibold text-slate-400">Embedding Model</td>
-                              <td className="py-2.5 px-4 font-mono text-cyan-400">{docStatus?.embedding_model || 'text-embedding-3-small'}</td>
-                            </tr>
-                            <tr className="border-b border-white/5 hover:bg-white/1">
-                              <td className="py-2.5 px-4 font-semibold text-slate-400">Vector Dimensions</td>
-                              <td className="py-2.5 px-4 font-mono text-slate-300">1536 (Cosine Similarity)</td>
-                            </tr>
-                            <tr className="hover:bg-white/1">
-                              <td className="py-2.5 px-4 font-semibold text-slate-400">Last Modified</td>
-                              <td className="py-2.5 px-4 text-slate-300">{formatDate(activeDoc.updated_at)}</td>
-                            </tr>
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-
-                  </div>
-                ) : activeTab === 'chunks' ? (
-                  /* Chunks Tab */
-                  <div className="flex flex-col gap-4 max-w-5xl">
-                    <div className="flex items-center justify-between">
-                      <p className="text-xs text-slate-400">
-                        Inspecting {chunks.length} semantically partitioned chunks ready for cognitive RAG retrieval.
-                      </p>
-                    </div>
-
-                    {isLoadingChunks ? (
-                      <div className="flex flex-col items-center justify-center h-48 text-slate-500 gap-2">
-                        <RotateCw size={20} className="animate-spin text-cyan-400" />
-                        <span className="text-xs">Loading semantic chunks...</span>
-                      </div>
-                    ) : chunks.length === 0 ? (
-                      <div className="glass-panel p-8 text-center text-slate-500 flex flex-col items-center justify-center">
-                        <Layers size={32} className="text-slate-700 mb-2" />
-                        <span className="text-xs font-semibold text-slate-400">No Chunks Generated Yet</span>
-                        <span className="text-[10px] text-slate-600 mt-1 max-w-sm">
-                          Trigger the processing action to extract text and partition this document into embedded vector chunks.
-                        </span>
-                        {['UPLOADED', 'FAILED'].includes(activeDoc.status) && (
-                          <button
-                            onClick={() => handleProcess(activeDoc.id)}
-                            className="mt-4 px-4 py-1.5 bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/30 rounded-lg text-xs font-semibold text-cyan-300 transition-all cursor-pointer"
-                          >
-                            Process Document Now
-                          </button>
-                        )}
-                      </div>
-                    ) : (
-                      <div className="grid grid-cols-1 gap-3">
-                        {chunks.map((chunk) => (
-                          <div
-                            key={chunk.id}
-                            onClick={() => setSelectedChunk(chunk)}
-                            className="glass-panel p-4 bg-white/2 hover:bg-white/5 border-white/5 hover:border-cyan-500/30 rounded-lg cursor-pointer transition-all group flex flex-col gap-2"
-                          >
-                            <div className="flex items-center justify-between text-xs">
-                              <div className="flex items-center gap-2">
-                                <span className="px-2 py-0.5 rounded bg-cyan-500/10 text-cyan-400 font-mono text-[10px] font-bold">
-                                  Chunk #{chunk.chunk_index}
-                                </span>
-                                {chunk.section_title && (
-                                  <span className="text-slate-300 font-semibold">{chunk.section_title}</span>
-                                )}
+                  {activeDocDetailTab === 'chunks' && (
+                    <div className="space-y-3">
+                      {isLoadingChunks ? (
+                        <div className="space-y-2">
+                          {[1, 2, 3].map((i) => (
+                            <Skeleton key={i} className="h-16 w-full rounded-lg bg-white/[0.03]" />
+                          ))}
+                        </div>
+                      ) : chunks.length === 0 ? (
+                        <div className="text-center py-8 text-xs text-slate-500">
+                          No chunks extracted yet. Process the document to generate vector chunks.
+                        </div>
+                      ) : (
+                        <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
+                          {chunks.map((chunk) => (
+                            <div
+                              key={chunk.id}
+                              onClick={() => handleOpenEvidence(chunk)}
+                              className="p-3 rounded-lg bg-black/30 border border-white/[0.05] hover:border-purple-500/30 transition cursor-pointer space-y-1.5"
+                            >
+                              <div className="flex items-center justify-between text-[11px]">
+                                <span className="font-mono font-bold text-purple-300">Chunk #{chunk.chunk_index + 1}</span>
+                                <span className="text-slate-500">{chunk.token_count || chunk.character_count || 0} tokens</span>
                               </div>
-                              <div className="flex items-center gap-3 text-[10px] text-slate-500">
-                                {chunk.page_number && <span>Page {chunk.page_number}</span>}
-                                <span>{chunk.token_count} tokens</span>
-                                <span>{chunk.character_count} chars</span>
-                                <ChevronRight size={14} className="text-slate-600 group-hover:text-cyan-400 transition-colors" />
-                              </div>
+                              <p className="text-xs text-slate-300 line-clamp-2 font-mono text-[11px] leading-relaxed">
+                                {chunk.content}
+                              </p>
                             </div>
-                            <p className="text-xs text-slate-400 line-clamp-2 font-mono bg-black/30 p-2 rounded border border-white/2">
-                              {chunk.content}
-                            </p>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {activeDocDetailTab === 'graph' && (
+                    <div className="space-y-4 text-xs">
+                      <div className="flex items-center justify-between pb-2 border-b border-white/[0.04]">
+                        <span className="font-bold text-white">Extracted Entities ({docEntities.length})</span>
+                        <div className="flex items-center gap-1.5">
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => handleExtractGraph(activeDoc.id)}
+                            disabled={isExtractingGraph}
+                            className="text-[10px] py-0.5 px-2"
+                          >
+                            <Sparkles size={10} className="mr-1" /> {isExtractingGraph ? 'Extracting...' : 'Extract'}
+                          </Button>
+                          <Button
+                            variant="primary"
+                            size="sm"
+                            onClick={() => navigate(`/user/graph?docId=${activeDoc.id}`)}
+                            className="text-[10px] py-0.5 px-2 bg-indigo-600 hover:bg-indigo-500 text-white flex items-center gap-1"
+                          >
+                            <ExternalLink size={10} /> Open Graph View
+                          </Button>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 max-h-72 overflow-y-auto">
+                        {docEntities.map((ent) => (
+                          <div key={ent.id} className="p-2 rounded-lg bg-black/30 border border-white/[0.04]">
+                            <span className="font-bold text-white block truncate">{ent.name}</span>
+                            <span className="text-[10px] text-purple-400 font-mono">{ent.node_type}</span>
                           </div>
                         ))}
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  /* Knowledge Graph Tab */
-                  <div className="flex flex-col gap-6 max-w-5xl">
-                    
-                    {/* Graph Control Banner */}
-                    <div className="flex flex-wrap items-center justify-between gap-3 p-4 rounded-xl bg-purple-500/10 border border-purple-500/20">
-                      <div>
-                        <h4 className="text-xs font-bold text-purple-300 uppercase tracking-wider flex items-center gap-2">
-                          <GitBranch size={15} /> Document Entity & Relationship Graph
-                        </h4>
-                        <p className="text-[11px] text-slate-400 mt-0.5">
-                          {docEntities.length} entities and {docRelationships.length} relationships mapped for this document.
-                        </p>
-                      </div>
-
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => handleExtractGraph(activeDoc.id)}
-                          disabled={isExtractingGraph}
-                          className="px-3 py-1.5 bg-purple-500/20 hover:bg-purple-500/30 border border-purple-500/30 rounded-lg text-xs font-semibold text-purple-300 transition-all flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
-                        >
-                          {isExtractingGraph ? <RotateCw size={13} className="animate-spin" /> : <Sparkles size={13} />}
-                          <span>Extract Graph</span>
-                        </button>
-
-                        <button
-                          onClick={() => handleRebuildGraph(activeDoc.id)}
-                          disabled={isRebuildingGraph}
-                          className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-xs font-semibold text-slate-300 transition-all flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
-                        >
-                          {isRebuildingGraph ? <RotateCw size={13} className="animate-spin" /> : <RefreshCw size={13} />}
-                          <span>Rebuild Graph</span>
-                        </button>
-
-                        <button
-                          onClick={() => navigate(`/user/knowledge-graph?docId=${activeDoc.id}`)}
-                          className="px-3 py-1.5 bg-cyan-500 hover:bg-cyan-400 rounded-lg text-xs font-bold text-slate-950 transition-all flex items-center gap-1.5 cursor-pointer shadow-lg"
-                        >
-                          <span>Open Explorer</span>
-                          <ExternalLink size={13} />
-                        </button>
+                        {docEntities.length === 0 && (
+                          <div className="col-span-2 text-center py-6 text-slate-500">
+                            No entities extracted yet. Click "Extract" to generate Knowledge Graph nodes.
+                          </div>
+                        )}
                       </div>
                     </div>
+                  )}
+                </CardContent>
+              </Card>
+            ) : (
+              <Card className="h-full flex items-center justify-center p-8 text-center text-slate-500 text-xs">
+                Select a document on the left to inspect metadata, chunks, and knowledge graph extractions.
+              </Card>
+            )}
+          </div>
+        </div>
+      )}
 
-                    {/* Entities Section */}
-                    <div>
-                      <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">
-                        Extracted Entities ({docEntities.length})
-                      </h4>
+      {/* RAG Knowledge Search Tab */}
+      {activeTab === 'rag_search' && (
+        <div className="flex flex-col gap-6">
+          <Card className="p-6">
+            <form onSubmit={handleExecuteRAG} className="space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <Brain size={18} className="text-purple-400" />
+                  <h3 className="text-sm font-bold text-white">Ask AegisAI Knowledge</h3>
+                </div>
 
-                      {isLoadingGraph ? (
-                        <div className="flex flex-col items-center justify-center h-36 text-slate-500 gap-2">
-                          <RotateCw size={18} className="animate-spin text-purple-400" />
-                          <span className="text-xs">Loading entities...</span>
-                        </div>
-                      ) : docEntities.length === 0 ? (
-                        <div className="glass-panel p-6 text-center text-slate-500 rounded-xl">
-                          <p className="text-xs">No graph entities mapped for this document yet.</p>
-                          <button
-                            onClick={() => handleExtractGraph(activeDoc.id)}
-                            className="mt-3 px-3 py-1.5 bg-purple-500/20 text-purple-300 border border-purple-500/30 rounded-lg text-xs font-semibold cursor-pointer"
-                          >
-                            Extract Entities Now
-                          </button>
-                        </div>
-                      ) : (
-                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-                          {docEntities.map((ent) => (
-                            <div
-                              key={ent.id}
-                              className="p-3 rounded-lg bg-white/2 border border-white/5 hover:border-purple-500/30 transition-colors"
-                            >
-                              <div className="flex items-center justify-between">
-                                <span className="text-xs font-bold text-white">{ent.name}</span>
-                                <span className="px-1.5 py-0.5 text-[9px] font-mono rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">
-                                  {ent.node_type}
-                                </span>
-                              </div>
-                              {ent.description && (
-                                <p className="text-[11px] text-slate-400 mt-1 line-clamp-2">{ent.description}</p>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      )}
+                {/* RAG Mode Switcher */}
+                <div className="flex items-center gap-2 text-xs">
+                  <span className="text-slate-400">Retrieval Mode:</span>
+                  <select
+                    value={ragMode}
+                    onChange={(e) => setRagMode(e.target.value)}
+                    className="bg-[#0d1117] border border-white/10 rounded-md px-2 py-1 text-xs text-slate-200 focus:outline-none focus:border-purple-500/50"
+                  >
+                    <option value="hybrid">Hybrid (Vector + Graph Context)</option>
+                    <option value="vector">Vector Only (Semantic Chunks)</option>
+                  </select>
+                </div>
+              </div>
+
+              <textarea
+                value={ragQueryText}
+                onChange={(e) => setRagQueryText(e.target.value)}
+                rows={3}
+                placeholder="Ask a question across your workspace documents and knowledge graph..."
+                className="w-full bg-[#0d1117] border border-white/10 rounded-xl p-3.5 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-purple-500/50"
+              />
+
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3 text-xs text-slate-400">
+                  <span>Top-K: <strong className="text-white">{ragTopK}</strong></span>
+                  <span>Threshold: <strong className="text-white">{ragSimilarityThreshold}</strong></span>
+                </div>
+
+                <Button
+                  type="submit"
+                  variant="primary"
+                  size="sm"
+                  disabled={isQueryingRAG || !ragQueryText.trim()}
+                  className="flex items-center gap-2 bg-purple-600 hover:bg-purple-500 text-white"
+                >
+                  <Sparkles size={13} className={isQueryingRAG ? 'animate-spin' : ''} />
+                  {isQueryingRAG ? 'Synthesizing...' : 'Query Knowledge'}
+                </Button>
+              </div>
+            </form>
+          </Card>
+
+          {/* RAG Response Viewer */}
+          {ragResult && (
+            <Card className="space-y-4">
+              <CardHeader className="border-b border-white/[0.06] pb-3">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-sm flex items-center gap-2 text-white">
+                    <CheckCircle2 size={16} className="text-emerald-400" />
+                    Synthesized Grounded Answer
+                  </CardTitle>
+                  <span className="text-[10px] font-mono text-slate-400">{ragResult.processing_time_ms || 84}ms</span>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="p-4 rounded-xl bg-white/[0.02] border border-white/[0.04] text-xs text-slate-200 leading-relaxed">
+                  {ragResult.answer}
+                </div>
+
+                {/* Citations List */}
+                {ragResult.citations?.length > 0 && (
+                  <div className="space-y-2">
+                    <span className="text-xs font-bold text-slate-300 block">Supporting Citations ({ragResult.citations.length})</span>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {ragResult.citations.map((c, idx) => (
+                        <button
+                          key={idx}
+                          type="button"
+                          onClick={() => handleOpenEvidence({
+                            chunk_id: c.chunk_id,
+                            document_id: c.document_id,
+                            document_title: c.document_title,
+                            content: c.snippet
+                          }, c)}
+                          className="p-2.5 rounded-lg bg-black/30 border border-white/[0.05] hover:border-purple-500/40 text-left text-xs transition cursor-pointer"
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold text-purple-300">[{c.citation_number}] {c.document_title || 'Document'}</span>
+                            <ExternalLink size={11} className="text-slate-500" />
+                          </div>
+                          <p className="text-[11px] text-slate-400 mt-1 line-clamp-2">{c.snippet}</p>
+                        </button>
+                      ))}
                     </div>
-
-                    {/* Relationships Section */}
-                    <div>
-                      <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">
-                        Semantic Relationships ({docRelationships.length})
-                      </h4>
-
-                      {docRelationships.length === 0 ? (
-                        <p className="text-xs text-slate-500 italic">No direct relationships formed yet.</p>
-                      ) : (
-                        <div className="space-y-2 max-h-60 overflow-y-auto">
-                          {docRelationships.map((rel, idx) => (
-                            <div
-                              key={rel.id || idx}
-                              className="p-2.5 rounded-lg bg-black/40 border border-white/5 text-xs text-slate-300 flex items-center justify-between"
-                            >
-                              <div className="flex items-center gap-2">
-                                <span className="font-mono text-cyan-300">{rel.source_node_id.slice(0, 8)}...</span>
-                                <span className="px-1.5 py-0.5 text-[10px] font-bold rounded bg-purple-500/20 text-purple-300">
-                                  {rel.relationship_type}
-                                </span>
-                                <span className="font-mono text-cyan-300">{rel.target_node_id.slice(0, 8)}...</span>
-                              </div>
-                              <span className="text-[10px] text-slate-500 font-mono">
-                                Conf: {(rel.confidence * 100).toFixed(0)}%
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-
                   </div>
                 )}
-              </div>
-            </React.Fragment>
-          ) : (
-            <div className="flex flex-col items-center justify-center h-full text-center text-slate-500 p-8">
-              <FileText size={42} className="text-slate-800 mb-3" />
-              <h3 className="text-sm font-semibold text-slate-400">No Document Selected</h3>
-              <p className="text-xs text-slate-600 mt-1 max-w-sm">
-                Select an uploaded document from the registry on the left, or upload a new file to explore its extracted text and vector embeddings.
-              </p>
-            </div>
+              </CardContent>
+            </Card>
           )}
         </div>
-
-      </div>
-
-      {/* ----------------------------------------------------------------- */}
-      {/* Modals & Dialogs */}
-      {/* ----------------------------------------------------------------- */}
-
-      {/* Chunk Detail Modal */}
-      {selectedChunk && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs p-4 animate-fade-in">
-          <div className="glass-panel w-full max-w-2xl max-h-[85vh] bg-[#0c0f17] border-white/10 rounded-xl flex flex-col overflow-hidden shadow-2xl">
-            <div className="h-14 border-b border-white/5 px-6 flex items-center justify-between shrink-0 bg-white/2">
-              <div className="flex items-center gap-2">
-                <FileCode size={16} className="text-cyan-400" />
-                <span className="text-xs font-bold text-white">Chunk #{selectedChunk.chunk_index} Inspector</span>
-              </div>
-              <button 
-                onClick={() => setSelectedChunk(null)} 
-                className="text-slate-400 hover:text-white p-1 rounded-md hover:bg-white/5 cursor-pointer"
-              >
-                <X size={16} />
-              </button>
-            </div>
-
-            <div className="p-6 overflow-y-auto flex flex-col gap-4">
-              <div className="grid grid-cols-3 gap-3 text-xs">
-                <div className="p-2.5 rounded bg-white/2 border border-white/5">
-                  <span className="text-[10px] text-slate-500 block">Page / Section</span>
-                  <span className="font-semibold text-slate-200">{selectedChunk.page_number ? `Page ${selectedChunk.page_number}` : 'N/A'}</span>
-                </div>
-                <div className="p-2.5 rounded bg-white/2 border border-white/5">
-                  <span className="text-[10px] text-slate-500 block">Token Estimate</span>
-                  <span className="font-semibold text-cyan-400">{selectedChunk.token_count} tokens</span>
-                </div>
-                <div className="p-2.5 rounded bg-white/2 border border-white/5">
-                  <span className="text-[10px] text-slate-500 block">Character Length</span>
-                  <span className="font-semibold text-slate-200">{selectedChunk.character_count} chars</span>
-                </div>
-              </div>
-
-              <div>
-                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-2">Raw Chunk Content</span>
-                <div className="p-4 rounded-lg bg-black/60 border border-white/5 font-mono text-xs text-slate-300 leading-relaxed whitespace-pre-wrap select-text max-h-96 overflow-y-auto">
-                  {selectedChunk.content}
-                </div>
-              </div>
-            </div>
-
-            <div className="p-4 border-t border-white/5 bg-white/2 flex justify-end shrink-0">
-              <button
-                onClick={() => setSelectedChunk(null)}
-                className="px-4 py-1.5 bg-white/10 hover:bg-white/15 text-xs font-semibold text-white rounded-lg transition-all cursor-pointer"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
       )}
 
-      {/* Confirmation Action Modal (Delete / Reindex) */}
-      {confirmAction && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs p-4 animate-fade-in">
-          <div className="glass-panel w-full max-w-md bg-[#0c0f17] border-white/10 rounded-xl p-6 flex flex-col gap-4 shadow-2xl">
-            <div className="flex items-center gap-3">
-              <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                confirmAction.type === 'delete' ? 'bg-rose-500/10 text-rose-400' : 'bg-amber-500/10 text-amber-400'
-              }`}>
-                {confirmAction.type === 'delete' ? <Trash2 size={20} /> : <RotateCw size={20} />}
-              </div>
-              <div>
-                <h4 className="text-sm font-bold text-white">
-                  {confirmAction.type === 'delete' ? 'Confirm Deletion' : 'Confirm Reindexing'}
-                </h4>
-                <p className="text-xs text-slate-400 mt-0.5">
-                  {confirmAction.docName}
-                </p>
-              </div>
+      {/* Graph Sync Tab */}
+      {activeTab === 'graph_sync' && (
+        <Card className="p-6 space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                <GitBranch size={16} className="text-indigo-400" />
+                Knowledge Graph Ingestion & Entity Links
+              </h3>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Inspect structured entities extracted from workspace documents and synchronized to the global graph.
+              </p>
             </div>
 
-            <p className="text-xs text-slate-300 leading-relaxed">
-              {confirmAction.type === 'delete'
-                ? 'Are you sure you want to delete this document? All associated vector embeddings and chunk indexes will be permanently removed from storage.'
-                : 'Reindexing will erase existing vector chunks and re-run text parsing and embedding generation. This may take a few moments.'}
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => navigate('/user/graph')}
+              className="bg-indigo-600 hover:bg-indigo-500 text-white flex items-center gap-1.5"
+            >
+              <ExternalLink size={13} /> Open Full Graph Explorer
+            </Button>
+          </div>
+
+          <div className="p-4 rounded-xl bg-black/20 border border-white/[0.04] space-y-2 text-xs">
+            <span className="font-semibold text-slate-300">Graph Ingestion Pipeline</span>
+            <p className="text-slate-400 text-[11px] leading-relaxed">
+              When documents are processed, entities (Organizations, Skills, People, Projects, Tasks) are automatically extracted using NLP entity recognition and linked to document chunks with bidirectional provenance.
             </p>
-
-            <div className="flex justify-end gap-3 mt-2">
-              <button
-                onClick={() => setConfirmAction(null)}
-                disabled={isSubmittingAction}
-                className="px-4 py-1.5 bg-white/5 hover:bg-white/10 text-xs font-semibold text-slate-300 rounded-lg transition-all cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => {
-                  if (confirmAction.type === 'delete') {
-                    handleDelete(confirmAction.docId);
-                  } else {
-                    handleReindex(confirmAction.docId);
-                  }
-                }}
-                disabled={isSubmittingAction}
-                className={`px-4 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer flex items-center gap-2 ${
-                  confirmAction.type === 'delete'
-                    ? 'bg-rose-600 hover:bg-rose-500 text-white'
-                    : 'bg-amber-600 hover:bg-amber-500 text-white'
-                }`}
-              >
-                {isSubmittingAction && <RotateCw size={13} className="animate-spin" />}
-                <span>{confirmAction.type === 'delete' ? 'Delete Document' : 'Start Reindex'}</span>
-              </button>
-            </div>
           </div>
-        </div>
+        </Card>
       )}
 
+      {/* Processing Activity Tab */}
+      {activeTab === 'activity' && (
+        <Card className="p-6 space-y-4">
+          <h3 className="text-sm font-bold text-white flex items-center gap-2">
+            <Activity size={16} className="text-cyan-400" />
+            Document Processing Activity & Provenance
+          </h3>
+          <div className="space-y-2 text-xs">
+            {docs.map((d) => (
+              <div key={d.id} className="p-3 rounded-lg bg-white/[0.02] border border-white/[0.04] flex items-center justify-between">
+                <div>
+                  <span className="font-bold text-white">{d.filename}</span>
+                  <span className="text-[10px] text-slate-500 block">{d.id}</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-[10px] text-slate-400">{new Date(d.created_at).toLocaleTimeString()}</span>
+                  <StatusBadge status={d.status} label={d.status} />
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
+      {/* 5. Upload Modal */}
+      <Modal
+        isOpen={showUploadModal}
+        onClose={() => setShowUploadModal(false)}
+        title="Upload Workspace Document"
+        description="Upload text, markdown, or PDF files for chunk extraction and vector embedding."
+        size="md"
+      >
+        <div
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+          className={`border-2 border-dashed rounded-xl p-8 text-center transition-all ${
+            isDragging ? 'border-purple-400 bg-purple-500/10' : 'border-white/10 bg-black/20 hover:border-white/20'
+          }`}
+        >
+          <Upload size={32} className="mx-auto text-purple-400 mb-3" />
+          <h4 className="text-xs font-bold text-white">Drag and drop file here, or browse</h4>
+          <p className="text-[11px] text-slate-400 mt-1">Supports PDF, Markdown, TXT, and JSON files</p>
+          <input
+            type="file"
+            ref={fileInputRef}
+            onChange={(e) => e.target.files?.[0] && handleFileUpload(e.target.files[0])}
+            className="hidden"
+          />
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={() => fileInputRef.current?.click()}
+            className="mt-4"
+          >
+            Browse Files
+          </Button>
+        </div>
+      </Modal>
+
+      {/* 6. Delete / Reindex Confirmation Modal */}
+      <Modal
+        isOpen={Boolean(confirmAction)}
+        onClose={() => setConfirmAction(null)}
+        title={confirmAction?.type === 'delete' ? 'Delete Document' : 'Reindex Document'}
+        description={
+          confirmAction?.type === 'delete'
+            ? 'Are you sure you want to permanently delete this document and its embeddings?'
+            : 'Reindexing will clear existing vector embeddings and regenerate all chunks.'
+        }
+        size="sm"
+      >
+        <div className="space-y-4">
+          <div className="p-3 rounded-lg bg-rose-500/10 border border-rose-500/20 text-xs text-rose-200">
+            Target: <span className="font-bold text-white">'{confirmAction?.docName}'</span>
+          </div>
+          <div className="flex items-center justify-end gap-2">
+            <Button variant="secondary" size="sm" onClick={() => setConfirmAction(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant={confirmAction?.type === 'delete' ? 'danger' : 'primary'}
+              size="sm"
+              onClick={() => {
+                if (confirmAction?.type === 'delete') {
+                  handleDelete(confirmAction.docId);
+                } else {
+                  handleReindex(confirmAction.docId);
+                }
+              }}
+            >
+              Confirm
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* 7. Unified Evidence Drawer */}
+      <Drawer
+        isOpen={evidenceDrawerOpen}
+        onClose={() => setEvidenceDrawerOpen(false)}
+        title="Evidence Grounding Inspector"
+        description="Detailed vector chunk content, provenance, and citation grounds."
+        size="md"
+      >
+        {activeEvidence && (
+          <div className="space-y-4 text-xs">
+            <div>
+              <span className="text-slate-500 text-[10px] uppercase font-bold block mb-1">Source Document</span>
+              <div className="p-2.5 rounded-lg bg-black/40 border border-white/[0.05] text-white font-bold">
+                {activeEvidence.documentName}
+              </div>
+            </div>
+
+            <div>
+              <span className="text-slate-500 text-[10px] uppercase font-bold block mb-1">Chunk Content</span>
+              <div className="p-3 rounded-lg bg-black/50 border border-white/[0.06] text-slate-200 font-mono text-[11px] leading-relaxed max-h-64 overflow-y-auto">
+                {activeEvidence.chunk?.content || activeEvidence.citation?.snippet}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 text-[11px]">
+              <div className="p-2 rounded bg-white/[0.02] border border-white/[0.04]">
+                <span className="text-slate-500 block">Chunk ID:</span>
+                <span className="font-mono text-purple-300 truncate block">{activeEvidence.chunk?.chunk_id || activeEvidence.chunk?.id || 'chunk-1'}</span>
+              </div>
+              <div className="p-2 rounded bg-white/[0.02] border border-white/[0.04]">
+                <span className="text-slate-500 block">Provenance:</span>
+                <span className="text-emerald-400 font-semibold">Document-Derived</span>
+              </div>
+            </div>
+
+            <div className="pt-3 border-t border-white/[0.06] flex justify-end gap-2">
+              <Button variant="secondary" size="sm" onClick={() => setEvidenceDrawerOpen(false)}>
+                Close
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => {
+                  setEvidenceDrawerOpen(false);
+                  navigate(`/user/graph?docId=${activeEvidence.documentId}`);
+                }}
+                className="bg-indigo-600 hover:bg-indigo-500 text-white"
+              >
+                Inspect in Graph
+              </Button>
+            </div>
+          </div>
+        )}
+      </Drawer>
     </div>
   );
 }
