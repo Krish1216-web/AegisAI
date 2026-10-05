@@ -1,6 +1,6 @@
 {
-  "total_test_files": 228,
-  "total_tests": 930,
+  "total_test_files": 229,
+  "total_tests": 955,
   "files": [
     {
       "file": "tests/staging/test_staging_smoke_suite.py",
@@ -401,6 +401,10 @@
     {
       "file": "tests/unit/test_p10_workflow_engine_hardening.py",
       "test_count": 1
+    },
+    {
+      "file": "tests/unit/test_p11_10_final_production_readiness.py",
+      "test_count": 25
     },
     {
       "file": "tests/unit/test_p11_1_container_environment.py",
