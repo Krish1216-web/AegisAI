@@ -1,85 +1,146 @@
-import React, { useState, useEffect } from 'react';
-import { Bot, Sliders, Cpu, Activity, RefreshCw, CheckCircle2, Clock, Zap } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Bot, Sliders, Cpu, Activity, RefreshCw, CheckCircle2, Clock, Zap, ShieldCheck, Lock } from 'lucide-react';
 import { getPlatformCapabilities } from '../../api/platform';
+import {
+  Button,
+  Card,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  CardContent,
+  StatusBadge,
+  Badge,
+  EmptyState,
+  Skeleton,
+  MetricCard
+} from '../../components/ui';
 
 export default function AdminAgents({ addLog }) {
   const [agents, setAgents] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [error, setError] = useState(null);
 
-  const fetchAgents = async () => {
-    setLoading(true);
+  const fetchAgents = useCallback(async () => {
+    setError(null);
     try {
       const res = await getPlatformCapabilities('agent');
       setAgents(res.items || []);
     } catch (err) {
       console.error('Failed to load agent capabilities:', err);
+      setError('Failed to load agent registry telemetry.');
     } finally {
       setLoading(false);
+      setIsSyncing(false);
     }
-  };
-
-  useEffect(() => {
-    fetchAgents();
   }, []);
 
+  useEffect(() => {
+    setLoading(true);
+    fetchAgents();
+  }, [fetchAgents]);
+
+  const handleSync = () => {
+    setIsSyncing(true);
+    fetchAgents();
+  };
+
   return (
-    <div className="flex flex-col gap-6 animate-fade-in text-slate-300 font-sans">
-      <div className="flex justify-between items-center border-b border-[rgba(255,255,255,0.06)] pb-4">
+    <div className="flex flex-col gap-6 animate-fade-in text-slate-100 font-sans pb-10">
+      
+      {/* Header */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-white/[0.08] pb-4">
         <div>
-          <h2 className="text-xl font-bold text-white tracking-wide uppercase flex items-center gap-2">
-            <Sliders size={20} className="text-purple-400" />
-            AI Agent Registry & Orchestration Telemetry
-          </h2>
-          <p className="text-xs text-slate-500 mt-1">Audit cognitive agent nodes, execution state graphs, required permissions, and lifecycle health.</p>
+          <div className="flex items-center gap-3">
+            <h1 className="text-xl font-bold text-white tracking-wide uppercase flex items-center gap-2">
+              <Sliders size={20} className="text-purple-400" />
+              AI Agent Registry & Orchestration Telemetry
+            </h1>
+            <Badge variant="purple" size="sm">ADMIN REGISTRY</Badge>
+          </div>
+          <p className="text-xs text-slate-400 mt-1">Audit cognitive agent nodes, execution state graphs, required permissions, and lifecycle health.</p>
         </div>
 
-        <button 
-          onClick={fetchAgents}
-          className="btn-secondary text-xs flex items-center gap-2 cursor-pointer font-mono bg-white/5 border border-[rgba(255,255,255,0.06)] px-3 py-2 rounded-lg text-slate-300 hover:text-white"
+        <Button 
+          variant="ghost"
+          size="sm"
+          onClick={handleSync}
+          disabled={loading || isSyncing}
+          isLoading={isSyncing}
+          leftIcon={<RefreshCw size={12} className={isSyncing ? 'animate-spin' : ''} />}
         >
-          <RefreshCw size={12} className={loading ? 'animate-spin' : ''} /> REFRESH
-        </button>
+          REFRESH_REGISTRY
+        </Button>
       </div>
 
+      {error && (
+        <div className="p-4 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-300 text-xs flex items-center justify-between gap-3">
+          <span>{error}</span>
+          <Button variant="ghost" size="xs" onClick={fetchAgents}>Retry</Button>
+        </div>
+      )}
+
+      {/* Agents Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {agents.length === 0 ? (
-          <div className="col-span-full py-12 text-center text-slate-500 text-xs font-mono">
-            {loading ? 'Discovering registered agent capabilities...' : 'No agent capabilities registered.'}
+        {loading ? (
+          Array.from({ length: 6 }).map((_, i) => (
+            <Card key={i} className="border-white/[0.08] bg-[#0d1017]/80 p-5">
+              <Skeleton className="h-6 w-3/4 mb-3" />
+              <Skeleton className="h-12 w-full mb-4" />
+              <Skeleton className="h-4 w-1/2" />
+            </Card>
+          ))
+        ) : agents.length === 0 ? (
+          <div className="col-span-full">
+            <EmptyState
+              icon={<Bot size={24} />}
+              title="No agent capabilities registered"
+              description="Platform agent subsystem has not registered dynamic custom agent capabilities."
+              actionLabel="Refresh Telemetry"
+              onAction={fetchAgents}
+            />
           </div>
         ) : (
           agents.map((agent, idx) => (
-            <div key={idx} className="glass-panel p-5 bg-[#090b10ab] border border-[rgba(255,255,255,0.06)] rounded-xl flex flex-col justify-between gap-4">
-              <div className="flex flex-col gap-2">
+            <Card key={idx} className="border-white/[0.08] bg-[#0d1017]/80 flex flex-col justify-between">
+              <CardHeader className="border-b border-white/[0.06] pb-3.5">
                 <div className="flex justify-between items-start">
-                  <div className="w-10 h-10 rounded-lg bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-400">
-                    <Bot size={20} />
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-400">
+                      <Bot size={18} />
+                    </div>
+                    <div>
+                      <CardTitle className="text-sm font-bold text-white">{agent.name}</CardTitle>
+                      <span className="text-[10px] font-mono text-purple-400">{agent.capability_id}</span>
+                    </div>
                   </div>
-                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold font-mono ${agent.enabled ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'}`}>
-                    {agent.enabled ? 'ONLINE' : 'DISABLED'}
-                  </span>
+                  <StatusBadge status={agent.enabled ? 'ONLINE' : 'DISABLED'} size="xs" />
                 </div>
-                <h3 className="font-bold text-sm text-white mt-1">{agent.name}</h3>
-                <p className="text-xs text-slate-400">{agent.description}</p>
-              </div>
+              </CardHeader>
 
-              <div className="flex flex-col gap-2 pt-3 border-t border-[rgba(255,255,255,0.04)] text-[10px] font-mono text-slate-500">
-                <div className="flex justify-between">
-                  <span>Capability ID:</span>
-                  <span className="text-slate-300">{agent.capability_id}</span>
+              <CardContent className="p-4 flex flex-col gap-3">
+                <p className="text-xs text-slate-300 leading-relaxed">{agent.description}</p>
+
+                <div className="flex flex-col gap-1.5 pt-3 border-t border-white/[0.04] text-[11px] font-mono text-slate-400">
+                  <div className="flex justify-between">
+                    <span>Version:</span>
+                    <span className="text-slate-200">{agent.version}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Permissions:</span>
+                    <span className="text-purple-300 truncate max-w-[200px]">
+                      {agent.required_permissions && agent.required_permissions.length > 0
+                        ? agent.required_permissions.join(', ')
+                        : 'Default Workspace'}
+                    </span>
+                  </div>
                 </div>
-                <div className="flex justify-between">
-                  <span>Version:</span>
-                  <span className="text-slate-300">{agent.version}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Permissions:</span>
-                  <span className="text-purple-400">{agent.required_permissions.length === 0 ? 'Public' : agent.required_permissions.join(', ')}</span>
-                </div>
-              </div>
-            </div>
+              </CardContent>
+            </Card>
           ))
         )}
       </div>
+
     </div>
   );
 }
