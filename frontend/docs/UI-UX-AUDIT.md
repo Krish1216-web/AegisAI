@@ -29,27 +29,28 @@ Prior to Phase 12.1, a comprehensive inspection of the AegisAI frontend was cond
 | **Agent Center / Workforce Control** | Consumer mock marketplace with fake download counts | Unified enterprise AI Workforce Control Center covering 9 canonical system agents, DAG architecture map, side-by-side comparison, inspector drawer, and governance boundaries | `VERIFIED LOCALLY` |
 | **Memory Vault / Long-Term Intelligence** | Hardcoded mock preferences with fake vector download | Comprehensive Long-Term Intelligence & Context Center with 9 canonical memory types, pgvector metrics, Knowledge Graph sync matrix, inspector drawer, and safe deletion | `VERIFIED LOCALLY` |
 | **MCP Center / Integration Control Plane** | Generic tool catalog without live transports | Enterprise Tool & Integration Control Plane with 4 transports (SSE, HTTP, Stdio), dynamic schema introspection, safe vs restricted tool confirmation, inspector drawer, and security audit | `VERIFIED LOCALLY` |
+| **Workflow Studio / AI Automation** | Disconnected basic editor without accessible DAG representation | Visual AI Automation Studio with @xyflow/react canvas, 13 node types across 3 categories, topological auto-layout, live execution state sync, accessible linear text outline, and timezone-aware scheduling | `VERIFIED LOCALLY` |
 
 ---
 
 ## 3. Responsive Adaptations Across Viewport Tiers
 
-The application shell, landing page, AI OS workspace, Agent Center, Memory Vault, MCP Center, and layout frames adapt dynamically across standard responsive breakpoints:
+The application shell, landing page, AI OS workspace, Agent Center, Memory Vault, MCP Center, Workflow Studio, and layout frames adapt dynamically across standard responsive breakpoints:
 
 - **Mobile (360px – 767px)**:
   - Sidebar automatically collapses to a high-density 16-character icon bar.
   - Landing navigation switches to compact header with essential CTAs; pipeline steps stack responsively.
   - Primary AI Workspace Console stacks mode selectors, prompt textarea, and action buttons cleanly.
-  - Agent Center, Memory Vault, and MCP Center grids collapse to a single-column layout; Drawers open to full viewport width with touch-friendly dismiss.
+  - Agent Center, Memory Vault, MCP Center, and Workflow Studio grids collapse to a single-column layout; Drawers open to full viewport width with touch-friendly dismiss.
   - Top bar breadcrumbs collapse gracefully; search triggers modal command palette.
   - Tables enable horizontal scroll wrappers without breaking container layouts.
 - **Tablet & Laptop (768px – 1024px)**:
   - Sidebar supports 1-click collapse/expand (`◀` / `▶`).
   - MetricCard KPI strips and capability cards adjust to responsive 2x2 grids.
-  - Agent Center, Memory Vault, and MCP Center render 2-column cards; Comparison and Graph Matrix views balance cleanly.
+  - Agent Center, Memory Vault, MCP Center, and Workflow Studio render 2-column cards; Comparison and Graph Matrix views balance cleanly.
   - Multi-domain snapshots balance cleanly side-by-side.
 - **Desktop (1024px – 1440px+)**:
-  - Full multi-column workspace layout with sidebars, telemetry tickers, floating execution consoles, 3-column Agent Directory, Memory Vault, and MCP Tool catalogs with interactive DAG Architecture & KG Association flows.
+  - Full multi-column workspace layout with sidebars, telemetry tickers, floating execution consoles, 3-column Agent Directory, Memory Vault, MCP Tool catalogs, and full Visual AI Automation Studio with interactive DAG Architecture & KG Association flows.
 
 ---
 
@@ -62,21 +63,21 @@ The application shell, landing page, AI OS workspace, Agent Center, Memory Vault
   - `role="combobox"` and `role="listbox"` on Command Palette.
   - `role="tablist"` and `role="tab"` on Tabs.
   - `aria-live="polite"` on Toast notifications and execution progress cards.
-  - Accessible plain-text flow fallback for visual Architecture DAG maps with complete step numbering.
+  - Accessible plain-text flow fallback for visual Architecture DAG maps and Workflow Builder with complete step numbering.
 - **Reduced Motion**: All animations (including landing page pipeline auto-advance and status pulses) disable automatically when `prefers-reduced-motion: reduce` is enabled.
 
 ---
 
 ## 5. Performance & Build Metrics
 
-- **Vite Production Build**: 2,561 modules transformed cleanly in 0.90s without build or TypeScript errors.
-- **Bundle Optimization**: Gzipped CSS is ~20.29 kB; gzipped JS is ~374.74 kB.
+- **Vite Production Build**: 2,561 modules transformed cleanly in 1.23s without build or TypeScript errors.
+- **Bundle Optimization**: Gzipped CSS is ~20.21 kB; gzipped JS is ~376.45 kB.
 - **Render Efficiency**: Elimination of inline duplicate state handlers in favor of shared context providers (`ThemeContext`, `ToastContext`, `AuthContext`).
 
 ---
 
 ## 6. Known Limitations & Verification Scope
 
-- **Unit & Integration Verification**: **VERIFIED LOCALLY** (118/118 Vitest tests + 955/955 Pytest tests passing).
+- **Unit & Integration Verification**: **VERIFIED LOCALLY** (131/131 Vitest tests + 955/955 Pytest tests passing).
 - **Production Asset Build**: **VERIFIED LOCALLY** (0 errors).
 - **Headless Browser Automated E2E**: **NOT BROWSER-VERIFIED** (In accordance with project guidelines, browser-level visual rendering and screenshot testing was not executed in this environment).
