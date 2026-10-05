@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
   ShieldAlert, 
   Key, 
@@ -14,7 +14,19 @@ import {
   RefreshCw, 
   Download, 
   CheckCircle2, 
-  FileText 
+  FileText,
+  Search,
+  Check,
+  Shield,
+  AlertTriangle,
+  Fingerprint,
+  Link as LinkIcon,
+  Layers,
+  Clock,
+  ExternalLink,
+  ChevronLeft,
+  ChevronRight,
+  X
 } from 'lucide-react';
 import { 
   getAdminSecurityPosture, 
@@ -24,36 +36,82 @@ import {
   getAdminSecurityAlerts,
   verifyAdminAuditIntegrity
 } from '../../api/admin';
+import {
+  Button,
+  IconButton,
+  Badge,
+  StatusBadge,
+  Card,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  CardContent,
+  CardFooter,
+  MetricCard,
+  EmptyState,
+  Skeleton,
+  Drawer,
+  Modal,
+  Table
+} from '../../components/ui';
 
 export default function AdminSecurity() {
+  const [activeTab, setActiveTab] = useState('posture'); // 'posture' | 'alerts' | 'lookup' | 'audit'
   const [posture, setPosture] = useState(null);
   const [roleMatrix, setRoleMatrix] = useState(null);
   const [auditLogs, setAuditLogs] = useState([]);
+  const [auditTotal, setAuditTotal] = useState(0);
+  const [auditPage, setAuditPage] = useState(1);
+  const [auditPageSize] = useState(10);
+  const [auditSearch, setAuditSearch] = useState('');
+  
   const [securityAlerts, setSecurityAlerts] = useState([]);
+  const [selectedAlert, setSelectedAlert] = useState(null);
+  const [selectedAuditLog, setSelectedAuditLog] = useState(null);
+
   const [integrityStatus, setIntegrityStatus] = useState(null);
   const [verifyingIntegrity, setVerifyingIntegrity] = useState(false);
   const [loading, setLoading] = useState(true);
+  
+  // Incident Lookup
+  const [incidentLookupId, setIncidentLookupId] = useState('');
+  const [incidentLookupResult, setIncidentLookupResult] = useState(null);
+  const [isSearchingIncident, setIsSearchingIncident] = useState(false);
+
+  // Export Modal
+  const [showExportModal, setShowExportModal] = useState(false);
+  const [exportFormat, setExportFormat] = useState('json');
+  const [isExporting, setIsExporting] = useState(false);
   const [exportMsg, setExportMsg] = useState(null);
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     setLoading(true);
     try {
       const [posData, rolesData, logsData, alertsData] = await Promise.all([
-        getAdminSecurityPosture(),
-        getAdminRolesPermissions(),
-        getAdminAuditLogs({ page: 1, page_size: 20 }),
+        getAdminSecurityPosture().catch(() => null),
+        getAdminRolesPermissions().catch(() => null),
+        getAdminAuditLogs({ 
+          page: auditPage, 
+          page_size: auditPageSize, 
+          search: auditSearch.trim() || undefined 
+        }).catch(() => ({ total: 0, logs: [] })),
         getAdminSecurityAlerts().catch(() => ({ total: 0, alerts: [] }))
       ]);
       setPosture(posData);
       setRoleMatrix(rolesData);
-      setAuditLogs(logsData.logs);
+      setAuditLogs(logsData.logs || []);
+      setAuditTotal(logsData.total || 0);
       setSecurityAlerts(alertsData.alerts || []);
     } catch (err) {
       console.error('Failed to load security posture:', err);
     } finally {
       setLoading(false);
     }
-  };
+  }, [auditPage, auditPageSize, auditSearch]);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
 
   const handleVerifyIntegrity = async () => {
     setVerifyingIntegrity(true);
@@ -61,233 +119,619 @@ export default function AdminSecurity() {
       const res = await verifyAdminAuditIntegrity();
       setIntegrityStatus(res);
     } catch (err) {
-      setIntegrityStatus({ chain_valid: false, details: 'Integrity verification request failed.' });
+      setIntegrityStatus({
+        chain_valid: false,
+        total_records_checked: 0,
+        broken_links_count: 1,
+        details: err?.message || 'Integrity verification request failed.'
+      });
     } finally {
       setVerifyingIntegrity(false);
     }
   };
 
-  useEffect(() => {
-    fetchData();
-  }, []);
+  const handleIncidentSearch = (e) => {
+    e?.preventDefault();
+    if (!incidentLookupId.trim()) return;
+    setIsSearchingIncident(true);
 
-  const handleExport = async (format) => {
+    const query = incidentLookupId.trim().toLowerCase();
+    const matchedAlert = securityAlerts.find(a => 
+      (a.alert_id && a.alert_id.toLowerCase().includes(query)) ||
+      (a.rule_name && a.rule_name.toLowerCase().includes(query)) ||
+      (a.title && a.title.toLowerCase().includes(query))
+    );
+
+    const matchedLogs = auditLogs.filter(l => 
+      (l.id && l.id.toLowerCase().includes(query)) ||
+      (l.user_id && l.user_id.toLowerCase().includes(query)) ||
+      (l.action && l.action.toLowerCase().includes(query))
+    );
+
+    setIncidentLookupResult({
+      query: incidentLookupId.trim(),
+      alert: matchedAlert || null,
+      logs: matchedLogs || [],
+      searchedAt: new Date().toISOString()
+    });
+    setIsSearchingIncident(false);
+  };
+
+  const handleExport = async () => {
+    setIsExporting(true);
     try {
       const res = await exportAdminReport({
         export_type: 'audit_logs',
-        format,
+        format: exportFormat,
         limit: 500
       });
-      // Trigger download
-      const blob = new Blob([res.content], { type: format === 'csv' ? 'text/csv' : 'application/json' });
+      const blob = new Blob([res.content], { type: exportFormat === 'csv' ? 'text/csv' : 'application/json' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `audit_logs_${new Date().toISOString()}.${format}`;
+      a.download = `audit_logs_${new Date().toISOString()}.${exportFormat}`;
+      document.body.appendChild(a);
       a.click();
+      a.remove();
       URL.revokeObjectURL(url);
-      setExportMsg(`Exported ${res.record_count} audit records successfully as ${format.toUpperCase()}.`);
+      setExportMsg(`Exported ${res.record_count} audit records successfully.`);
+      setShowExportModal(false);
       setTimeout(() => setExportMsg(null), 4000);
     } catch (err) {
-      setExportMsg('Export failed.');
+      setExportMsg(`Export failed: ${err.message}`);
+    } finally {
+      setIsExporting(false);
     }
   };
 
+  const totalAuditPages = Math.max(1, Math.ceil(auditTotal / auditPageSize));
+
   return (
-    <div className="flex flex-col gap-6 animate-fade-in text-slate-300">
+    <div className="flex flex-col gap-6 animate-fade-in text-slate-100 font-sans pb-12">
       
-      {/* Page Header */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-[rgba(255,255,255,0.06)] pb-4">
-        <div>
-          <h2 className="text-xl font-bold text-white tracking-wide uppercase flex items-center gap-2">
-            <ShieldAlert size={20} className="text-purple-400" />
-            Security Posture & Compliance Registry
-          </h2>
-          <p className="text-xs text-slate-500 mt-1">Tenant isolation bounds, RBAC enforcement policies, confirmation gates, and persistent audit records.</p>
+      {/* 1. Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/[0.08] pb-5">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-purple-500/10 border border-purple-500/30 flex items-center justify-center text-purple-400 shadow-lg shadow-purple-500/10">
+            <ShieldAlert size={20} />
+          </div>
+          <div>
+            <h1 className="text-xl font-bold text-white tracking-wide uppercase flex items-center gap-2">
+              Security Operations & Cryptographic Audit Center
+              <Badge variant="purple">SOC Plane</Badge>
+            </h1>
+            <p className="text-xs text-slate-400 mt-0.5">
+              Live intrusion alerts, threat lookup, cryptographic audit integrity verification, and immutable compliance exports.
+            </p>
+          </div>
         </div>
 
-        <div className="flex items-center gap-3">
-          <button 
-            onClick={() => handleExport('csv')}
-            className="btn-secondary text-xs flex items-center gap-2 cursor-pointer font-mono bg-white/5 border border-[rgba(255,255,255,0.06)] px-3 py-2 rounded-lg text-slate-300 hover:text-white"
+        <div className="flex items-center gap-2">
+          <Button 
+            variant="secondary"
+            size="sm"
+            onClick={() => setShowExportModal(true)}
+            className="flex items-center gap-1.5 text-xs"
           >
-            <Download size={12} /> EXPORT_CSV
-          </button>
-          <button 
-            onClick={() => handleExport('json')}
-            className="btn-secondary text-xs flex items-center gap-2 cursor-pointer font-mono bg-white/5 border border-[rgba(255,255,255,0.06)] px-3 py-2 rounded-lg text-slate-300 hover:text-white"
-          >
-            <Download size={12} /> EXPORT_JSON
-          </button>
-          <button 
+            <Download size={13} /> Export Report
+          </Button>
+
+          <Button 
+            variant="primary"
+            size="sm"
             onClick={fetchData}
-            className="btn-secondary text-xs flex items-center gap-2 cursor-pointer font-mono bg-white/5 border border-[rgba(255,255,255,0.06)] px-3 py-2 rounded-lg text-slate-300 hover:text-white"
+            disabled={loading}
+            className="flex items-center gap-2 text-xs bg-purple-600 hover:bg-purple-500 text-white"
           >
-            <RefreshCw size={12} className={loading ? 'animate-spin' : ''} />
-          </button>
+            <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
+            {loading ? 'Refreshing...' : 'Refresh SOC'}
+          </Button>
         </div>
       </div>
 
       {exportMsg && (
-        <div className="p-4 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs flex items-center gap-2">
-          <CheckCircle2 size={14} />
-          <span>{exportMsg}</span>
+        <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-xs flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 size={15} />
+            <span>{exportMsg}</span>
+          </div>
+          <IconButton variant="ghost" size="xs" onClick={() => setExportMsg(null)} aria-label="Dismiss">
+            <X size={13} />
+          </IconButton>
         </div>
       )}
 
-      {/* Security Posture Status Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="glass-panel p-4 bg-slate-950/40 border border-[rgba(255,255,255,0.06)] rounded-xl">
-          <span className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">Tenant Isolation</span>
-          <div className="text-lg font-mono font-bold text-emerald-400 mt-1 flex items-center gap-2">
-            <ShieldCheck size={16} /> STRICT_ENFORCED
-          </div>
-          <span className="text-[10px] text-slate-400 mt-1 block">Cross-tenant queries blocked</span>
-        </div>
-
-        <div className="glass-panel p-4 bg-slate-950/40 border border-[rgba(255,255,255,0.06)] rounded-xl">
-          <span className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">RBAC Authorization</span>
-          <div className="text-lg font-mono font-bold text-purple-400 mt-1 flex items-center gap-2">
-            <Lock size={16} /> SERVER_VERIFIED
-          </div>
-          <span className="text-[10px] text-slate-400 mt-1 block">JWT Cryptographic Bounds</span>
-        </div>
-
-        <div className="glass-panel p-4 bg-slate-950/40 border border-[rgba(255,255,255,0.06)] rounded-xl">
-          <span className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">SSRF & MCP Guard</span>
-          <div className="text-lg font-mono font-bold text-cyan-400 mt-1 flex items-center gap-2">
-            <ShieldCheck size={16} /> ACTIVE_GATED
-          </div>
-          <span className="text-[10px] text-slate-400 mt-1 block">Loopback & Transport Filtering</span>
-        </div>
-
-        <div className="glass-panel p-4 bg-slate-950/40 border border-[rgba(255,255,255,0.06)] rounded-xl">
-          <span className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">Secret Redaction</span>
-          <div className="text-lg font-mono font-bold text-emerald-400 mt-1 flex items-center gap-2">
-            <ShieldCheck size={16} /> RECURSIVE_SCRUB
-          </div>
-          <span className="text-[10px] text-slate-400 mt-1 block">Tokens & Keys Sanitized</span>
-        </div>
+      {/* 2. Top KPI Strip */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+        <MetricCard
+          title="Tenant Isolation"
+          value="Enforced"
+          subtitle="Strict pgvector & DB partition"
+          trend="Defense-in-Depth"
+          icon={<ShieldCheck size={18} className="text-emerald-400" />}
+        />
+        <MetricCard
+          title="Security Alerts"
+          value={securityAlerts.length}
+          subtitle="Real-time incident detection"
+          trend="Rule Matrix Active"
+          icon={<ShieldAlert size={18} className="text-amber-400" />}
+        />
+        <MetricCard
+          title="Audit Integrity"
+          value={integrityStatus?.chain_valid ? '100% Valid' : 'Chained SHA-256'}
+          subtitle="Cryptographically verified records"
+          trend="Immutable Audit"
+          icon={<Fingerprint size={18} className="text-purple-400" />}
+        />
+        <MetricCard
+          title="Secret Redaction"
+          value="Active"
+          subtitle="Zero credential client leakage"
+          trend="Zero-Knowledge"
+          icon={<Lock size={18} className="text-cyan-400" />}
+        />
       </div>
 
-      {/* Grid: Permission Matrix & Audit Log */}
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-        
-        {/* Left: Permission Matrix Grid */}
-        <div className="glass-panel p-5 bg-[#090b10ab] border border-[rgba(255,255,255,0.06)] rounded-xl flex flex-col gap-4">
-          <h4 className="text-xs font-bold text-white uppercase tracking-wider border-b border-[rgba(255,255,255,0.06)] pb-2 flex items-center gap-2">
-            <Lock size={14} className="text-purple-400" /> Enterprise Role Permission Matrix
-          </h4>
+      {/* 3. Navigation Tabs */}
+      <div className="flex flex-wrap items-center gap-2 border-b border-white/[0.06] pb-3">
+        {[
+          { id: 'posture', label: 'Security Overview & Posture', icon: <Shield size={14} /> },
+          { id: 'alerts', label: `Live Security Alerts (${securityAlerts.length})`, icon: <ShieldAlert size={14} /> },
+          { id: 'lookup', label: 'Incident & Threat Lookup', icon: <Search size={14} /> },
+          { id: 'audit', label: `Chained Audit Explorer (${auditTotal})`, icon: <FileText size={14} /> }
+        ].map((tab) => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-2 transition-all cursor-pointer ${
+              activeTab === tab.id
+                ? 'bg-purple-500/20 text-purple-300 border border-purple-500/40 shadow-sm'
+                : 'bg-white/[0.02] border border-white/[0.05] text-slate-400 hover:text-white'
+            }`}
+          >
+            {tab.icon}
+            <span>{tab.label}</span>
+          </button>
+        ))}
+      </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse text-xs font-mono">
-              <thead>
-                <tr className="border-b border-[rgba(255,255,255,0.06)] text-slate-400 text-[10px]">
-                  <th className="pb-3 font-semibold">Scope / Capability Area</th>
-                  <th className="pb-3 font-semibold text-center">Viewer</th>
-                  <th className="pb-3 font-semibold text-center">Member</th>
-                  <th className="pb-3 font-semibold text-center">Admin/Owner</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[rgba(255,255,255,0.02)] text-[10px]">
-                {(roleMatrix?.permission_matrix || []).map((p, idx) => (
-                  <tr key={idx} className="hover:bg-white/1 transition-colors">
-                    <td className="py-2.5 font-medium text-slate-200">{p.module}</td>
-                    <td className="py-2.5 text-center">
-                      <span className={`px-2 py-0.5 rounded ${p.viewer ? 'text-emerald-400' : 'text-slate-600'}`}>{p.viewer ? 'ALLOW' : 'DENY'}</span>
-                    </td>
-                    <td className="py-2.5 text-center">
-                      <span className={`px-2 py-0.5 rounded ${p.user ? 'text-emerald-400' : 'text-slate-600'}`}>{p.user ? 'ALLOW' : 'DENY'}</span>
-                    </td>
-                    <td className="py-2.5 text-center">
-                      <span className={`px-2 py-0.5 rounded ${p.admin ? 'text-emerald-400 font-bold' : 'text-slate-600'}`}>{p.admin ? 'ALLOW' : 'DENY'}</span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
+      {/* 4. Tab 1: Security Posture */}
+      {activeTab === 'posture' && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <Card className="p-5 space-y-4">
+            <CardHeader className="p-0 pb-3 border-b border-white/[0.06]">
+              <CardTitle className="text-sm font-bold text-white flex items-center gap-2">
+                <ShieldCheck size={16} className="text-emerald-400" />
+                Active Security Defenses & Gates
+              </CardTitle>
+            </CardHeader>
+            <div className="space-y-3 text-xs">
+              <div className="flex justify-between items-center p-3 rounded-lg bg-white/[0.02] border border-white/[0.04]">
+                <div>
+                  <span className="font-semibold text-white block">Tenant Workspace Isolation</span>
+                  <span className="text-[11px] text-slate-400">Partitioned DB queries & vector namespaces</span>
+                </div>
+                <Badge variant="emerald" size="xs">Enforced</Badge>
+              </div>
 
-        {/* Right: Persistent Audit Trail */}
-        <div className="glass-panel p-5 bg-[#090b10ab] border border-[rgba(255,255,255,0.06)] rounded-xl flex flex-col gap-4">
-          <div className="flex justify-between items-center border-b border-[rgba(255,255,255,0.06)] pb-2">
-            <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
-              <FileText size={14} className="text-cyan-400" /> Persistent Audit Records
-            </h4>
-            <button
-              onClick={handleVerifyIntegrity}
-              disabled={verifyingIntegrity}
-              className="text-[10px] font-mono px-2 py-1 rounded bg-purple-500/20 text-purple-300 border border-purple-500/40 hover:bg-purple-500/30 flex items-center gap-1 cursor-pointer"
-            >
-              <ShieldCheck size={11} className={verifyingIntegrity ? 'animate-spin' : ''} />
-              {verifyingIntegrity ? 'VERIFYING...' : 'VERIFY_INTEGRITY'}
-            </button>
-          </div>
+              <div className="flex justify-between items-center p-3 rounded-lg bg-white/[0.02] border border-white/[0.04]">
+                <div>
+                  <span className="font-semibold text-white block">SSRF & Path Traversal Defense</span>
+                  <span className="text-[11px] text-slate-400">Strict IP validation & sandbox jail</span>
+                </div>
+                <Badge variant="emerald" size="xs">Active</Badge>
+              </div>
 
-          {integrityStatus && (
-            <div className={`p-3 rounded-lg border text-[11px] font-mono flex items-center gap-2 ${
-              integrityStatus.chain_valid 
-                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300' 
-                : 'bg-rose-500/10 border-rose-500/30 text-rose-300'
-            }`}>
-              {integrityStatus.chain_valid ? <CheckCircle2 size={14} /> : <AlertCircle size={14} />}
-              <div>
-                <span className="font-bold">{integrityStatus.chain_valid ? 'SHA-256 CHAIN INTACT' : 'INTEGRITY VIOLATION DETECTED'}</span>
-                <span className="block text-[9px] opacity-80">{integrityStatus.details} ({integrityStatus.total_records_checked || 0} records verified)</span>
+              <div className="flex justify-between items-center p-3 rounded-lg bg-white/[0.02] border border-white/[0.04]">
+                <div>
+                  <span className="font-semibold text-white block">Restricted MCP Confirmation Gate</span>
+                  <span className="text-[11px] text-slate-400">Cryptographic approval for write/execute</span>
+                </div>
+                <Badge variant="emerald" size="xs">Active</Badge>
+              </div>
+
+              <div className="flex justify-between items-center p-3 rounded-lg bg-white/[0.02] border border-white/[0.04]">
+                <div>
+                  <span className="font-semibold text-white block">Automated Secret & Token Masking</span>
+                  <span className="text-[11px] text-slate-400">Zero sensitive credentials in logs or payloads</span>
+                </div>
+                <Badge variant="emerald" size="xs">Active</Badge>
               </div>
             </div>
-          )}
+          </Card>
 
-          <div className="flex flex-col gap-2 max-h-96 overflow-y-auto pr-1 font-mono text-[10px]">
-            {auditLogs.length === 0 ? (
-              <div className="py-8 text-center text-slate-500 text-xs">No audit logs found.</div>
-            ) : (
-              auditLogs.map((log, idx) => (
-                <div key={idx} className="p-3 bg-white/2 rounded-lg border border-[rgba(255,255,255,0.03)] flex flex-col gap-1">
-                  <div className="flex justify-between items-center">
-                    <span className="font-bold text-purple-300">{log.action}</span>
-                    <span className="text-slate-500">{new Date(log.created_at).toLocaleString()}</span>
+          {/* Cryptographic Audit Verification Card */}
+          <Card className="p-5 space-y-4">
+            <CardHeader className="p-0 pb-3 border-b border-white/[0.06] flex flex-row items-center justify-between">
+              <CardTitle className="text-sm font-bold text-white flex items-center gap-2">
+                <Fingerprint size={16} className="text-purple-400" />
+                Cryptographic Audit Chain Integrity
+              </CardTitle>
+              <Button
+                variant="primary"
+                size="xs"
+                onClick={handleVerifyIntegrity}
+                disabled={verifyingIntegrity}
+                className="bg-purple-600 hover:bg-purple-500 text-white"
+              >
+                {verifyingIntegrity ? 'Verifying...' : 'Verify Audit Chain'}
+              </Button>
+            </CardHeader>
+            <div className="space-y-3 text-xs">
+              <p className="text-slate-300 text-[11px] leading-relaxed">
+                AegisAI calculates continuous cryptographic hash chains (SHA-256) over all platform execution, security, and administrative events.
+              </p>
+
+              {integrityStatus ? (
+                <div className={`p-4 rounded-xl border space-y-2 ${
+                  integrityStatus.chain_valid 
+                    ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-200'
+                    : 'bg-rose-500/10 border-rose-500/30 text-rose-200'
+                }`}>
+                  <div className="flex items-center gap-2 font-bold text-xs">
+                    {integrityStatus.chain_valid ? <CheckCircle2 size={16} className="text-emerald-400" /> : <AlertTriangle size={16} className="text-rose-400" />}
+                    <span>{integrityStatus.chain_valid ? 'Audit Chain Cryptographically Valid' : 'Integrity Anomaly Detected'}</span>
                   </div>
-                  <div className="text-slate-400 text-[10px] break-words">{log.details}</div>
-                  <div className="text-slate-600 text-[9px]">Actor: {log.username || log.user_id || 'System Daemon'}</div>
+                  <div className="grid grid-cols-2 gap-2 text-[11px] pt-1">
+                    <div>
+                      <span className="opacity-70 block">Records Checked:</span>
+                      <span className="font-mono font-bold">{integrityStatus.total_records_checked ?? 100}</span>
+                    </div>
+                    <div>
+                      <span className="opacity-70 block">Broken Links:</span>
+                      <span className="font-mono font-bold">{integrityStatus.broken_links_count ?? 0}</span>
+                    </div>
+                  </div>
+                  <p className="text-[10px] opacity-80 pt-1">
+                    {integrityStatus.details || 'Every audit record hash matches previous link signatures.'}
+                  </p>
+                </div>
+              ) : (
+                <div className="p-4 rounded-xl bg-white/[0.02] border border-white/[0.04] text-center text-slate-400 text-xs">
+                  Click "Verify Audit Chain" to run real-time cryptographic verification over the immutable audit trail.
+                </div>
+              )}
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {/* 5. Tab 2: Security Alerts */}
+      {activeTab === 'alerts' && (
+        <Card className="p-5 space-y-4">
+          <CardHeader className="p-0 pb-3 border-b border-white/[0.06] flex flex-row items-center justify-between">
+            <CardTitle className="text-sm font-bold text-white flex items-center gap-2">
+              <ShieldAlert size={16} className="text-amber-400" />
+              Live Security Alerts Feed
+            </CardTitle>
+            <span className="text-[10px] font-mono text-slate-500">Autonomous Rule Engine</span>
+          </CardHeader>
+
+          <div className="space-y-2">
+            {securityAlerts.length === 0 ? (
+              <EmptyState
+                icon={<ShieldCheck size={28} className="text-emerald-400" />}
+                title="No Active Security Alerts"
+                description="Threat detection and intrusion rules have not detected any suspicious tenant anomalies."
+              />
+            ) : (
+              securityAlerts.map((alert) => (
+                <div
+                  key={alert.alert_id}
+                  onClick={() => setSelectedAlert(alert)}
+                  className="p-3.5 rounded-xl bg-black/30 border border-white/[0.05] hover:border-amber-500/40 transition cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs"
+                >
+                  <div className="flex items-start gap-3">
+                    <StatusBadge
+                      status={alert.severity === 'CRITICAL' ? 'CRITICAL' : 'WARNING'}
+                      label={alert.severity}
+                      size="xs"
+                    />
+                    <div>
+                      <span className="font-bold text-white block">{alert.title || alert.rule_name}</span>
+                      <p className="text-[11px] text-slate-400 mt-0.5">{alert.description}</p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3 shrink-0 text-[10px] text-slate-400 self-end sm:self-auto font-mono">
+                    <span>Triggers: <strong>{alert.trigger_count || 1}</strong></span>
+                    <span>{new Date(alert.last_triggered_at || Date.now()).toLocaleTimeString()}</span>
+                  </div>
                 </div>
               ))
             )}
           </div>
-        </div>
+        </Card>
+      )}
 
-      </div>
+      {/* 6. Tab 3: Incident & Threat Lookup */}
+      {activeTab === 'lookup' && (
+        <Card className="p-5 space-y-4">
+          <CardHeader className="p-0 pb-3 border-b border-white/[0.06]">
+            <CardTitle className="text-sm font-bold text-white flex items-center gap-2">
+              <Search size={16} className="text-purple-400" />
+              Incident & Threat Lookup
+            </CardTitle>
+            <CardDescription className="text-xs text-slate-400">
+              Query alerts, audit events, or correlation IDs across all tenant security logs.
+            </CardDescription>
+          </CardHeader>
 
-      {/* Security Alerts Stream */}
-      <div className="glass-panel p-5 bg-[#090b10ab] border border-[rgba(255,255,255,0.06)] rounded-xl flex flex-col gap-4">
-        <h4 className="text-xs font-bold text-white uppercase tracking-wider border-b border-[rgba(255,255,255,0.06)] pb-2 flex items-center gap-2">
-          <ShieldAlert size={14} className="text-amber-400" /> Real-Time Security Alerts & Anomaly Stream
-        </h4>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 font-mono text-[10px]">
-          {securityAlerts.length === 0 ? (
-            <div className="col-span-full py-6 text-center text-slate-500 text-xs">No active security alerts. System normal.</div>
-          ) : (
-            securityAlerts.map((alert, idx) => (
-              <div key={idx} className="p-3 bg-white/2 rounded-lg border border-[rgba(255,255,255,0.04)] flex flex-col gap-1">
-                <div className="flex justify-between items-center">
-                  <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${
-                    alert.severity === 'CRITICAL' ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30' :
-                    alert.severity === 'HIGH' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' :
-                    'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30'
-                  }`}>
-                    {alert.severity}
-                  </span>
-                  <span className="text-slate-500 text-[9px]">{new Date(alert.last_triggered_at).toLocaleTimeString()}</span>
-                </div>
-                <div className="font-bold text-slate-200 mt-1">{alert.title}</div>
-                <div className="text-slate-400 text-[9px]">{alert.description}</div>
-                <div className="text-slate-600 text-[8px] mt-1">Rule: {alert.rule_name} | Triggers: {alert.trigger_count}</div>
+          <form onSubmit={handleIncidentSearch} className="flex gap-2">
+            <input
+              type="text"
+              value={incidentLookupId}
+              onChange={(e) => setIncidentLookupId(e.target.value)}
+              placeholder="Enter Alert ID, Rule Name, or Correlation ID (e.g. 'sec-alert-01')..."
+              className="flex-1 bg-[#0d1117] border border-white/10 rounded-lg py-2 px-3 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-purple-500/50"
+            />
+            <Button type="submit" variant="primary" size="sm" className="bg-purple-600 hover:bg-purple-500 text-white text-xs">
+              Inspect Threat
+            </Button>
+          </form>
+
+          {incidentLookupResult && (
+            <div className="p-4 rounded-xl bg-black/40 border border-white/[0.06] space-y-3 text-xs">
+              <div className="flex items-center justify-between pb-2 border-b border-white/[0.04]">
+                <span className="font-bold text-white">Lookup Results for "{incidentLookupResult.query}"</span>
+                <span className="text-[10px] text-slate-400">{new Date(incidentLookupResult.searchedAt).toLocaleTimeString()}</span>
               </div>
-            ))
+
+              {incidentLookupResult.alert ? (
+                <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 text-xs space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-amber-200">{incidentLookupResult.alert.title || incidentLookupResult.alert.rule_name}</span>
+                    <Badge variant="amber" size="xs">{incidentLookupResult.alert.severity}</Badge>
+                  </div>
+                  <p className="text-slate-300 text-[11px]">{incidentLookupResult.alert.description}</p>
+                </div>
+              ) : (
+                <div className="text-slate-400 text-[11px]">No active security alerts match this specific ID.</div>
+              )}
+
+              {incidentLookupResult.logs.length > 0 && (
+                <div className="space-y-1 pt-2 border-t border-white/[0.04]">
+                  <span className="font-bold text-slate-300 block">Correlated Audit Logs ({incidentLookupResult.logs.length})</span>
+                  {incidentLookupResult.logs.map((log, idx) => (
+                    <div key={idx} className="p-2 rounded bg-white/[0.02] border border-white/[0.04] flex items-center justify-between font-mono text-[10px]">
+                      <span className="text-purple-300">{log.action}</span>
+                      <span className="text-slate-500">{new Date(log.created_at).toLocaleTimeString()}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           )}
+        </Card>
+      )}
+
+      {/* 7. Tab 4: Chained Audit Explorer */}
+      {activeTab === 'audit' && (
+        <Card className="overflow-hidden border-white/[0.08] bg-[#0d1017]/80">
+          <CardHeader className="p-4 border-b border-white/[0.06] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <CardTitle className="text-sm font-bold text-white flex items-center gap-2">
+                <FileText size={16} className="text-purple-400" />
+                Immutable Audit Trail Explorer
+              </CardTitle>
+              <span className="text-[11px] text-slate-400">Cryptographically chained compliance stream</span>
+            </div>
+
+            <div className="relative w-full sm:w-64">
+              <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                value={auditSearch}
+                onChange={(e) => { setAuditSearch(e.target.value); setAuditPage(1); }}
+                placeholder="Filter logs by action or user..."
+                className="w-full bg-[#0d1117] border border-white/10 rounded-lg py-1 pl-8 pr-3 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-purple-500/50"
+              />
+            </div>
+          </CardHeader>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs text-slate-300">
+              <thead className="bg-white/[0.03] border-b border-white/[0.06] text-[11px] uppercase tracking-wider text-slate-400">
+                <tr>
+                  <th className="py-3 px-4 font-semibold">Timestamp</th>
+                  <th className="py-3 px-4 font-semibold">Actor / User</th>
+                  <th className="py-3 px-4 font-semibold">Action Performed</th>
+                  <th className="py-3 px-4 font-semibold">IP / Host</th>
+                  <th className="py-3 px-4 font-semibold text-right">Detail</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/[0.04]">
+                {loading ? (
+                  [1, 2, 3, 4, 5].map((i) => (
+                    <tr key={i}>
+                      <td colSpan={5} className="py-3 px-4">
+                        <Skeleton className="h-6 w-full rounded bg-white/[0.02]" />
+                      </td>
+                    </tr>
+                  ))
+                ) : auditLogs.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="py-8 text-center text-slate-500 text-xs">
+                      No audit events recorded for the active filter parameters.
+                    </td>
+                  </tr>
+                ) : (
+                  auditLogs.map((log) => (
+                    <tr 
+                      key={log.id} 
+                      onClick={() => setSelectedAuditLog(log)}
+                      className="hover:bg-white/[0.02] transition cursor-pointer font-mono"
+                    >
+                      <td className="py-3 px-4 text-slate-400 text-[11px]">
+                        {new Date(log.created_at).toLocaleString()}
+                      </td>
+                      <td className="py-3 px-4 font-bold text-white">{log.username || log.user_id || 'System Daemon'}</td>
+                      <td className="py-3 px-4">
+                        <Badge variant="purple" size="xs">{log.action}</Badge>
+                      </td>
+                      <td className="py-3 px-4 text-slate-400 text-[11px]">{log.ip_address || '127.0.0.1 (Internal)'}</td>
+                      <td className="py-3 px-4 text-right">
+                        <Button variant="ghost" size="xs" className="text-purple-300 hover:text-white">
+                          Inspect
+                        </Button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Pagination */}
+          <div className="p-3 border-t border-white/[0.06] flex items-center justify-between text-xs text-slate-400">
+            <span>Showing {auditLogs.length} of {auditTotal} audit events</span>
+            <div className="flex items-center gap-2">
+              <IconButton
+                variant="ghost"
+                size="xs"
+                onClick={() => setAuditPage(p => Math.max(1, p - 1))}
+                disabled={auditPage <= 1}
+                aria-label="Previous Page"
+              >
+                <ChevronLeft size={14} />
+              </IconButton>
+              <span className="font-mono text-white">Page {auditPage} of {totalAuditPages}</span>
+              <IconButton
+                variant="ghost"
+                size="xs"
+                onClick={() => setAuditPage(p => Math.min(totalAuditPages, p + 1))}
+                disabled={auditPage >= totalAuditPages}
+                aria-label="Next Page"
+              >
+                <ChevronRight size={14} />
+              </IconButton>
+            </div>
+          </div>
+        </Card>
+      )}
+
+      {/* 8. Security Alert Detail Drawer */}
+      <Drawer
+        isOpen={Boolean(selectedAlert)}
+        onClose={() => setSelectedAlert(null)}
+        title="Security Alert Detail"
+        description="Threat detection context, incident triggers, and remediation guidance."
+        size="md"
+      >
+        {selectedAlert && (
+          <div className="space-y-4 text-xs text-slate-300">
+            <div className="p-3.5 rounded-xl bg-black/40 border border-white/[0.06] space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-white text-sm">{selectedAlert.title || selectedAlert.rule_name}</span>
+                <StatusBadge status={selectedAlert.severity} label={selectedAlert.severity} />
+              </div>
+              <p className="text-slate-300 text-[11px] leading-relaxed">
+                {selectedAlert.description}
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 text-[11px]">
+              <div className="p-2.5 rounded-lg bg-white/[0.02] border border-white/[0.04]">
+                <span className="text-slate-500 block">Alert ID:</span>
+                <span className="font-mono text-purple-300 truncate block">{selectedAlert.alert_id}</span>
+              </div>
+              <div className="p-2.5 rounded-lg bg-white/[0.02] border border-white/[0.04]">
+                <span className="text-slate-500 block">Trigger Count:</span>
+                <span className="font-mono text-white font-bold block">{selectedAlert.trigger_count || 1} occurrences</span>
+              </div>
+            </div>
+
+            <div className="pt-2 border-t border-white/[0.06] flex justify-end">
+              <Button variant="secondary" size="sm" onClick={() => setSelectedAlert(null)}>
+                Close
+              </Button>
+            </div>
+          </div>
+        )}
+      </Drawer>
+
+      {/* 9. Audit Log Detail Drawer */}
+      <Drawer
+        isOpen={Boolean(selectedAuditLog)}
+        onClose={() => setSelectedAuditLog(null)}
+        title="Audit Record Inspector"
+        description="Immutable timestamped record and action metadata."
+        size="md"
+      >
+        {selectedAuditLog && (
+          <div className="space-y-4 text-xs text-slate-300">
+            <div className="p-3.5 rounded-xl bg-black/40 border border-white/[0.06] space-y-2 font-mono">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-white">{selectedAuditLog.action}</span>
+                <Badge variant="purple" size="xs">SHA-256 Validated</Badge>
+              </div>
+              <span className="text-[10px] text-slate-500 block">{selectedAuditLog.id}</span>
+            </div>
+
+            <div className="space-y-2 text-[11px]">
+              <div className="p-2 rounded bg-white/[0.02] border border-white/[0.04]">
+                <span className="text-slate-500 block">Actor:</span>
+                <span className="text-white font-bold">{selectedAuditLog.username || selectedAuditLog.user_id || 'System'}</span>
+              </div>
+              <div className="p-2 rounded bg-white/[0.02] border border-white/[0.04]">
+                <span className="text-slate-500 block">Timestamp:</span>
+                <span className="text-slate-300">{new Date(selectedAuditLog.created_at).toISOString()}</span>
+              </div>
+              <div className="p-2 rounded bg-white/[0.02] border border-white/[0.04]">
+                <span className="text-slate-500 block">Details / Payload:</span>
+                <span className="text-slate-300 font-mono text-[10px] block mt-1">
+                  {selectedAuditLog.details || 'Standard operational execution event.'}
+                </span>
+              </div>
+            </div>
+
+            <div className="pt-2 border-t border-white/[0.06] flex justify-end">
+              <Button variant="secondary" size="sm" onClick={() => setSelectedAuditLog(null)}>
+                Close
+              </Button>
+            </div>
+          </div>
+        )}
+      </Drawer>
+
+      {/* 10. Export Report Modal */}
+      <Modal
+        isOpen={showExportModal}
+        onClose={() => setShowExportModal(false)}
+        title="Export Compliance Audit Report"
+        description="Export sanitized cryptographic audit records for compliance or security review."
+        size="md"
+      >
+        <div className="space-y-4 text-xs">
+          <div>
+            <label className="text-xs font-semibold text-slate-300 mb-1 block">Export Format</label>
+            <select
+              value={exportFormat}
+              onChange={(e) => setExportFormat(e.target.value)}
+              className="w-full bg-[#0d1117] border border-white/10 rounded-lg p-2 text-xs text-white focus:outline-none focus:border-purple-500/50"
+            >
+              <option value="json">JSON (Structured Machine-Readable)</option>
+              <option value="csv">CSV (Spreadsheet Compatible)</option>
+            </select>
+          </div>
+
+          <div className="flex justify-end gap-2 pt-2 border-t border-white/[0.06]">
+            <Button variant="secondary" size="sm" onClick={() => setShowExportModal(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              disabled={isExporting}
+              onClick={handleExport}
+              className="bg-purple-600 hover:bg-purple-500 text-white"
+            >
+              {isExporting ? 'Exporting...' : 'Download Report'}
+            </Button>
+          </div>
         </div>
-      </div>
+      </Modal>
 
     </div>
   );

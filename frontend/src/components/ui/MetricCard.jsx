@@ -8,7 +8,8 @@ import { Card, CardContent } from './Card';
 export function MetricCard({
   title,
   value,
-  trend = null, // e.g. { direction: 'up'|'down'|'neutral', value: '+12.5%', label: 'vs last week' }
+  trend = null, // e.g. { direction: 'up'|'down'|'neutral', value: '+12.5%', label: 'vs last week' } OR string "Operational"
+  subtitle = null,
   icon = null,
   description = null,
   className = '',
@@ -16,6 +17,16 @@ export function MetricCard({
 }) {
   const renderTrend = () => {
     if (!trend) return null;
+
+    if (typeof trend === 'string') {
+      return (
+        <div className="flex items-center gap-1.5 mt-2">
+          <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-1.5 py-0.5 rounded border text-cyan-300 bg-cyan-500/10 border-cyan-500/20 font-mono">
+            {trend}
+          </span>
+        </div>
+      );
+    }
 
     const { direction, value: trendValue, label } = trend;
     const isUp = direction === 'up';
@@ -40,6 +51,8 @@ export function MetricCard({
     );
   };
 
+  const descText = description || subtitle;
+
   return (
     <Card onClick={onClick} className={`relative overflow-hidden ${className}`}>
       <CardContent className="p-5">
@@ -49,7 +62,7 @@ export function MetricCard({
         </div>
         <div className="text-2xl font-bold font-mono tracking-tight text-slate-100 mt-2">{value}</div>
         {renderTrend()}
-        {description && <p className="text-xs text-slate-500 mt-2">{description}</p>}
+        {descText && <p className="text-xs text-slate-500 mt-2">{descText}</p>}
       </CardContent>
     </Card>
   );

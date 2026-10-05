@@ -381,12 +381,12 @@ describe('Phase 12.6 — MCP Center & Enterprise Integration Control Plane', () 
   it('renders Admin MCP page with platform capabilities', async () => {
     renderAdminMcp();
 
-    expect(screen.getByText(/MCP Registry & Transport Administration/i)).toBeInTheDocument();
-    expect(screen.getByText(/Active MCP Capabilities/i)).toBeInTheDocument();
+    expect(screen.getByText(/MCP Integration & Tool Governance/i)).toBeInTheDocument();
+    expect(screen.getByText(/Active MCP Daemons/i)).toBeInTheDocument();
 
     await waitFor(() => {
-      expect(screen.getByText('Filesystem Tool Daemon')).toBeInTheDocument();
-      expect(screen.getByText('SQL Schema Engine')).toBeInTheDocument();
+      expect(screen.getByText('GitHub Repository Manager')).toBeInTheDocument();
+      expect(screen.getByText('PostgreSQL Enterprise DB Connector')).toBeInTheDocument();
     });
   });
 });

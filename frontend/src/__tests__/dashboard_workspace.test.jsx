@@ -117,6 +117,12 @@ vi.mock('../api/admin', () => ({
       { summary: 'Agent DAG plan executed successfully', source_component: 'ORCH', timestamp: new Date().toISOString() },
       { summary: 'Document chunk vector embeddings sealed', source_component: 'RAG', timestamp: new Date().toISOString() }
     ]
+  }),
+  getAdminSecurityAlerts: vi.fn().mockResolvedValue({ total: 0, alerts: [] }),
+  getAdminSecurityPosture: vi.fn().mockResolvedValue({
+    tenant_isolation_enforced: true,
+    rbac_posture: 'Strict',
+    ssrf_protection_active: true
   })
 }));
 
@@ -395,17 +401,17 @@ describe('Phase 12.3 — AI OS Workspace & Dashboard Experience', () => {
   it('renders Admin Dashboard header and portal badge', async () => {
     renderAdminDashboard();
 
-    expect(screen.getByText('Enterprise Operations Center')).toBeInTheDocument();
-    expect(screen.getByText('ADMIN PORTAL')).toBeInTheDocument();
+    expect(screen.getByText(/Enterprise Governance & Control Center/i)).toBeInTheDocument();
+    expect(screen.getByText(/Admin Control Plane/i)).toBeInTheDocument();
   });
 
   it('renders Admin KPI metric cards', async () => {
     renderAdminDashboard();
 
     await waitFor(() => {
-      expect(screen.getByText('Active Users')).toBeInTheDocument();
-      expect(screen.getByText('Executions Volume')).toBeInTheDocument();
-      expect(screen.getByText('Avg Latency')).toBeInTheDocument();
+      expect(screen.getByText(/Platform Status/i)).toBeInTheDocument();
+      expect(screen.getByText(/Active Users/i)).toBeInTheDocument();
+      expect(screen.getByText(/Execution Volume/i)).toBeInTheDocument();
     });
   });
 

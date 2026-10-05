@@ -46,6 +46,10 @@ vi.mock('../api/platform', () => ({
       { capability_id: 'rag-vector-core', name: 'Enterprise Document RAG', description: 'Vector retrieval node', version: '1.0.0', enabled: true, required_permissions: ['rag:read'] },
       { capability_id: 'mcp-executor-node', name: 'MCP Sandboxed Executor', description: 'Tool runtime engine', version: '1.0.0', enabled: true, required_permissions: ['mcp:execute'] }
     ]
+  }),
+  getPlatformCapabilityAnalytics: vi.fn().mockResolvedValue({
+    total_calls: 1500,
+    items: []
   })
 }));
 
@@ -289,20 +293,20 @@ describe('Phase 12.4 — Agent Center & AI Workforce Control Center', () => {
   it('renders Admin Agents registry title, badge, and capability cards', async () => {
     renderAdminAgents();
 
-    expect(screen.getByText(/AI Agent Registry & Orchestration Telemetry/i)).toBeInTheDocument();
-    expect(screen.getByText('ADMIN REGISTRY')).toBeInTheDocument();
+    expect(screen.getByText(/AI Workforce & Agent Governance/i)).toBeInTheDocument();
+    expect(screen.getByText('9 Canonical Agents')).toBeInTheDocument();
 
     await waitFor(() => {
-      expect(screen.getByText('Orchestrator Swarm Node')).toBeInTheDocument();
-      expect(screen.getByText('Enterprise Document RAG')).toBeInTheDocument();
-      expect(screen.getByText('MCP Sandboxed Executor')).toBeInTheDocument();
+      expect(screen.getByText('Orchestrator Agent')).toBeInTheDocument();
+      expect(screen.getByText('Planner Agent')).toBeInTheDocument();
+      expect(screen.getByText('Critic Agent')).toBeInTheDocument();
     });
   });
 
   it('triggers refresh in Admin Agents page', async () => {
     renderAdminAgents();
 
-    const refreshBtn = screen.getByRole('button', { name: /REFRESH_REGISTRY/i });
+    const refreshBtn = screen.getByRole('button', { name: /Sync Registry/i });
     fireEvent.click(refreshBtn);
     expect(refreshBtn).toBeInTheDocument();
   });

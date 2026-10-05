@@ -31,33 +31,34 @@ Prior to Phase 12.1, a comprehensive inspection of the AegisAI frontend was cond
 | **MCP Center / Integration Control Plane** | Generic tool catalog without live transports | Enterprise Tool & Integration Control Plane with 4 transports (SSE, HTTP, Stdio), dynamic schema introspection, safe vs restricted tool confirmation, inspector drawer, and security audit | `VERIFIED LOCALLY` |
 | **Workflow Studio / AI Automation** | Disconnected basic editor without accessible DAG representation | Visual AI Automation Studio with @xyflow/react canvas, 13 node types across 3 categories, topological auto-layout, live execution state sync, accessible linear text outline, and timezone-aware scheduling | `VERIFIED LOCALLY` |
 | **Knowledge Intelligence Center (Docs, RAG, Graph)** | Fragmented document list, RAG search, and graph explorer | Unified Knowledge Intelligence Center with ingestion pipeline tracking, vector RAG / Hybrid RAG composer, grounding Evidence Drawer, interactive force-directed SVG graph, Pathfinder, and multi-agent graph reasoning | `VERIFIED LOCALLY` |
+| **Enterprise Governance & Control Center** | Basic tabular admin lists with minimal governance context | Comprehensive Enterprise Governance & Control Plane with Attention Center, Subsystem Diagnostics, Identity & Permissions Explainer, Mandatory Suspension Rationale, 9-Agent Policy Registry, 4-Transport MCP Gating, SOC Alert Posture, and SHA-256 Audit Integrity Verification | `VERIFIED LOCALLY` |
 
 ---
 
 ## 3. Responsive Adaptations Across Viewport Tiers
 
-The application shell, landing page, AI OS workspace, Agent Center, Memory Vault, MCP Center, Workflow Studio, and Knowledge Intelligence Center adapt dynamically across standard responsive breakpoints:
+The application shell, landing page, AI OS workspace, Agent Center, Memory Vault, MCP Center, Workflow Studio, Knowledge Intelligence Center, and Enterprise Governance Control Plane adapt dynamically across standard responsive breakpoints:
 
 - **Mobile (360px – 767px)**:
   - Sidebar automatically collapses to a high-density 16-character icon bar.
   - Landing navigation switches to compact header with essential CTAs; pipeline steps stack responsively.
   - Primary AI Workspace Console stacks mode selectors, prompt textarea, and action buttons cleanly.
-  - Agent Center, Memory Vault, MCP Center, Workflow Studio, and Knowledge Center grids collapse to a single-column layout; Drawers open to full viewport width with touch-friendly dismiss.
+  - Agent Center, Memory Vault, MCP Center, Workflow Studio, Knowledge Center, and Admin Governance grids collapse to a single-column layout; Drawers open to full viewport width with touch-friendly dismiss.
   - Top bar breadcrumbs collapse gracefully; search triggers modal command palette.
   - Tables enable horizontal scroll wrappers without breaking container layouts.
 - **Tablet & Laptop (768px – 1024px)**:
   - Sidebar supports 1-click collapse/expand (`◀` / `▶`).
   - MetricCard KPI strips and capability cards adjust to responsive 2x2 grids.
-  - Agent Center, Memory Vault, MCP Center, and Workflow Studio render 2-column cards; Comparison and Graph Matrix views balance cleanly.
+  - Agent Center, Memory Vault, MCP Center, Workflow Studio, and Admin Governance render 2-column cards; Comparison and Graph Matrix views balance cleanly.
   - Multi-domain snapshots balance cleanly side-by-side.
 - **Desktop (1024px – 1440px+)**:
-  - Full multi-column workspace layout with sidebars, telemetry tickers, floating execution consoles, 3-column Agent Directory, Memory Vault, MCP Tool catalogs, and full Visual AI Automation Studio with interactive DAG Architecture & KG Association flows.
+  - Full multi-column workspace layout with sidebars, telemetry tickers, floating execution consoles, 3-column Agent Directory, Memory Vault, MCP Tool catalogs, full Visual AI Automation Studio with interactive DAG Architecture, and Admin Governance Control Center with live SOC feeds and cryptographic audit inspection.
 
 ---
 
 ## 4. Accessibility (a11y) & WCAG Compliance
 
-- **Keyboard Navigation**: All interactive elements (buttons, inputs, textareas, mode pills, tabs, modals, quick action cards, drawer triggers, sliders) are reachable and operable via keyboard.
+- **Keyboard Navigation**: All interactive elements (buttons, inputs, textareas, mode pills, tabs, modals, quick action cards, drawer triggers, sliders, suspension triggers, role selectors) are reachable and operable via keyboard.
 - **Focus Indicators**: Explicit high-contrast focus rings (`focus-visible:ring-2 focus-visible:ring-cyan-500/50`).
 - **Semantic HTML & ARIA**:
   - `role="dialog"` and `aria-modal="true"` on Modals and Drawers.
@@ -71,14 +72,14 @@ The application shell, landing page, AI OS workspace, Agent Center, Memory Vault
 
 ## 5. Performance & Build Metrics
 
-- **Vite Production Build**: 2,561 modules transformed cleanly in 1.23s without build or TypeScript errors.
-- **Bundle Optimization**: Gzipped CSS is ~20.21 kB; gzipped JS is ~376.45 kB.
+- **Vite Production Build**: 2,562 modules transformed cleanly in 1.26s without build or TypeScript errors.
+- **Bundle Optimization**: Gzipped CSS is ~19.76 kB; gzipped JS is ~382.24 kB.
 - **Render Efficiency**: Elimination of inline duplicate state handlers in favor of shared context providers (`ThemeContext`, `ToastContext`, `AuthContext`).
 
 ---
 
 ## 6. Known Limitations & Verification Scope
 
-- **Unit & Integration Verification**: **VERIFIED LOCALLY** (131/131 Vitest tests + 955/955 Pytest tests passing).
+- **Unit & Integration Verification**: **VERIFIED LOCALLY** (164/164 Vitest tests + 955/955 Pytest tests passing).
 - **Production Asset Build**: **VERIFIED LOCALLY** (0 errors).
 - **Headless Browser Automated E2E**: **NOT BROWSER-VERIFIED** (In accordance with project guidelines, browser-level visual rendering and screenshot testing was not executed in this environment).
