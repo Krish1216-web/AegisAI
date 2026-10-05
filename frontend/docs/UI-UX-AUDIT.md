@@ -24,48 +24,52 @@ Prior to Phase 12.1, a comprehensive inspection of the AegisAI frontend was cond
 | **Command Palette** | 6 hardcoded commands | Expanded `CommandPalette.jsx` with category tags, theme toggles, and ARIA combobox attributes | `VERIFIED LOCALLY` |
 | **Status Vocabulary** | Custom colors per page | Centralized `StatusBadge.jsx` with semantic mapping for execution, jobs, system, and security | `VERIFIED LOCALLY` |
 | **Loading & Empty States** | Generic `"Loading..."` text | Structured `Skeleton.jsx`, `Spinner.jsx`, and `EmptyState.jsx` with actionable next steps | `VERIFIED LOCALLY` |
+| **Landing & Public Entry** | Generic static hero with minimal interaction | Cinematic "Intelligence Factory" with 8-stage assembly pipeline, 7-station tour, system architecture, and verifiable security controls | `VERIFIED LOCALLY` |
 
 ---
 
 ## 3. Responsive Adaptations Across Viewport Tiers
 
-The application shell and layout frames adapt dynamically across standard responsive breakpoints:
+The application shell, landing page, and layout frames adapt dynamically across standard responsive breakpoints:
 
 - **Mobile (360px – 767px)**:
   - Sidebar automatically collapses to a high-density 16-character icon bar.
+  - Landing navigation switches to compact header with essential CTAs; pipeline steps stack responsively.
   - Top bar breadcrumbs collapse gracefully; search triggers modal command palette.
   - Tables enable horizontal scroll wrappers without breaking container layouts.
 - **Tablet & Laptop (768px – 1024px)**:
   - Sidebar supports 1-click collapse/expand (`◀` / `▶`).
   - MetricCard KPI strips adjust from 4 columns to a responsive 2x2 grid.
+  - Station selector grid balances side-by-side on tablet breakpoints.
 - **Desktop (1024px – 1440px+)**:
   - Full multi-column workspace layout with sidebars, telemetry tickers, and floating execution consoles.
+  - Full 8-column pipeline assembly line view on wide viewports.
 
 ---
 
 ## 4. Accessibility (a11y) & WCAG Compliance
 
-- **Keyboard Navigation**: All interactive elements (buttons, inputs, checkboxes, switches, tabs, modals) are reachable and operable via keyboard.
+- **Keyboard Navigation**: All interactive elements (buttons, inputs, checkboxes, switches, tabs, modals, tour stations) are reachable and operable via keyboard.
 - **Focus Indicators**: Explicit high-contrast focus rings (`focus-visible:ring-2 focus-visible:ring-cyan-500/50`).
 - **Semantic HTML & ARIA**:
   - `role="dialog"` and `aria-modal="true"` on Modals and Drawers.
   - `role="combobox"` and `role="listbox"` on Command Palette.
   - `role="tablist"` and `role="tab"` on Tabs.
   - `aria-live="polite"` on Toast notifications.
-- **Reduced Motion**: All animations disable automatically when `prefers-reduced-motion: reduce` is enabled.
+- **Reduced Motion**: All animations (including landing page pipeline auto-advance) disable automatically when `prefers-reduced-motion: reduce` is enabled.
 
 ---
 
 ## 5. Performance & Build Metrics
 
-- **Vite Production Build**: 2,543 modules transformed cleanly in 1.02s without build or TypeScript errors.
-- **Bundle Optimization**: Gzipped CSS is ~20.2 kB; gzipped JS is ~357.4 kB.
+- **Vite Production Build**: 2,560 modules transformed cleanly in 1.01s without build or TypeScript errors.
+- **Bundle Optimization**: Gzipped CSS is ~20.3 kB; gzipped JS is ~360.7 kB.
 - **Render Efficiency**: Elimination of inline duplicate state handlers in favor of shared context providers (`ThemeContext`, `ToastContext`, `AuthContext`).
 
 ---
 
 ## 6. Known Limitations & Verification Scope
 
-- **Unit & Integration Verification**: **VERIFIED LOCALLY** (34/34 Vitest tests passing).
+- **Unit & Integration Verification**: **VERIFIED LOCALLY** (50/50 Vitest tests + 955/955 Pytest tests passing).
 - **Production Asset Build**: **VERIFIED LOCALLY** (0 errors).
 - **Headless Browser Automated E2E**: **NOT BROWSER-VERIFIED** (In accordance with project guidelines, browser-level visual rendering and screenshot testing was not executed in this environment).

@@ -1,471 +1,632 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { 
-  Bot, 
-  Server, 
-  Cpu, 
-  TrendingUp, 
-  Bookmark, 
-  GitBranch, 
-  ListTodo, 
-  Workflow, 
-  Play, 
-  Code, 
-  ArrowRight, 
-  Check, 
-  X, 
-  ChevronDown, 
-  BookOpen, 
-  Activity, 
+import React, { useState, useEffect } from 'react';
+import { useNavigate, Link } from 'react-router-dom';
+import {
+  BrainCircuit,
+  Bot,
   Database,
-  Globe,
-  Radio,
-  FileText,
-  Settings,
-  HelpCircle,
-  Terminal,
-  RotateCw,
-  Zap,
-  ShieldCheck,
-  Compass,
-  Layers,
-  Map,
+  Server,
+  Workflow,
   ShieldAlert,
-  ArrowDown,
-  Hammer
+  ShieldCheck,
+  FileText,
+  GitBranch,
+  ArrowRight,
+  CheckCircle2,
+  Lock,
+  Cpu,
+  Layers,
+  Activity,
+  Terminal,
+  Clock,
+  Zap,
+  Globe,
+  Sun,
+  Moon,
+  Users,
+  TrendingUp,
+  Sparkles,
+  ChevronRight,
+  Check,
+  Search,
+  ExternalLink
 } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
+import { useTheme } from '../context/ThemeContext';
+import { Button, StatusBadge, Badge, Card, CardHeader, CardTitle, CardContent } from '../components/ui';
 
 export default function LandingPage() {
   const navigate = useNavigate();
-  const canvasRef = useRef(null);
+  const { isAuthenticated, role } = useAuth();
+  const { theme, toggleTheme } = useTheme();
 
-  // Tour States
-  const [tourStarted, setTourStarted] = useState(false);
-  const [activeZone, setActiveZone] = useState('1');
-  const [factoryState, setFactoryState] = useState('STANDBY'); // 'STANDBY', 'WARPING', 'ACTIVE'
-  const [warpProgress, setWarpProgress] = useState(0);
-  const [systemAlert, setSystemAlert] = useState('SYSTEMS_OK');
+  const [activeTourStation, setActiveTourStation] = useState('agents');
+  const [activePipelineStep, setActivePipelineStep] = useState(0);
 
-  // Sound Synth engine
-  const playSynth = (type) => {
-    try {
-      const AudioCtx = window.AudioContext || window.webkitAudioContext;
-      if (!AudioCtx) return;
-      const ctx = new AudioCtx();
-
-      if (type === 'beep') {
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(1000, ctx.currentTime);
-        osc.frequency.exponentialRampToValueAtTime(500, ctx.currentTime + 0.05);
-        gain.gain.setValueAtTime(0.1, ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.07);
-        osc.start();
-        osc.stop(ctx.currentTime + 0.07);
-      } else if (type === 'ignition') {
-        const osc1 = ctx.createOscillator();
-        const osc2 = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc1.connect(gain);
-        osc2.connect(gain);
-        gain.connect(ctx.destination);
-        osc1.type = 'sawtooth';
-        osc1.frequency.setValueAtTime(80, ctx.currentTime);
-        osc1.frequency.linearRampToValueAtTime(450, ctx.currentTime + 2.0);
-        osc2.type = 'sine';
-        osc2.frequency.setValueAtTime(160, ctx.currentTime);
-        osc2.frequency.exponentialRampToValueAtTime(900, ctx.currentTime + 2.0);
-        gain.gain.setValueAtTime(0.25, ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 2.2);
-        osc1.start();
-        osc2.start();
-        osc1.stop(ctx.currentTime + 2.2);
-        osc2.stop(ctx.currentTime + 2.2);
-      } else if (type === 'gate') {
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-        osc.type = 'triangle';
-        osc.frequency.setValueAtTime(150, ctx.currentTime);
-        osc.frequency.linearRampToValueAtTime(400, ctx.currentTime + 0.6);
-        gain.gain.setValueAtTime(0.15, ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.6);
-        osc.start();
-        osc.stop(ctx.currentTime + 0.6);
-      }
-    } catch (e) {
-      console.log('Audio Context suppressed by user agent permissions.');
-    }
-  };
-
-  // Canvas loop rendering particle steam exhaust and drones
+  // Auto-advance pipeline step subtly if animations not reduced
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    
-    let animationId;
-    let width = (canvas.width = window.innerWidth);
-    let height = (canvas.height = window.innerHeight);
+    const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (prefersReduced) return;
 
-    // Steam particles
-    const numSteam = 30;
-    const steam = [];
-    for (let i = 0; i < numSteam; i++) {
-      steam.push({
-        x: Math.random() * width,
-        y: height - Math.random() * 200,
-        vx: (Math.random() - 0.5) * 1.5,
-        vy: -0.5 - Math.random() * 1.5,
-        size: 10 + Math.random() * 40,
-        alpha: 0.05 + Math.random() * 0.15
-      });
-    }
-
-    // Flying inspector drones
-    const numDrones = 8;
-    const drones = [];
-    for (let i = 0; i < numDrones; i++) {
-      drones.push({
-        x: Math.random() * width,
-        y: Math.random() * (height - 300),
-        vx: (Math.random() - 0.5) * 2,
-        vy: (Math.random() - 0.5) * 1.2,
-        size: 2,
-        color: i % 2 === 0 ? '#00f0ff' : '#ff7700'
-      });
-    }
-
-    const handleResize = () => {
-      width = canvas.width = window.innerWidth;
-      height = canvas.height = window.innerHeight;
-    };
-    window.addEventListener('resize', handleResize);
-
-    const render = () => {
-      ctx.fillStyle = '#06070a';
-      ctx.fillRect(0, 0, width, height);
-
-      // Industrial Grid alignment lines
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.015)';
-      ctx.lineWidth = 1;
-      const step = 60;
-      for (let x = 0; x < width; x += step) {
-        ctx.beginPath();
-        ctx.moveTo(x, 0);
-        ctx.lineTo(x, height);
-        ctx.stroke();
-      }
-      for (let y = 0; y < height; y += step) {
-        ctx.beginPath();
-        ctx.moveTo(0, y);
-        ctx.lineTo(width, y);
-        ctx.stroke();
-      }
-
-      // Draw steam chimney vents particles
-      ctx.fillStyle = 'rgba(120, 130, 140, 0.5)';
-      steam.forEach(s => {
-        s.x += s.vx;
-        s.y += s.vy;
-        if (s.y < 0 || s.alpha <= 0.002) {
-          s.y = height;
-          s.x = Math.random() * width;
-          s.alpha = 0.05 + Math.random() * 0.15;
-        }
-        ctx.beginPath();
-        ctx.arc(s.x, s.y, s.size, 0, 2 * Math.PI);
-        ctx.fillStyle = `rgba(100, 110, 120, ${s.alpha})`;
-        ctx.fill();
-        s.alpha -= 0.0005;
-      });
-
-      // Draw flying inspector drones
-      drones.forEach(d => {
-        d.x += d.vx * (factoryState === 'ACTIVE' ? 6 : 1);
-        d.y += d.vy * (factoryState === 'ACTIVE' ? 6 : 1);
-        if (d.x < 0 || d.x > width) d.vx *= -1;
-        if (d.y < 0 || d.y > height) d.vy *= -1;
-
-        ctx.beginPath();
-        ctx.arc(d.x, d.y, d.size, 0, 2 * Math.PI);
-        ctx.fillStyle = d.color;
-        ctx.shadowBlur = 8;
-        ctx.shadowColor = d.color;
-        ctx.fill();
-      });
-
-      animationId = requestAnimationFrame(render);
-    };
-
-    render();
-
-    return () => {
-      cancelAnimationFrame(animationId);
-      window.removeEventListener('resize', handleResize);
-    };
-  }, [factoryState]);
-
-  // Reactor Core temp warning triggers
-  useEffect(() => {
-    if (factoryState === 'WARPING') {
-      setSystemAlert('WARNING_REACTOR_HEATING');
-    }
-  }, [factoryState]);
-
-  // Main Reactor Ignition console CTA handler
-  const handleIgnition = () => {
-    if (factoryState !== 'STANDBY') return;
-    setFactoryState('WARPING');
-    playSynth('ignition');
-
-    let prog = 0;
     const interval = setInterval(() => {
-      prog += 5;
-      setWarpProgress(prog);
-      if (prog >= 100) {
-        clearInterval(interval);
-        setFactoryState('ACTIVE');
-        setTimeout(() => {
-          navigate('/login');
-        }, 500);
+      setActivePipelineStep((prev) => (prev + 1) % 8);
+    }, 3000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleAccessTerminal = () => {
+    if (isAuthenticated) {
+      if (role === 'admin' || role === 'super admin') {
+        navigate('/admin/dashboard');
+      } else {
+        navigate('/user/dashboard');
       }
-    }, 100);
+    } else {
+      navigate('/login');
+    }
   };
 
-  const zones = [
-    { id: '1', name: 'Zone 1: Intake Scanner', label: 'USER REQUEST SCANNER', icon: <Terminal size={16} />, status: 'SCANNED', telemetry: 'Request complexity: LOW • Language: EN-US', details: 'Ingests user prompt payloads, tokenizes strings, and calculates initial agent routing workflows.', tech: 'BERT encoder classification tags.' },
-    { id: '2', name: 'Zone 2: Planning Center', label: 'WORKFLOW GANTRY', icon: <Workflow size={16} />, status: 'DECOMPOSED', telemetry: 'Orchestration nodes active: 4 • Step count: 6', details: 'Decomposes task commands into execution lists and allocates CPU worker chambers.', tech: 'Structured JSON planning models.' },
-    { id: '3', name: 'Zone 3: Research Laboratory', label: 'DOCUMENT CRAWLER', icon: <Globe size={16} />, status: 'SYNCHRONIZED', telemetry: 'Vector lookup indexes: ChromaDB • Web Ping: 12ms', details: 'Crawls local project files, retrieves API documentation, and fetches external web assets.', tech: 'Google Custom Search and local indexes.' },
-    { id: '4', name: 'Zone 4: Memory Crypt', label: 'CONTEXT RETRIEVAL', icon: <Database size={16} />, status: 'LOADED', telemetry: 'Relevant memories hit: 3 • Cache OK', details: 'Indexes past queries context structures to align answer styles and prevent duplicate execution.', tech: 'ChromaDB local vector files.' },
-    { id: '5', name: 'Zone 5: MCP Integration Hub', label: 'API AIRPORT DOCK', icon: <Server size={16} />, status: 'CONNECTED', telemetry: 'AWS S3, Slack, Docker: ACTIVE • Sync OK', details: 'Bridges executor runtimes to external channels, database layers, and deployment servers.', tech: 'Model Context Protocol adapters.' },
-    { id: '6', name: 'Zone 6: Quantum Chamber', label: 'COMMAND PROCESSOR', icon: <Cpu size={16} />, status: 'COMPILING', telemetry: 'EC2 instance code: running • Log print OK', details: 'Executes commands inside sandboxed files folders, compiles files, and packages reports.', tech: 'Docker compiler cluster nodes.' },
-    { id: '7', name: 'Zone 7: Quality Inspect', label: 'ACCURACY CRITIC', icon: <ShieldCheck size={16} />, status: 'APPROVED', telemetry: 'Confidence rating: 98.6% • Critic OK', details: 'Validates code execution outputs, fact-checks references, and signs security approval.', tech: 'Orchestrator critic loops.' },
-    { id: '8', name: 'Zone 8: Delivery Platform', label: 'INTELLIGENCE ASSEMBLY', icon: <Layers size={16} />, status: 'DELIVERED', telemetry: 'Payload size: 14KB • MD5 verified', details: 'Packages the verified context files, triggers workspace rendering, and sends final report.', tech: 'Markdown visualization display.' }
+  // 7 Structured Intelligence Tour Stations
+  const tourStations = [
+    {
+      id: 'agents',
+      title: '01 — Agent Orchestration',
+      subtitle: 'Multi-Agent Collective Intelligence',
+      icon: <Bot size={20} className="text-cyan-400" />,
+      what: 'Coordinates specialized planner, researcher, executor, critic, and response agents in deterministic DAG workflows.',
+      why: 'Breaks complex tasks into verified sub-goals, preventing hallucination through strict verification and consensus.',
+      flow: ['User Request', 'Orchestrator', 'Task Planner', 'Specialized Agents', 'Verification Critic', 'Evidence & Response']
+    },
+    {
+      id: 'memory',
+      title: '02 — Long-Term Memory',
+      subtitle: 'Episodic & Semantic Cognitive Vault',
+      icon: <Database size={20} className="text-purple-400" />,
+      what: 'Indexes conversational history, agent reflections, and entity profiles into semantic vector memories.',
+      why: 'Enables persistent context across sessions while enforcing strict workspace-level tenant isolation.',
+      flow: ['Interaction Stream', 'Importance Filter', 'Vector Embedding', 'Memory Vault', 'Semantic Retrieval', 'Execution Context']
+    },
+    {
+      id: 'knowledge',
+      title: '03 — Enterprise Knowledge & RAG',
+      subtitle: 'Hybrid Vector & Graph Intelligence',
+      icon: <FileText size={20} className="text-blue-400" />,
+      what: 'Extracts documents, computes 1536-dim embeddings, and synthesizes multi-hop Knowledge Graph relationships.',
+      why: 'Answers queries with exact citations, physical document reconciliation, and verifiable knowledge provenance.',
+      flow: ['Document Ingestion', 'Semantic Chunking', 'Vector Indexing', 'Knowledge Graph Triples', 'Hybrid RAG Search', 'Attributed Evidence']
+    },
+    {
+      id: 'mcp',
+      title: '04 — Model Context Protocol (MCP)',
+      subtitle: 'Extensible Sandboxed Tool Ecosystem',
+      icon: <Server size={20} className="text-amber-400" />,
+      what: 'Integrates external tools, databases, APIs, and cloud resources via standardized MCP client-server protocols.',
+      why: 'Empowers agents to safely interact with production systems with human-in-the-loop approval gates.',
+      flow: ['MCP Discovery', 'Capability Binding', 'Permission Evaluation', 'Sandbox Execution', 'Result Normalization', 'Audit Logging']
+    },
+    {
+      id: 'workflows',
+      title: '05 — Workflow Automation',
+      subtitle: 'Visual DAG Execution Engine',
+      icon: <Workflow size={20} className="text-indigo-400" />,
+      what: 'Visual workflow canvas allowing declarative chaining of agents, conditions, loops, and human approvals.',
+      why: 'Automates complex business operations deterministically with scheduled triggers and execution replay.',
+      flow: ['Workflow Trigger', 'DAG Parser', 'Node Evaluation', 'Approval Checkpoint', 'Worker Execution', 'Persisted Result']
+    },
+    {
+      id: 'execution',
+      title: '06 — Observable Execution',
+      subtitle: 'Tamper-Evident Lifecycle Tracking',
+      icon: <Activity size={20} className="text-emerald-400" />,
+      what: 'Tracks every background job and execution through structured JSON events and cryptographic hash chains.',
+      why: 'Provides real-time visibility and post-mortem auditability with zero credential exposure.',
+      flow: ['Requested', 'Validating', 'Planned', 'Executing', 'Verifying', 'Completed']
+    },
+    {
+      id: 'governance',
+      title: '07 — Governance & Security',
+      subtitle: 'Enterprise-Grade Fail-Closed Controls',
+      icon: <ShieldCheck size={20} className="text-rose-400" />,
+      what: 'Enforces strict tenant boundaries, role-based access control (RBAC), recursive secret redaction, and SSRF defenses.',
+      why: 'Guarantees enterprise data compliance and prevents unauthorized lateral access or prompt injection attacks.',
+      flow: ['Identity Verification', 'RBAC Permission Gate', 'SSRF / Injection Filter', 'Secret Redaction', 'SHA-256 Hash Chain', 'Secure Delivery']
+    }
   ];
 
-  const activeZoneData = zones.find(z => z.id === activeZone);
+  const activeStation = tourStations.find((s) => s.id === activeTourStation) || tourStations[0];
+
+  // Pipeline Steps
+  const pipelineSteps = [
+    { label: 'INPUT', desc: 'Secure Prompt & Payload Ingestion' },
+    { label: 'UNDERSTAND', desc: 'Intent & Entity Classification' },
+    { label: 'RETRIEVE', desc: 'Hybrid RAG & Memory Lookup' },
+    { label: 'REASON', desc: 'DAG Task Decomposition' },
+    { label: 'ORCHESTRATE', desc: 'Multi-Agent Dispatching' },
+    { label: 'EXECUTE', desc: 'Sandboxed MCP Tool Calls' },
+    { label: 'VERIFY', desc: 'Critic & Consensus Evaluation' },
+    { label: 'RESPOND', desc: 'Evidence-Backed Delivery' },
+  ];
 
   return (
-    <div className="bg-[#06070a] text-slate-100 min-h-screen overflow-x-hidden font-sans relative selection:bg-cyan-500/30 selection:text-white pb-20">
+    <div className="min-h-screen bg-[#07080a] text-slate-100 font-sans selection:bg-cyan-500/30 selection:text-white">
       
-      {/* Background Grid Canvas */}
-      <canvas ref={canvasRef} className="fixed inset-0 pointer-events-none z-0" />
-
-      {/* Industrial Neon Vignette overlay */}
-      <div className="fixed inset-0 pointer-events-none z-0 bg-[radial-gradient(circle_at_center,rgba(0,0,0,0)_60%,rgba(6,7,10,0.9))]"></div>
-
-      {/* Floating Header */}
-      <header className="h-20 border-b border-white/5 bg-[#06070ac0] backdrop-blur-md sticky top-0 z-50 flex items-center justify-between px-6 md:px-12 select-none">
+      {/* ==============================================================================
+       * 1. Public Top Navigation
+       * ============================================================================== */}
+      <header className="sticky top-0 z-50 h-16 border-b border-white/[0.08] bg-[#07080a]/90 backdrop-blur-md px-6 md:px-12 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-lg bg-gradient-to-tr from-cyan-400 to-indigo-500 flex items-center justify-center shadow-lg shadow-cyan-500/10">
-            <Zap size={18} className="text-black" />
+          <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-cyan-400 to-indigo-500 flex items-center justify-center shadow-md shadow-cyan-500/10 shrink-0">
+            <BrainCircuit size={18} className="text-black font-bold" />
           </div>
-          <span className="font-bold text-sm tracking-wider bg-gradient-to-r from-cyan-400 to-purple-400 bg-clip-text text-transparent">AEGISAI</span>
+          <span className="font-bold text-base tracking-wider bg-gradient-to-r from-cyan-400 via-purple-300 to-indigo-400 bg-clip-text text-transparent">
+            AEGISAI
+          </span>
         </div>
 
-        <div className="hidden md:flex items-center gap-8 text-[9px] font-mono text-slate-500">
-          <span>ALERTS: {systemAlert}</span>
-          <span>•</span>
-          <span>STATUS: ONLINE</span>
-        </div>
+        {/* Desktop Anchor Navigation */}
+        <nav className="hidden md:flex items-center gap-6 text-xs font-medium text-slate-400">
+          <a href="#platform" className="hover:text-cyan-400 transition-colors">Platform</a>
+          <a href="#tour" className="hover:text-cyan-400 transition-colors">Intelligence Factory</a>
+          <a href="#architecture" className="hover:text-cyan-400 transition-colors">Architecture</a>
+          <a href="#security" className="hover:text-cyan-400 transition-colors">Security</a>
+          <a href="#use-cases" className="hover:text-cyan-400 transition-colors">Use Cases</a>
+        </nav>
 
-        <div className="flex items-center gap-6">
-          <button onClick={() => { playSynth('beep'); navigate('/login'); }} className="btn-primary py-1.5 px-4 rounded-lg text-xs font-semibold cursor-pointer">
-            ACCESS_PORTAL
+        {/* CTA Buttons */}
+        <div className="flex items-center gap-3">
+          <button
+            onClick={toggleTheme}
+            aria-label="Toggle theme mode"
+            className="p-2 rounded-lg bg-white/5 border border-white/10 hover:border-white/20 text-slate-400 hover:text-white transition-all cursor-pointer"
+          >
+            {theme === 'dark' ? <Sun size={15} className="text-amber-400" /> : <Moon size={15} className="text-cyan-400" />}
           </button>
+
+          {!isAuthenticated ? (
+            <>
+              <Button variant="ghost" size="sm" onClick={() => navigate('/login')}>
+                Sign In
+              </Button>
+              <Button variant="primary" size="sm" onClick={handleAccessTerminal} rightIcon={<ArrowRight size={14} />}>
+                Enter AegisAI
+              </Button>
+            </>
+          ) : (
+            <Button variant="primary" size="sm" onClick={handleAccessTerminal} rightIcon={<ArrowRight size={14} />}>
+              Open Workspace
+            </Button>
+          )}
         </div>
       </header>
 
-      {/* ========================================================
-          OPENING SCENE: GIGAFACTORY HANGAR GATES
-          ======================================================== */}
-      {!tourStarted ? (
-        <section className="h-[calc(100vh-80px)] flex flex-col justify-center items-center px-6 relative z-10 text-center">
-          
-          {/* Gigafactory entrance gate SVG representation */}
-          <div className="w-80 h-56 relative mb-12 flex flex-col items-center justify-center border border-white/5 rounded-2xl bg-[#090b1080] shadow-2xl relative group overflow-hidden">
-            {/* Sliding gates grids */}
-            <div className="absolute inset-x-0 top-0 h-1/2 border-b border-white/5 bg-[#12162095] group-hover:-translate-y-full transition-transform duration-500 flex items-end justify-center pb-2">
-              <span className="text-[8px] text-slate-500 font-mono tracking-widest uppercase">HANGAR_GATE_01_A</span>
-            </div>
-            <div className="absolute inset-x-0 bottom-0 h-1/2 border-t border-white/5 bg-[#12162095] group-hover:translate-y-full transition-transform duration-500 flex items-start justify-center pt-2">
-              <span className="text-[8px] text-slate-500 font-mono tracking-widest uppercase">HANGAR_GATE_01_B</span>
-            </div>
+      {/* ==============================================================================
+       * 2. Hero Section
+       * ============================================================================== */}
+      <section className="relative pt-20 pb-24 px-6 md:px-12 max-w-7xl mx-auto flex flex-col items-center text-center">
+        {/* Subtle decorative glow */}
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[350px] bg-cyan-500/5 blur-[120px] rounded-full pointer-events-none" />
 
-            <Zap size={32} className="text-cyan-400 animate-pulse" />
+        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-cyan-500/30 bg-cyan-500/10 text-cyan-300 text-xs font-mono font-medium mb-6 animate-fade-in">
+          <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
+          <span>ENTERPRISE AI OPERATING SYSTEM</span>
+        </div>
+
+        <h1 className="text-4xl sm:text-5xl md:text-6xl font-extrabold tracking-tight text-white max-w-4xl leading-[1.15]">
+          Autonomous Intelligence for the <span className="gradient-text">Enterprise</span>
+        </h1>
+
+        <p className="text-sm sm:text-base text-slate-400 max-w-2xl mt-6 leading-relaxed">
+          Orchestrate multi-agent collectives, long-term episodic memory, enterprise knowledge graphs, and extensible MCP tools through one secure, verifiable operating system.
+        </p>
+
+        {/* Primary CTAs */}
+        <div className="flex flex-wrap items-center justify-center gap-4 mt-10">
+          <Button variant="primary" size="lg" onClick={handleAccessTerminal} rightIcon={<ArrowRight size={16} />}>
+            Enter the Intelligence Factory
+          </Button>
+          <a href="#tour">
+            <Button variant="secondary" size="lg">
+              Explore the Platform
+            </Button>
+          </a>
+        </div>
+
+        {/* Factory Visual Blueprint Mock */}
+        <div className="w-full max-w-5xl mt-16 p-4 rounded-2xl border border-white/10 bg-[#0d1017]/80 backdrop-blur-xl shadow-2xl relative overflow-hidden">
+          <div className="px-4 py-2 border-b border-white/10 flex items-center justify-between text-xs text-slate-400 font-mono">
+            <div className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-rose-500/80" />
+              <span className="w-2.5 h-2.5 rounded-full bg-amber-500/80" />
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500/80" />
+              <span className="ml-2 text-slate-300 font-semibold">AEGIS_OS_CORE :: INTELLIGENCE_FACTORY</span>
+            </div>
+            <div className="flex items-center gap-4">
+              <span>STATUS: ONLINE</span>
+              <span className="text-cyan-400">LATENCY: 12ms</span>
+            </div>
           </div>
 
-          <span className="text-[10px] text-slate-500 font-mono tracking-widest uppercase mb-2">Factory Entrance</span>
-          <h1 className="text-4xl md:text-6xl font-extrabold text-white tracking-wider leading-none">
-          AEGISAI
-        </h1>
-          <p className="text-xs text-slate-400 mt-3 max-w-md mx-auto leading-relaxed">
-            Initialize the security protocol handshake link to open the factory gates and enter the production line deck.
+          <div className="p-6 md:p-10 grid grid-cols-1 md:grid-cols-3 gap-6 text-left">
+            <div className="p-4 rounded-xl border border-white/5 bg-white/[0.02]">
+              <div className="flex items-center gap-2 text-cyan-400 mb-2">
+                <Bot size={18} />
+                <h4 className="text-xs font-bold uppercase tracking-wider">Multi-Agent Swarm</h4>
+              </div>
+              <p className="text-xs text-slate-400 leading-relaxed">
+                Planner, Critic, and Execution nodes collaborate with deterministic DAG scheduling.
+              </p>
+            </div>
+
+            <div className="p-4 rounded-xl border border-white/5 bg-white/[0.02]">
+              <div className="flex items-center gap-2 text-purple-400 mb-2">
+                <Database size={18} />
+                <h4 className="text-xs font-bold uppercase tracking-wider">Cognitive Memory Vault</h4>
+              </div>
+              <p className="text-xs text-slate-400 leading-relaxed">
+                Episodic and semantic recall with strict multi-tenant workspace isolation.
+              </p>
+            </div>
+
+            <div className="p-4 rounded-xl border border-white/5 bg-white/[0.02]">
+              <div className="flex items-center gap-2 text-emerald-400 mb-2">
+                <Server size={18} />
+                <h4 className="text-xs font-bold uppercase tracking-wider">MCP Tool Ecosystem</h4>
+              </div>
+              <p className="text-xs text-slate-400 leading-relaxed">
+                Standardized Model Context Protocol servers for sandboxed external operations.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ==============================================================================
+       * 3. Product Capability Strip
+       * ============================================================================== */}
+      <section id="platform" className="border-y border-white/[0.08] bg-[#090b10] py-6 px-6 md:px-12 overflow-x-auto select-none">
+        <div className="max-w-7xl mx-auto flex items-center justify-between gap-8 min-w-[800px] text-xs font-mono font-medium text-slate-400">
+          <div className="flex items-center gap-2 text-slate-200">
+            <span className="w-1.5 h-1.5 rounded-full bg-cyan-400" />
+            <span>MULTI-AGENT ORCHESTRATION</span>
+          </div>
+          <div className="flex items-center gap-2 text-slate-200">
+            <span className="w-1.5 h-1.5 rounded-full bg-purple-400" />
+            <span>LONG-TERM MEMORY</span>
+          </div>
+          <div className="flex items-center gap-2 text-slate-200">
+            <span className="w-1.5 h-1.5 rounded-full bg-blue-400" />
+            <span>ENTERPRISE RAG</span>
+          </div>
+          <div className="flex items-center gap-2 text-slate-200">
+            <span className="w-1.5 h-1.5 rounded-full bg-teal-400" />
+            <span>KNOWLEDGE GRAPH</span>
+          </div>
+          <div className="flex items-center gap-2 text-slate-200">
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+            <span>MCP ECOSYSTEM</span>
+          </div>
+          <div className="flex items-center gap-2 text-slate-200">
+            <span className="w-1.5 h-1.5 rounded-full bg-rose-400" />
+            <span>VERIFIABLE SECURITY</span>
+          </div>
+        </div>
+      </section>
+
+      {/* ==============================================================================
+       * 4. Central Factory Pipeline Visual
+       * ============================================================================== */}
+      <section className="py-20 px-6 md:px-12 max-w-7xl mx-auto text-center">
+        <span className="text-xs font-mono text-cyan-400 uppercase tracking-widest font-semibold block mb-2">
+          Assembly Line Architecture
+        </span>
+        <h2 className="text-3xl font-bold text-white tracking-tight">The Intelligence Factory Pipeline</h2>
+        <p className="text-xs text-slate-400 max-w-xl mx-auto mt-2 leading-relaxed">
+          Every request traverses a verified, multi-stage intelligence assembly line ensuring accuracy, safety, and evidence provenance.
+        </p>
+
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3 mt-12">
+          {pipelineSteps.map((step, idx) => {
+            const isCurrent = activePipelineStep === idx;
+            return (
+              <div
+                key={step.label}
+                onClick={() => setActivePipelineStep(idx)}
+                className={`p-3.5 rounded-xl border transition-all duration-200 cursor-pointer flex flex-col items-center justify-center text-center ${
+                  isCurrent
+                    ? 'border-cyan-400/50 bg-cyan-500/10 shadow-lg shadow-cyan-500/10 scale-105'
+                    : 'border-white/[0.08] bg-[#0d1017]/60 hover:border-white/20'
+                }`}
+              >
+                <span className="text-[10px] font-mono text-slate-500">0{idx + 1}</span>
+                <span className={`text-xs font-bold font-mono mt-1 ${isCurrent ? 'text-cyan-300' : 'text-slate-200'}`}>
+                  {step.label}
+                </span>
+                <span className="text-[10px] text-slate-400 mt-1 leading-tight line-clamp-2">
+                  {step.desc}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+
+      {/* ==============================================================================
+       * 5. Interactive Intelligence Tour (7 Stations)
+       * ============================================================================== */}
+      <section id="tour" className="py-20 px-6 md:px-12 border-t border-white/[0.08] bg-[#080a0f]">
+        <div className="max-w-7xl mx-auto">
+          <div className="text-center mb-12">
+            <span className="text-xs font-mono text-purple-400 uppercase tracking-widest font-semibold block mb-2">
+              Interactive Factory Tour
+            </span>
+            <h2 className="text-3xl font-bold text-white tracking-tight">Inspect Platform Stations</h2>
+            <p className="text-xs text-slate-400 max-w-lg mx-auto mt-2 leading-relaxed">
+              Explore how AegisAI transforms raw enterprise data into verifiable, autonomous intelligence.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+            {/* Station Selector Sidebar */}
+            <div className="lg:col-span-4 flex flex-col gap-2">
+              {tourStations.map((station) => {
+                const isActive = activeTourStation === station.id;
+                return (
+                  <button
+                    key={station.id}
+                    onClick={() => setActiveTourStation(station.id)}
+                    className={`flex items-center justify-between p-3.5 rounded-xl border text-left transition-all cursor-pointer ${
+                      isActive
+                        ? 'border-cyan-500/30 bg-cyan-500/10 text-cyan-300 shadow-md'
+                        : 'border-white/[0.06] bg-[#0d1017]/40 text-slate-400 hover:border-white/15 hover:text-slate-200'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="shrink-0">{station.icon}</div>
+                      <div>
+                        <span className="text-xs font-bold block text-slate-100">{station.title}</span>
+                        <span className="text-[11px] text-slate-400">{station.subtitle}</span>
+                      </div>
+                    </div>
+                    {isActive && <ChevronRight size={16} className="text-cyan-400 shrink-0" />}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Station Deep Dive Panel */}
+            <div className="lg:col-span-8 rounded-2xl border border-white/10 bg-[#0d1017] p-6 md:p-8 flex flex-col justify-between min-h-[420px]">
+              <div>
+                <div className="flex items-center justify-between border-b border-white/10 pb-4 mb-6">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 rounded-lg bg-white/5 border border-white/10">{activeStation.icon}</div>
+                    <div>
+                      <h3 className="text-lg font-bold text-white">{activeStation.title}</h3>
+                      <span className="text-xs text-cyan-400 font-mono">{activeStation.subtitle}</span>
+                    </div>
+                  </div>
+                  <StatusBadge status="ACTIVE" size="xs" />
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-left">
+                  <div className="p-4 rounded-xl bg-white/[0.02] border border-white/5">
+                    <span className="text-[10px] font-mono uppercase text-slate-500 font-bold block mb-1">
+                      WHAT IT DOES
+                    </span>
+                    <p className="text-xs text-slate-300 leading-relaxed">{activeStation.what}</p>
+                  </div>
+                  <div className="p-4 rounded-xl bg-white/[0.02] border border-white/5">
+                    <span className="text-[10px] font-mono uppercase text-slate-500 font-bold block mb-1">
+                      WHY IT MATTERS
+                    </span>
+                    <p className="text-xs text-slate-300 leading-relaxed">{activeStation.why}</p>
+                  </div>
+                </div>
+
+                {/* Conceptual Architecture Flow */}
+                <div className="mt-8 border-t border-white/10 pt-6">
+                  <span className="text-[10px] font-mono uppercase text-slate-500 font-bold block mb-3">
+                    EXECUTION FLOW SEQUENCE
+                  </span>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {activeStation.flow.map((step, idx) => (
+                      <React.Fragment key={step}>
+                        <span className="px-2.5 py-1 rounded bg-white/5 border border-white/10 text-xs font-mono text-slate-200">
+                          {step}
+                        </span>
+                        {idx < activeStation.flow.length - 1 && (
+                          <ChevronRight size={14} className="text-slate-600 shrink-0" />
+                        )}
+                      </React.Fragment>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-8 pt-4 border-t border-white/10 flex items-center justify-between text-xs text-slate-400">
+                <span>Verified locally under Phase 12.1 design governance.</span>
+                <Button variant="ghost" size="xs" onClick={handleAccessTerminal} rightIcon={<ArrowRight size={12} />}>
+                  Try in Workspace
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ==============================================================================
+       * 6. High-Level Architecture Section
+       * ============================================================================== */}
+      <section id="architecture" className="py-20 px-6 md:px-12 max-w-7xl mx-auto text-center">
+        <span className="text-xs font-mono text-cyan-400 uppercase tracking-widest font-semibold block mb-2">
+          System Architecture
+        </span>
+        <h2 className="text-3xl font-bold text-white tracking-tight">Engineered for Enterprise Scale</h2>
+        <p className="text-xs text-slate-400 max-w-xl mx-auto mt-2 leading-relaxed">
+          Multi-tier architecture partitioning stateless API clusters from persistent storage and sandboxed worker pools.
+        </p>
+
+        <div className="mt-12 p-8 rounded-2xl border border-white/10 bg-[#0d1017]/80 text-left font-mono text-xs">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+            <div className="p-4 rounded-xl border border-cyan-500/20 bg-cyan-500/5">
+              <span className="text-[10px] text-cyan-400 font-bold block mb-1">01. INGRESS TIER</span>
+              <h5 className="font-bold text-slate-100">Reverse Proxy</h5>
+              <p className="text-[11px] text-slate-400 mt-2">Nginx TLS 1.2/1.3 with HSTS, trusted proxies, and rate limiting.</p>
+            </div>
+
+            <div className="p-4 rounded-xl border border-purple-500/20 bg-purple-500/5">
+              <span className="text-[10px] text-purple-400 font-bold block mb-1">02. COMPUTE TIER</span>
+              <h5 className="font-bold text-slate-100">Stateless Cluster</h5>
+              <p className="text-[11px] text-slate-400 mt-2">FastAPI backend replicas & Vite SPA frontend running as non-root UID 10001.</p>
+            </div>
+
+            <div className="p-4 rounded-xl border border-emerald-500/20 bg-emerald-500/5">
+              <span className="text-[10px] text-emerald-400 font-bold block mb-1">03. DATA TIER</span>
+              <h5 className="font-bold text-slate-100">Durable Persistence</h5>
+              <p className="text-[11px] text-slate-400 mt-2">PostgreSQL 16 with advisory locking, Qdrant vectors, and Redis 7.2.</p>
+            </div>
+
+            <div className="p-4 rounded-xl border border-amber-500/20 bg-amber-500/5">
+              <span className="text-[10px] text-amber-400 font-bold block mb-1">04. ASYNC TIER</span>
+              <h5 className="font-bold text-slate-100">Worker & Scheduler</h5>
+              <p className="text-[11px] text-slate-400 mt-2">BackgroundJob queue with leader election, stale recovery, and dead-lettering.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ==============================================================================
+       * 7. Enterprise Security Controls Section
+       * ============================================================================== */}
+      <section id="security" className="py-20 px-6 md:px-12 border-t border-white/[0.08] bg-[#080a0f]">
+        <div className="max-w-7xl mx-auto">
+          <div className="text-center mb-12">
+            <span className="text-xs font-mono text-rose-400 uppercase tracking-widest font-semibold block mb-2">
+              Security & Compliance
+            </span>
+            <h2 className="text-3xl font-bold text-white tracking-tight">Designed with Enterprise Security Controls</h2>
+            <p className="text-xs text-slate-400 max-w-lg mx-auto mt-2 leading-relaxed">
+              Fail-closed security controls embedded into every API boundary, agent invocation, and database transaction.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="p-6 rounded-xl border border-white/10 bg-[#0d1017]">
+              <Lock size={20} className="text-cyan-400 mb-3" />
+              <h4 className="text-sm font-bold text-white">Strict Tenant Isolation</h4>
+              <p className="text-xs text-slate-400 mt-2 leading-relaxed">
+                Mandatory workspace boundary filtering on every query. Cross-tenant leakage is blocked at the database engine level.
+              </p>
+            </div>
+
+            <div className="p-6 rounded-xl border border-white/10 bg-[#0d1017]">
+              <ShieldAlert size={20} className="text-purple-400 mb-3" />
+              <h4 className="text-sm font-bold text-white">Tamper-Evident Audit Trails</h4>
+              <p className="text-xs text-slate-400 mt-2 leading-relaxed">
+                Every security event and administrative action is sealed into a SHA-256 cryptographic hash chain starting from Genesis.
+              </p>
+            </div>
+
+            <div className="p-6 rounded-xl border border-white/10 bg-[#0d1017]">
+              <Zap size={20} className="text-amber-400 mb-3" />
+              <h4 className="text-sm font-bold text-white">SSRF & Injection Defenses</h4>
+              <p className="text-xs text-slate-400 mt-2 leading-relaxed">
+                Outbound network filters block private CIDR traversal. Multi-layer classifiers detect and quarantine prompt injection attempts.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ==============================================================================
+       * 8. Enterprise Use-Cases Section
+       * ============================================================================== */}
+      <section id="use-cases" className="py-20 px-6 md:px-12 max-w-7xl mx-auto">
+        <div className="text-center mb-12">
+          <span className="text-xs font-mono text-emerald-400 uppercase tracking-widest font-semibold block mb-2">
+            Operational Capabilities
+          </span>
+          <h2 className="text-3xl font-bold text-white tracking-tight">Enterprise Value Solutions</h2>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <Card className="p-6">
+            <CardHeader className="p-0 border-none mb-3">
+              <CardTitle>Research & Synthesis</CardTitle>
+            </CardHeader>
+            <CardContent className="p-0 text-xs text-slate-400 leading-relaxed">
+              Coordinate research agents to ingest enterprise documents, crawl technical APIs, and produce verified reports with exact citations.
+            </CardContent>
+          </Card>
+
+          <Card className="p-6">
+            <CardHeader className="p-0 border-none mb-3">
+              <CardTitle>Workflow Automation</CardTitle>
+            </CardHeader>
+            <CardContent className="p-0 text-xs text-slate-400 leading-relaxed">
+              Deploy repeatable multi-agent workflows with visual DAG routing, conditional branching, and human-in-the-loop approvals.
+            </CardContent>
+          </Card>
+
+          <Card className="p-6">
+            <CardHeader className="p-0 border-none mb-3">
+              <CardTitle>Unified Governance</CardTitle>
+            </CardHeader>
+            <CardContent className="p-0 text-xs text-slate-400 leading-relaxed">
+              Manage teams, workspaces, MCP tool access policies, and audit trails through a centralized administrative dashboard.
+            </CardContent>
+          </Card>
+        </div>
+      </section>
+
+      {/* ==============================================================================
+       * 9. Access Terminal CTA
+       * ============================================================================== */}
+      <section className="py-20 px-6 md:px-12 border-t border-white/[0.08] bg-gradient-to-b from-[#080a0f] to-[#06070a] text-center">
+        <div className="max-w-3xl mx-auto p-10 rounded-2xl border border-cyan-500/30 bg-[#0d1017]/90 shadow-2xl relative overflow-hidden">
+          <div className="w-12 h-12 rounded-xl bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 flex items-center justify-center mx-auto mb-4">
+            <BrainCircuit size={24} />
+          </div>
+
+          <h3 className="text-2xl font-bold text-white tracking-tight">Enter the AegisAI Operating System</h3>
+          <p className="text-xs text-slate-400 max-w-md mx-auto mt-2 leading-relaxed">
+            Your intelligence infrastructure is ready. Launch autonomous workflows and explore the memory vault.
           </p>
 
-          <button 
-            onClick={() => { playSynth('gate'); navigate('/login'); }}
-            className="btn-primary py-2.5 px-8 rounded-lg text-xs font-bold gap-2 cursor-pointer shadow-lg shadow-cyan-500/10 mt-8"
-          >
-            INITIATE_TOUR <ArrowRight size={14} />
-          </button>
-
-        </section>
-      ) : (
-        /* ========================================================
-            THE MAIN ASSEMBLY LINE COCKPIT
-            ======================================================== */
-        <section className="py-12 px-6 md:px-12 relative z-10 max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-4 gap-8 animate-fade-in">
-          
-          {/* Column 1: Assembly flow line selector */}
-          <div className="lg:col-span-1 flex flex-col gap-2 border-r border-white/5 pr-4">
-            <span className="text-[9px] text-slate-500 font-mono uppercase tracking-wider mb-2 block">Production line zones</span>
-            
-            {zones.map((z) => (
-              <button
-                key={z.id}
-                onClick={() => { playSynth('beep'); setActiveZone(z.id); }}
-                className={`p-3 rounded-lg border text-left text-xs transition-all flex items-center justify-between cursor-pointer ${activeZone === z.id ? 'bg-cyan-500/5 border-cyan-500/25 text-cyan-400 shadow-md shadow-cyan-500/5' : 'bg-transparent border-transparent text-slate-400 hover:text-white'}`}
-              >
-                <span>{z.name}</span>
-                <span className="text-[8px] font-mono text-slate-500">{z.status}</span>
-              </button>
-            ))}
+          <div className="flex items-center justify-center gap-4 mt-8">
+            <Button variant="primary" size="lg" onClick={handleAccessTerminal} rightIcon={<ArrowRight size={16} />}>
+              Launch Workspace
+            </Button>
+            {!isAuthenticated && (
+              <Button variant="secondary" size="lg" onClick={() => navigate('/login')}>
+                Sign In
+              </Button>
+            )}
           </div>
+        </div>
+      </section>
 
-          {/* Column 2 & 3: active Zone Holographic Visualizer */}
-          <div className="lg:col-span-2 glass-panel p-6 border-white/5 bg-[#0d101750] shadow-lg flex flex-col justify-between min-h-[380px]">
-            
-            <div className="flex justify-between items-start border-b border-white/5 pb-3">
-              <div>
-                <span className="text-[8px] text-slate-500 font-mono uppercase tracking-wider block">{activeZoneData.label}</span>
-                <h3 className="text-md font-bold text-white tracking-wide mt-1">{activeZoneData.name}</h3>
-              </div>
-              <div className="flex items-center gap-1.5 font-mono text-[9px] text-cyan-400 bg-cyan-500/10 px-2.5 py-0.5 rounded animate-pulse">
-                <RotateCw size={10} className="animate-spin-slow" />
-                <span>CONVEYOR_ACTIVE</span>
-              </div>
-            </div>
-
-            {/* Interactive Mechanical Machinery Blueprint (SVG graphics) */}
-            <div className="my-8 flex items-center justify-center relative min-h-[160px]">
-              
-              {/* Central gear spinning mechanism */}
-              <div className="w-24 h-24 border border-dashed border-cyan-500/20 rounded-full flex items-center justify-center animate-spin-slow">
-                <RotateCw size={24} className="text-cyan-400" />
-              </div>
-
-              {/* Laser scanner grid overlay lines */}
-              <div className="absolute inset-x-0 h-0.5 bg-gradient-to-r from-transparent via-cyan-400 to-transparent top-1/2 -translate-y-1/2 animate-pulse"></div>
-
-              <svg className="absolute inset-0 w-full h-full pointer-events-none">
-                <line x1="20" y1="80" x2="80" y2="80" stroke="rgba(0,240,255,0.15)" strokeWidth="1" strokeDasharray="3 3" />
-                <line x1="220" y1="80" x2="280" y2="80" stroke="rgba(189,0,255,0.15)" strokeWidth="1" strokeDasharray="3 3" />
-              </svg>
-            </div>
-
-            <div className="border-t border-white/5 pt-4 text-xs">
-              <span className="text-[9px] text-slate-500 font-mono uppercase block">Active Process details</span>
-              <p className="text-slate-400 mt-1 leading-relaxed">{activeZoneData.details}</p>
-            </div>
-
-          </div>
-
-          {/* Column 4: Ticker telemetry logs terminal */}
-          <div className="lg:col-span-1 glass-panel p-6 border-white/5 bg-[#0d101780] shadow-lg flex flex-col justify-between">
-            <div>
-              <span className="text-[9px] text-slate-500 font-mono uppercase tracking-wider block">Telemetry console</span>
-              <h4 className="text-xs font-bold text-white tracking-wide mt-1">Live Logs Terminal</h4>
-              
-              <div className="mt-4 flex flex-col gap-2.5 font-mono text-[10px] text-slate-400">
-                <div className="p-2.5 rounded bg-white/2 border border-white/3 text-[9px] text-cyan-400">
-                  {activeZoneData.telemetry}
-                </div>
-                <div className="flex justify-between items-center text-[9px] text-slate-500 mt-1">
-                  <span>Compiler: OK</span>
-                  <span>Latency: 12ms</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-8 border-t border-white/5 pt-4">
-              <span className="text-[9px] text-slate-500 font-mono uppercase block">Technological stack</span>
-              <span className="font-semibold text-cyan-400 font-mono text-[10px] block mt-1">{activeZoneData.tech}</span>
-            </div>
-          </div>
-
-          {/* ========================================================
-              ACTIVE REACTOR CORE: ACTIVATE AEGISAI (CTA)
-              ======================================================== */}
-          <div className="lg:col-span-4 glass-panel p-8 border-purple-500/15 bg-gradient-to-b from-[#0d1017e0] to-[#06070ae0] shadow-2xl relative overflow-hidden mt-8 text-center flex flex-col items-center">
-            
-            <div className="absolute inset-0 pointer-events-none bg-[linear-gradient(rgba(189,0,255,0.01)_1px,transparent_0)]" style={{ backgroundSize: '100% 4px' }}></div>
-
-            <span className="text-[9px] text-purple-400 font-mono font-bold tracking-widest uppercase">System Reactor Console</span>
-            <h3 className="text-xl font-bold text-white mt-3 tracking-wide">Ignite AegisAI Operations</h3>
-            <p className="text-xs text-slate-400 mt-2 max-w-md leading-relaxed">
-              Fire up the core engines, spin the assembly gears, and open the active system operator dashboard gates.
-            </p>
-
-            <div className="mt-8 w-full max-w-xs">
-              {factoryState === 'WARPING' ? (
-                <div className="flex flex-col gap-2">
-                  <div className="flex justify-between items-center text-[10px] font-mono text-cyan-400">
-                    <span>HEATING PROCESSORS...</span>
-                    <span>{warpProgress}%</span>
-                  </div>
-                  <div className="w-full bg-white/5 rounded-full h-1.5 overflow-hidden">
-                    <div className="bg-cyan-400 h-full transition-all duration-100" style={{ width: `${warpProgress}%` }}></div>
-                  </div>
-                </div>
-              ) : (
-                <button
-                  onClick={handleIgnition}
-                  disabled={factoryState === 'ACTIVE'}
-                  className="w-full py-4 rounded-xl bg-gradient-to-r from-cyan-500 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 text-black font-bold tracking-widest text-xs shadow-lg shadow-cyan-500/20 hover:shadow-cyan-400/30 transition-all cursor-pointer border border-cyan-400/20 disabled:opacity-50"
-                >
-                  [ ACTIVATE AEGISAI ]
-                </button>
-              )}
-            </div>
-
-            <div className="grid grid-cols-3 gap-6 w-full max-w-md mt-10 text-left border-t border-white/5 pt-6 text-[10px] font-mono text-slate-500">
-              <div>
-                <span>REACTOR_ONLINE: 100%</span>
-                <span className="block mt-1 text-[9px] text-cyan-400">PLANNER OK</span>
-              </div>
-              <div>
-                <span>VAULT_CACHE: FLUSHED</span>
-                <span className="block mt-1 text-[9px] text-purple-400">CHROMADB OK</span>
-              </div>
-              <div>
-                <span>MCP_LINK: CONNECTED</span>
-                <span className="block mt-1 text-[9px] text-emerald-400">AWS, DOCKER OK</span>
-              </div>
-            </div>
-
-          </div>
-
-        </section>
-      )}
-
-      {/* Footer */}
-      <footer className="py-12 px-6 md:px-12 border-t border-white/5 relative z-10 bg-[#06070a90] select-none">
+      {/* ==============================================================================
+       * 10. Public Footer
+       * ============================================================================== */}
+      <footer className="py-12 px-6 md:px-12 border-t border-white/[0.08] bg-[#07080a] text-xs text-slate-500">
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-6">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-cyan-400 to-indigo-500 flex items-center justify-center">
-              <Layers size={16} className="text-black" />
+            <div className="w-6 h-6 rounded-lg bg-gradient-to-tr from-cyan-400 to-indigo-500 flex items-center justify-center">
+              <BrainCircuit size={14} className="text-black font-bold" />
             </div>
-            <span className="font-bold text-xs tracking-wider bg-gradient-to-r from-cyan-400 to-purple-400 bg-clip-text text-transparent">AEGIS_OS</span>
+            <span className="font-bold text-slate-300">AegisAI Autonomous Intelligence Platform</span>
           </div>
 
-          <span className="text-[10px] text-slate-500 font-mono">
-            © 2026 AEGISAI. CONVEYOR SHIFT SYSTEM SECURE.
+          <div className="flex items-center gap-6">
+            <a href="#platform" className="hover:text-slate-300 transition-colors">Platform</a>
+            <a href="#architecture" className="hover:text-slate-300 transition-colors">Architecture</a>
+            <a href="#security" className="hover:text-slate-300 transition-colors">Security</a>
+            <a href="https://github.com/Krish1216-web/AegisAI" target="_blank" rel="noreferrer" className="hover:text-slate-300 transition-colors flex items-center gap-1">
+              GitHub <ExternalLink size={12} />
+            </a>
+          </div>
+
+          <span className="font-mono text-[11px]">
+            © 2026 AegisAI Platform. All rights reserved.
           </span>
         </div>
       </footer>
