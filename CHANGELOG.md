@@ -5,17 +5,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
-## [Unreleased] - Phase 12.12 Final Documentation & Polish
+## [1.0.0-rc.1] - 2026-10-06 — Final Release Candidate
 
-### Added
-- **Definitive Engineering Knowledge Package (`docs/`)**: Comprehensive technical architecture specifications for Multi-Agent Orchestration, Vector Memory, Enterprise RAG, Knowledge Graph, MCP Integration, Visual Workflows, Governance, and Threat Modeling.
-- **Interactive Showcase & Demo Mode (`/showcase`)**: 6 fully orchestrated real-time simulation tours with speed controls, linear plain-text outlines, and strict non-dismissible demo indicator banners.
-- **Root Documentation**: Production `README.md`, `CONTRIBUTING.md`, `SECURITY.md`, and `CHANGELOG.md`.
-- **Systematic UI/UX Polish**: Cross-platform responsive layouts, WCAG 2.1 AA accessible navigation, dark/light theme persistence, and dynamic bundle splitting.
+### Added & Finalized
+- **Final Release Package (Phase 12.15)**: Generated `release-manifest.json`, `docs/FINAL-RELEASE.md`, and `docs/FINAL-RELEASE-SCORECARD.md`.
+- **End-to-End QA Certification (Phase 12.14)**: Verified 1,178 automated tests (955 backend + 223 frontend) with 100% pass rate; certified zero secret leaks and clean production bundle.
+- **Academic, Portfolio & Viva Package (Phase 12.13)**: Formulated comprehensive final-year project specification, 310-word abstract, 42-question viva guide, and LinkedIn showcase.
+- **Definitive Technical Specifications (Phase 12.12)**: 25+ comprehensive engineering deep-dives covering multi-agent DAGs, vector memory, RAG, knowledge graphs, MCP transports, visual workflows, and SHA-256 audit ledgers.
+- **Interactive Showcase Engine (Phase 12.11)**: 6 scripted enterprise simulation tours at `/showcase` with presentation mode and speed controls.
+- **Performance & Accessibility (Phase 12.10)**: Reduced primary entry bundle by 93.2% (100.20 kB entry JS) with WCAG-oriented keyboard focus trapping.
 
-### Verified
-- **1,178 Total Local Automated Tests**: 955 backend pytest suites (100% pass) and 223 frontend vitest suites (100% pass).
-- **Frontend Production Bundle**: Reduced primary entry chunk to 100.20 kB (23.14 kB gzip) with dynamic vendor and route splitting.
 
 ---
 

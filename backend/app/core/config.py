@@ -8,7 +8,7 @@ class BaseConfig(BaseSettings):
     Base system settings configuration shared across environments.
     """
     PROJECT_NAME: str = "AegisAI Enterprise Backend"
-    VERSION: str = Field(default="1.0.0", env="APP_VERSION")
+    VERSION: str = Field(default="1.0.0-rc.1", env="APP_VERSION")
     GIT_COMMIT_SHA: str = Field(default="unknown", env="GIT_COMMIT_SHA")
     BUILD_TIMESTAMP: str = Field(default="", env="BUILD_TIMESTAMP")
     API_V1_STR: str = "/api/v1"

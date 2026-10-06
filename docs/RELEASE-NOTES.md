@@ -1,7 +1,8 @@
-# AegisAI v1.0.0-rc — Official Release Notes
+# AegisAI v1.0.0-rc.1 — Official Release Notes
 
-**Release Status**: Release Candidate / Controlled Production Readiness  
-**Target Environments**: Local Development, Pre-Release Staging, Self-Hosted Production  
+**Release Status**: Release Candidate 1 / Controlled Production Readiness
+**Release Date**: 2026-10-06
+**Target Environments**: Local Development, Pre-Release Staging, Self-Hosted Production
 **Build Verification**: **1,178 Passed Automated Tests (955 Backend + 223 Frontend)**
 
 ---

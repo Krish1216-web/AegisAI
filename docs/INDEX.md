@@ -68,7 +68,9 @@ Welcome to the central technical documentation repository for **AegisAI**, the e
 | [Configuration Reference](file:///D:/CP/AegisAI/docs/CONFIGURATION.md) | Complete reference of all environment variables, connection strings, security flags, and defaults. | DevOps, Developers |
 | [Local Development Guide](file:///D:/CP/AegisAI/docs/DEVELOPMENT.md) | Developer onboarding, environment setup, database migrations, seeding, and contribution workflows. | New Developers, Contributors |
 | [UI Module & Route Map](file:///D:/CP/AegisAI/docs/UI-MODULE-MAP.md) | Component hierarchy, route bindings, context providers, and design token integration. | Frontend Developers |
-| [Release Notes (v1.0.0-rc)](file:///D:/CP/AegisAI/docs/RELEASE-NOTES.md) | Official release candidate notes, major highlights, and upgrade guide. | All Stakeholders |
+| [Official Release Candidate (v1.0.0-rc.1)](file:///D:/CP/AegisAI/docs/FINAL-RELEASE.md) | Official final release candidate specification and verified metrics. | All Stakeholders |
+| [Final Release Scorecard](file:///D:/CP/AegisAI/docs/FINAL-RELEASE-SCORECARD.md) | Readiness evaluation across 15 engineering dimensions. | Evaluators, Reviewers |
+| [Release Notes (v1.0.0-rc.1)](file:///D:/CP/AegisAI/docs/RELEASE-NOTES.md) | Official release candidate notes, major highlights, and upgrade guide. | All Stakeholders |
 
 ---
 

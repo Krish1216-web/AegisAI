@@ -2,6 +2,7 @@
 
 ### Autonomous Multi-Agent Enterprise AI Operating System
 
+[![Release Candidate](https://img.shields.io/badge/Release-v1.0.0--rc.1-blue.svg)](file:///D:/CP/AegisAI/docs/FINAL-RELEASE.md)
 [![Verified Automated Tests](https://img.shields.io/badge/Verified%20Tests-1%2C178%20Passing%20(100%25)-success.svg)](file:///D:/CP/AegisAI/docs/TESTING.md)
 [![Backend Tests](https://img.shields.io/badge/Backend%20Pytest-955%20Passed-blue.svg)](file:///D:/CP/AegisAI/docs/TESTING.md)
 [![Frontend Tests](https://img.shields.io/badge/Frontend%20Vitest-223%20Passed-blue.svg)](file:///D:/CP/AegisAI/docs/TESTING.md)
@@ -9,6 +10,8 @@
 [![React Version](https://img.shields.io/badge/React-19.0-informational.svg)](file:///D:/CP/AegisAI/frontend/package.json)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](file:///D:/CP/AegisAI/LICENSE)
 [![Branch](https://img.shields.io/badge/Branch-phase--11--deployment-orange.svg)](https://github.com/Krish1216-web/AegisAI)
+
+> **Release Status**: **v1.0.0-rc.1 (Final Release Candidate)** — The platform is fully implemented, feature-complete, and verified locally by 1,178 automated tests. Controlled enterprise production deployment requires external cloud infrastructure prerequisites (e.g., managed AWS S3 / Kubernetes).
 
 **AegisAI** is an enterprise-grade autonomous AI Operating System designed to coordinate specialized multi-agent workforces, maintain persistent contextual memory, query relational knowledge graphs, execute external tools via the Model Context Protocol (MCP), and automate complex visual DAG workflows under strict cryptographic governance and tenant isolation.
 

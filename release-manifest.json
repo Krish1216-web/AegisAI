@@ -1,0 +1,92 @@
+{
+  "project": "AegisAI",
+  "name": "AegisAI — Autonomous Multi-Agent Enterprise AI Operating System",
+  "version": "1.0.0-rc.1",
+  "release_type": "release-candidate",
+  "branch": "phase-11-deployment",
+  "release_timestamp": "2026-10-06T12:20:00Z",
+  "qa_gate_status": "READY_FOR_FINAL_RELEASE",
+  "production_status": "controlled-production-ready-with-external-infrastructure-prerequisites",
+  "verification": {
+    "backend_tests_passed": 955,
+    "backend_tests_failed": 0,
+    "backend_test_framework": "pytest",
+    "frontend_tests_passed": 223,
+    "frontend_tests_failed": 0,
+    "frontend_test_files": 15,
+    "frontend_test_framework": "vitest",
+    "total_verified_tests": 1178,
+    "overall_pass_rate": "100%",
+    "frontend_build_status": "SUCCESS",
+    "frontend_build_transformed_modules": 2572,
+    "frontend_entry_js_raw_kb": 100.20,
+    "frontend_entry_js_gzip_kb": 23.14,
+    "database_migration_head": "019_background_jobs",
+    "database_total_migrations": 19,
+    "secret_leak_scan_status": "CLEAN_ZERO_LEAKS"
+  },
+  "subsystems": {
+    "multi_agent_engine": {
+      "agents_count": 9,
+      "agents": [
+        "Orchestrator",
+        "Planner",
+        "Research",
+        "Memory",
+        "Enterprise RAG",
+        "Graph Reasoning",
+        "Tool Executor",
+        "Critic",
+        "Response Synthesizer"
+      ],
+      "status": "IMPLEMENTED_AND_VERIFIED"
+    },
+    "memory_vault": {
+      "tiers": ["Ephemeral Redis Buffer (24h TTL)", "pgvector / ChromaDB 1536-dim Vector Memory"],
+      "decay_scoring": "exponential_time_decay",
+      "graph_sync": "MemoryGraphSync",
+      "status": "IMPLEMENTED_AND_VERIFIED"
+    },
+    "enterprise_rag": {
+      "formats": ["PDF", "DOCX", "TXT", "MD"],
+      "chunking": "semantic_sliding_window_500_100",
+      "retrieval": "hybrid_dense_sparse_rrf",
+      "status": "IMPLEMENTED_AND_VERIFIED"
+    },
+    "knowledge_graph": {
+      "model": "relational_triples",
+      "traversal": "bfs_shortest_path_max_3_hops",
+      "visualizer": "2d_force_directed_d3",
+      "status": "IMPLEMENTED_AND_VERIFIED"
+    },
+    "model_context_protocol": {
+      "transports": ["SSE", "Streamable HTTP", "STDIO Subprocess", "WebSocket"],
+      "security": "ssrf_dns_filter_rfc1918_block_human_approval_gates",
+      "status": "IMPLEMENTED_AND_VERIFIED"
+    },
+    "visual_workflow_studio": {
+      "canvas": "xyflow_react",
+      "nodes_count": 8,
+      "cycle_detection": "kahns_algorithm",
+      "status": "IMPLEMENTED_AND_VERIFIED"
+    },
+    "governance_and_security": {
+      "rbac": "dual_tier_system_and_team_roles",
+      "audit": "cryptographic_sha256_hash_chain",
+      "encryption": "aes_256_gcm_credentials_at_rest",
+      "status": "IMPLEMENTED_AND_VERIFIED"
+    },
+    "showcase_demo": {
+      "route": "/showcase",
+      "scenarios_count": 6,
+      "mode": "SIMULATED_SHOWCASE_ISOLATED",
+      "status": "IMPLEMENTED_AND_VERIFIED"
+    }
+  },
+  "known_limitations": [
+    "Browser-level automated visual regression/screenshot E2E testing not executed in local test suite (unit/integration at 100%).",
+    "Production multi-region cloud deployment requires external AWS/GCP cloud credentials and managed Kubernetes infrastructure.",
+    "Document parser extracts native text streams; scanned bitmap PDFs require OCR pre-processing.",
+    "Formal SOC2 and WCAG 2.1 AA third-party compliance audits not yet commissioned."
+  ]
+}
