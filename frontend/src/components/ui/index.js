@@ -15,3 +15,4 @@ export * from './Table';
 export * from './Breadcrumb';
 export * from './CodeBlock';
 export * from './Timeline';
+export * from './ErrorBoundary';

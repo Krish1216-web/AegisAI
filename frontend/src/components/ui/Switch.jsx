@@ -78,6 +78,8 @@ export function Switch({
         <input
           type="checkbox"
           id={switchId}
+          role="switch"
+          aria-checked={checked}
           checked={checked}
           disabled={disabled}
           onChange={(e) => onChange && onChange(e.target.checked)}

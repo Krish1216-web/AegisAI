@@ -10,6 +10,28 @@ export function Tabs({
   variant = 'pill', // 'pill' | 'underline'
   className = '',
 }) {
+  const handleKeyDown = (e, currentIndex) => {
+    if (!tabs || tabs.length === 0) return;
+    let nextIndex = -1;
+    if (e.key === 'ArrowRight') {
+      e.preventDefault();
+      nextIndex = (currentIndex + 1) % tabs.length;
+    } else if (e.key === 'ArrowLeft') {
+      e.preventDefault();
+      nextIndex = (currentIndex - 1 + tabs.length) % tabs.length;
+    } else if (e.key === 'Home') {
+      e.preventDefault();
+      nextIndex = 0;
+    } else if (e.key === 'End') {
+      e.preventDefault();
+      nextIndex = tabs.length - 1;
+    }
+
+    if (nextIndex >= 0 && tabs[nextIndex]) {
+      onChange(tabs[nextIndex].id);
+    }
+  };
+
   return (
     <div
       role="tablist"
@@ -17,7 +39,7 @@ export function Tabs({
         variant === 'pill' ? 'bg-[#0d1017] rounded-lg border border-white/[0.06]' : 'border-b border-white/[0.08]'
       } ${className}`}
     >
-      {tabs.map((tab) => {
+      {tabs.map((tab, idx) => {
         const isActive = activeTab === tab.id;
 
         const variantStyles =
@@ -33,9 +55,11 @@ export function Tabs({
           <button
             key={tab.id}
             role="tab"
+            tabIndex={isActive ? 0 : -1}
             aria-selected={isActive}
             onClick={() => onChange(tab.id)}
-            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-md text-xs font-medium transition-all duration-150 cursor-pointer shrink-0 ${variantStyles}`}
+            onKeyDown={(e) => handleKeyDown(e, idx)}
+            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-md text-xs font-medium transition-all duration-150 cursor-pointer shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500/50 ${variantStyles}`}
           >
             {tab.icon && <span className="shrink-0">{tab.icon}</span>}
             <span>{tab.label}</span>

@@ -6,7 +6,8 @@ import { Loader2 } from 'lucide-react';
  */
 export function IconButton({
   icon,
-  'aria-label': ariaLabel,
+  'aria-label': ariaLabelProp,
+  ariaLabel,
   variant = 'ghost',
   size = 'md',
   isLoading = false,
@@ -15,6 +16,7 @@ export function IconButton({
   onClick,
   ...props
 }) {
+  const label = ariaLabel || ariaLabelProp;
   const baseStyles = 'inline-flex items-center justify-center rounded-lg transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none cursor-pointer';
 
   const sizeStyles = {
@@ -35,7 +37,7 @@ export function IconButton({
   return (
     <button
       type="button"
-      aria-label={ariaLabel}
+      aria-label={label}
       disabled={disabled || isLoading}
       onClick={onClick}
       className={`${baseStyles} ${sizeStyles[size] || sizeStyles.md} ${variantStyles[variant] || variantStyles.ghost} ${className}`}

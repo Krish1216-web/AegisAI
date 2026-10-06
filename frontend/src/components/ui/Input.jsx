@@ -19,13 +19,18 @@ export const Input = forwardRef(function Input(
   ref
 ) {
   const inputId = id || `input-${Math.random().toString(36).substr(2, 9)}`;
+  const describedBy = error
+    ? `${inputId}-error`
+    : helperText
+    ? `${inputId}-helper`
+    : undefined;
 
   return (
     <div className="flex flex-col gap-1.5 w-full">
       {label && (
         <label htmlFor={inputId} className="text-xs font-medium text-slate-300 flex items-center gap-1">
           <span>{label}</span>
-          {required && <span className="text-rose-400">*</span>}
+          {required && <span className="text-rose-400" aria-hidden="true">*</span>}
         </label>
       )}
       <div className="relative flex items-center">
@@ -36,6 +41,10 @@ export const Input = forwardRef(function Input(
           ref={ref}
           id={inputId}
           disabled={disabled}
+          required={required}
+          aria-required={required}
+          aria-invalid={!!error}
+          aria-describedby={describedBy}
           className={`w-full bg-[#0d1017] border text-sm text-slate-100 rounded-lg px-3.5 py-2 transition-all duration-150 outline-none placeholder:text-slate-500 disabled:opacity-50 disabled:cursor-not-allowed ${
             leftIcon ? 'pl-9' : ''
           } ${rightIcon ? 'pr-9' : ''} ${
@@ -49,8 +58,8 @@ export const Input = forwardRef(function Input(
           <span className="absolute right-3 text-slate-400 shrink-0">{rightIcon}</span>
         )}
       </div>
-      {error && <p className="text-xs text-rose-400">{error}</p>}
-      {!error && helperText && <p className="text-xs text-slate-500">{helperText}</p>}
+      {error && <p id={`${inputId}-error`} role="alert" className="text-xs text-rose-400">{error}</p>}
+      {!error && helperText && <p id={`${inputId}-helper`} className="text-xs text-slate-500">{helperText}</p>}
     </div>
   );
 });
@@ -70,13 +79,18 @@ export const Textarea = forwardRef(function Textarea(
   ref
 ) {
   const textareaId = id || `textarea-${Math.random().toString(36).substr(2, 9)}`;
+  const describedBy = error
+    ? `${textareaId}-error`
+    : helperText
+    ? `${textareaId}-helper`
+    : undefined;
 
   return (
     <div className="flex flex-col gap-1.5 w-full">
       {label && (
         <label htmlFor={textareaId} className="text-xs font-medium text-slate-300 flex items-center gap-1">
           <span>{label}</span>
-          {required && <span className="text-rose-400">*</span>}
+          {required && <span className="text-rose-400" aria-hidden="true">*</span>}
         </label>
       )}
       <textarea
@@ -84,6 +98,10 @@ export const Textarea = forwardRef(function Textarea(
         id={textareaId}
         rows={rows}
         disabled={disabled}
+        required={required}
+        aria-required={required}
+        aria-invalid={!!error}
+        aria-describedby={describedBy}
         className={`w-full bg-[#0d1017] border text-sm text-slate-100 rounded-lg p-3 transition-all duration-150 outline-none placeholder:text-slate-500 disabled:opacity-50 disabled:cursor-not-allowed ${
           error
             ? 'border-rose-500/50 focus:border-rose-500 focus:ring-2 focus:ring-rose-500/20'
@@ -91,8 +109,8 @@ export const Textarea = forwardRef(function Textarea(
         } ${className}`}
         {...props}
       />
-      {error && <p className="text-xs text-rose-400">{error}</p>}
-      {!error && helperText && <p className="text-xs text-slate-500">{helperText}</p>}
+      {error && <p id={`${textareaId}-error`} role="alert" className="text-xs text-rose-400">{error}</p>}
+      {!error && helperText && <p id={`${textareaId}-helper`} className="text-xs text-slate-500">{helperText}</p>}
     </div>
   );
 });
@@ -113,19 +131,28 @@ export const Select = forwardRef(function Select(
   ref
 ) {
   const selectId = id || `select-${Math.random().toString(36).substr(2, 9)}`;
+  const describedBy = error
+    ? `${selectId}-error`
+    : helperText
+    ? `${selectId}-helper`
+    : undefined;
 
   return (
     <div className="flex flex-col gap-1.5 w-full">
       {label && (
         <label htmlFor={selectId} className="text-xs font-medium text-slate-300 flex items-center gap-1">
           <span>{label}</span>
-          {required && <span className="text-rose-400">*</span>}
+          {required && <span className="text-rose-400" aria-hidden="true">*</span>}
         </label>
       )}
       <select
         ref={ref}
         id={selectId}
         disabled={disabled}
+        required={required}
+        aria-required={required}
+        aria-invalid={!!error}
+        aria-describedby={describedBy}
         className={`w-full bg-[#0d1017] border text-sm text-slate-100 rounded-lg px-3 py-2 transition-all duration-150 outline-none disabled:opacity-50 disabled:cursor-not-allowed ${
           error
             ? 'border-rose-500/50 focus:border-rose-500 focus:ring-2 focus:ring-rose-500/20'
@@ -140,8 +167,8 @@ export const Select = forwardRef(function Select(
             </option>
           ))}
       </select>
-      {error && <p className="text-xs text-rose-400">{error}</p>}
-      {!error && helperText && <p className="text-xs text-slate-500">{helperText}</p>}
+      {error && <p id={`${selectId}-error`} role="alert" className="text-xs text-rose-400">{error}</p>}
+      {!error && helperText && <p id={`${selectId}-helper`} className="text-xs text-slate-500">{helperText}</p>}
     </div>
   );
 });

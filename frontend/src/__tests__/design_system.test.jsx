@@ -219,7 +219,7 @@ describe('Phase 12.1 Enterprise Design System Components', () => {
     fireEvent.click(checkbox);
     expect(handleCheckbox).toHaveBeenCalledWith(true);
 
-    const toggle = screen.getByRole('checkbox', { name: /strict tenant isolation/i });
+    const toggle = screen.getByRole('switch', { name: /strict tenant isolation/i });
     fireEvent.click(toggle);
     expect(handleSwitch).toHaveBeenCalledWith(true);
   });

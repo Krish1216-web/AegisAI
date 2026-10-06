@@ -14,20 +14,64 @@ export function Drawer({
   size = 'md', // sm, md, lg, xl
   className = '',
 }) {
+  const drawerRef = React.useRef(null);
+  const previousFocusRef = React.useRef(null);
+
   useEffect(() => {
-    const handleKeyDown = (e) => {
-      if (e.key === 'Escape' && isOpen) {
-        onClose();
-      }
-    };
     if (isOpen) {
+      previousFocusRef.current = document.activeElement;
       document.body.style.overflow = 'hidden';
+
+      const handleKeyDown = (e) => {
+        if (e.key === 'Escape') {
+          onClose();
+          return;
+        }
+
+        if (e.key === 'Tab' && drawerRef.current) {
+          const focusable = drawerRef.current.querySelectorAll(
+            'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+          );
+          if (focusable.length === 0) return;
+          const first = focusable[0];
+          const last = focusable[focusable.length - 1];
+
+          if (e.shiftKey) {
+            if (document.activeElement === first) {
+              e.preventDefault();
+              last.focus();
+            }
+          } else {
+            if (document.activeElement === last) {
+              e.preventDefault();
+              first.focus();
+            }
+          }
+        }
+      };
+
       window.addEventListener('keydown', handleKeyDown);
+
+      const timer = setTimeout(() => {
+        if (drawerRef.current) {
+          const firstAction = drawerRef.current.querySelector('button, input, select, textarea');
+          if (firstAction) {
+            firstAction.focus();
+          } else {
+            drawerRef.current.focus();
+          }
+        }
+      }, 50);
+
+      return () => {
+        clearTimeout(timer);
+        document.body.style.overflow = '';
+        window.removeEventListener('keydown', handleKeyDown);
+        if (previousFocusRef.current && typeof previousFocusRef.current.focus === 'function') {
+          previousFocusRef.current.focus();
+        }
+      };
     }
-    return () => {
-      document.body.style.overflow = '';
-      window.removeEventListener('keydown', handleKeyDown);
-    };
   }, [isOpen, onClose]);
 
   if (!isOpen) return null;
@@ -48,16 +92,19 @@ export function Drawer({
     <div
       role="dialog"
       aria-modal="true"
+      aria-labelledby={title ? 'drawer-title' : undefined}
       className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm animate-fade-in"
       onClick={onClose}
     >
       <div
-        className={`fixed bg-[#0d1017] border-l border-white/[0.1] shadow-2xl flex flex-col w-full ${posStyles[position]} ${sizeStyles[size] || sizeStyles.md} ${className}`}
+        ref={drawerRef}
+        tabIndex={-1}
+        className={`fixed bg-[#0d1017] border-l border-white/[0.1] shadow-2xl flex flex-col w-full focus:outline-none ${posStyles[position]} ${sizeStyles[size] || sizeStyles.md} ${className}`}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="px-6 py-4 border-b border-white/[0.08] flex items-center justify-between gap-4 shrink-0">
           <div>
-            {title && <h3 className="text-base font-semibold text-slate-100">{title}</h3>}
+            {title && <h3 id="drawer-title" className="text-base font-semibold text-slate-100">{title}</h3>}
             {description && <p className="text-xs text-slate-400 mt-0.5">{description}</p>}
           </div>
           <button

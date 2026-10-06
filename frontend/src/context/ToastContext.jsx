@@ -82,7 +82,7 @@ function ToastItem({ toast, onDismiss }) {
 
   return (
     <div
-      role="alert"
+      role={toast.type === 'error' || toast.type === 'warning' ? 'alert' : 'status'}
       className={`pointer-events-auto flex items-start gap-3 p-3.5 rounded-lg border backdrop-blur-md shadow-xl transition-all duration-300 animate-slide-up ${borders[toast.type] || borders.info}`}
     >
       {icons[toast.type] || icons.info}

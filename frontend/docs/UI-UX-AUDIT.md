@@ -32,6 +32,9 @@ Prior to Phase 12.1, a comprehensive inspection of the AegisAI frontend was cond
 | **Workflow Studio / AI Automation** | Disconnected basic editor without accessible DAG representation | Visual AI Automation Studio with @xyflow/react canvas, 13 node types across 3 categories, topological auto-layout, live execution state sync, accessible linear text outline, and timezone-aware scheduling | `VERIFIED LOCALLY` |
 | **Knowledge Intelligence Center (Docs, RAG, Graph)** | Fragmented document list, RAG search, and graph explorer | Unified Knowledge Intelligence Center with ingestion pipeline tracking, vector RAG / Hybrid RAG composer, grounding Evidence Drawer, interactive force-directed SVG graph, Pathfinder, and multi-agent graph reasoning | `VERIFIED LOCALLY` |
 | **Enterprise Governance & Control Center** | Basic tabular admin lists with minimal governance context | Comprehensive Enterprise Governance & Control Plane with Attention Center, Subsystem Diagnostics, Identity & Permissions Explainer, Mandatory Suspension Rationale, 9-Agent Policy Registry, 4-Transport MCP Gating, SOC Alert Posture, and SHA-256 Audit Integrity Verification | `VERIFIED LOCALLY` |
+| **Performance & Code Splitting** | Monolithic JS bundle (1,488 kB) loading all routes eagerly | Route-level `React.lazy` code splitting + function-based `manualChunks` reducing initial entry JS to 99.40 kB (22.98 kB gzip, ~93% reduction) | `VERIFIED LOCALLY` |
+| **Accessibility (WCAG 2.1 AA)** | Basic keyboard accessibility | WAI-ARIA 1.2 Tabs, Modal/Drawer focus trapping & restoration, Command Palette combobox activedescendant, Input aria-invalid/describedby linkage, Toast live regions | `VERIFIED LOCALLY` |
+| **Error Resilience** | Basic React crashes without recovery | Enterprise `ErrorBoundary.jsx` with full-page and inline variants, diagnostic info, and retry/reload actions | `VERIFIED LOCALLY` |
 
 ---
 
@@ -60,11 +63,12 @@ The application shell, landing page, AI OS workspace, Agent Center, Memory Vault
 
 - **Keyboard Navigation**: All interactive elements (buttons, inputs, textareas, mode pills, tabs, modals, quick action cards, drawer triggers, sliders, suspension triggers, role selectors) are reachable and operable via keyboard.
 - **Focus Indicators**: Explicit high-contrast focus rings (`focus-visible:ring-2 focus-visible:ring-cyan-500/50`).
+- **Focus Trapping**: Native JavaScript focus trapping in `Modal.jsx` and `Drawer.jsx` keeping focus bounded to open overlays and restoring focus to trigger elements upon close.
 - **Semantic HTML & ARIA**:
   - `role="dialog"` and `aria-modal="true"` on Modals and Drawers.
-  - `role="combobox"` and `role="listbox"` on Command Palette.
-  - `role="tablist"` and `role="tab"` on Tabs.
-  - `aria-live="polite"` on Toast notifications and execution progress cards.
+  - `role="combobox"`, `aria-autocomplete="list"`, and `aria-activedescendant` on Command Palette.
+  - `role="tablist"` and `role="tab"` on Tabs with WAI-ARIA arrow key navigation.
+  - `role="alert"` (assertive) and `role="status"` (polite) on Toast notifications.
   - Accessible plain-text flow fallback for visual Architecture DAG maps and Workflow Builder with complete step numbering.
 - **Reduced Motion**: All animations (including landing page pipeline auto-advance and status pulses) disable automatically when `prefers-reduced-motion: reduce` is enabled.
 
@@ -72,14 +76,16 @@ The application shell, landing page, AI OS workspace, Agent Center, Memory Vault
 
 ## 5. Performance & Build Metrics
 
-- **Vite Production Build**: 2,562 modules transformed cleanly in 1.26s without build or TypeScript errors.
-- **Bundle Optimization**: Gzipped CSS is ~19.76 kB; gzipped JS is ~382.24 kB.
-- **Render Efficiency**: Elimination of inline duplicate state handlers in favor of shared context providers (`ThemeContext`, `ToastContext`, `AuthContext`).
+- **Vite Production Build**: 2,563 modules transformed cleanly in 8.63s without build or TypeScript errors.
+- **Bundle Optimization**: Initial entry JS is **99.40 kB (22.98 kB gzip)**, representing a **~93.3% reduction** from the 1,488.16 kB monolithic baseline.
+- **Vendor Chunk Isolation**: Heavy packages are isolated into separate chunks: `vendor-flow` (@xyflow/react, 166.87 kB), `vendor-charts` (recharts, 386.37 kB), `vendor-react` (221.46 kB), and `vendor-icons` (25.99 kB).
+- **Render Efficiency**: Elimination of inline duplicate state handlers in favor of shared context providers (`ThemeContext`, `ToastContext`, `AuthContext`) and route-level `Suspense` + `ErrorBoundary` containment.
 
 ---
 
-## 6. Known Limitations & Verification Scope
+## 6. Verification Scope & Local Testing
 
-- **Unit & Integration Verification**: **VERIFIED LOCALLY** (164/164 Vitest tests + 955/955 Pytest tests passing).
-- **Production Asset Build**: **VERIFIED LOCALLY** (0 errors).
+- **Unit & Integration Verification**: **VERIFIED LOCALLY** (206/206 Vitest tests passing across 14 test files + 955/955 Pytest tests passing).
+- **Production Asset Build**: **VERIFIED LOCALLY** (0 errors, 8.63s build).
 - **Headless Browser Automated E2E**: **NOT BROWSER-VERIFIED** (In accordance with project guidelines, browser-level visual rendering and screenshot testing was not executed in this environment).
+

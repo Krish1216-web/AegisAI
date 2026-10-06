@@ -206,6 +206,8 @@ export default function CommandPalette({ onClose, role }) {
             role="combobox"
             aria-expanded={filtered.length > 0}
             aria-autocomplete="list"
+            aria-controls="command-palette-list"
+            aria-activedescendant={filtered[selectedIndex] ? `cmd-opt-${filtered[selectedIndex].id}` : undefined}
             value={query}
             onChange={(e) => { setQuery(e.target.value); setSelectedIndex(0); }}
             placeholder="Type a command or search workspace... (e.g. Workflow, Theme, Memory)"
@@ -217,7 +219,7 @@ export default function CommandPalette({ onClose, role }) {
         </div>
 
         {/* Command list results */}
-        <div role="listbox" className="overflow-y-auto p-2 divide-y divide-white/[0.02]">
+        <div id="command-palette-list" role="listbox" className="overflow-y-auto p-2 divide-y divide-white/[0.02]">
           {filtered.length === 0 ? (
             <div className="py-10 text-center text-xs text-slate-500">
               No matching commands found for "{query}"
@@ -228,6 +230,7 @@ export default function CommandPalette({ onClose, role }) {
               return (
                 <div
                   key={cmd.id}
+                  id={`cmd-opt-${cmd.id}`}
                   role="option"
                   aria-selected={active}
                   onClick={() => { cmd.action(); onClose(); }}

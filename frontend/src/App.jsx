@@ -1,36 +1,37 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { HashRouter, Routes, Route, Navigate, Link, useLocation, useNavigate, Outlet } from 'react-router-dom';
 import LandingPage from './pages/LandingPage';
 import LoginPage from './pages/LoginPage';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
 import { ToastProvider, useToast } from './context/ToastContext';
+import { ErrorBoundary } from './components/ui/ErrorBoundary';
 
-// User Portal Pages
-import UserDashboard from './pages/user/UserDashboard';
-import UserChat from './pages/user/UserChat';
-import UserMemory from './pages/user/UserMemory';
-import UserGraph from './pages/user/UserGraph';
-import UserTasks from './pages/user/UserTasks';
-import UserWorkflows from './pages/user/UserWorkflows';
-import UserWorkflowEditor from './pages/user/UserWorkflowEditor';
-import UserMcpMarket from './pages/user/UserMcpMarket';
-import UserAiMarket from './pages/user/UserAiMarket';
-import UserDocuments from './pages/user/UserDocuments';
-import UserReports from './pages/user/UserReports';
-import UserPlatform from './pages/user/UserPlatform';
-import UserTeams from './pages/user/UserTeams';
-import UserProjects from './pages/user/UserProjects';
-import UserNotifications from './pages/user/UserNotifications';
-import UserCollaborationAnalytics from './pages/user/UserCollaborationAnalytics';
+// Lazy-loaded User Portal Pages for optimal code-splitting
+const UserDashboard = lazy(() => import('./pages/user/UserDashboard'));
+const UserChat = lazy(() => import('./pages/user/UserChat'));
+const UserMemory = lazy(() => import('./pages/user/UserMemory'));
+const UserGraph = lazy(() => import('./pages/user/UserGraph'));
+const UserTasks = lazy(() => import('./pages/user/UserTasks'));
+const UserWorkflows = lazy(() => import('./pages/user/UserWorkflows'));
+const UserWorkflowEditor = lazy(() => import('./pages/user/UserWorkflowEditor'));
+const UserMcpMarket = lazy(() => import('./pages/user/UserMcpMarket'));
+const UserAiMarket = lazy(() => import('./pages/user/UserAiMarket'));
+const UserDocuments = lazy(() => import('./pages/user/UserDocuments'));
+const UserReports = lazy(() => import('./pages/user/UserReports'));
+const UserPlatform = lazy(() => import('./pages/user/UserPlatform'));
+const UserTeams = lazy(() => import('./pages/user/UserTeams'));
+const UserProjects = lazy(() => import('./pages/user/UserProjects'));
+const UserNotifications = lazy(() => import('./pages/user/UserNotifications'));
+const UserCollaborationAnalytics = lazy(() => import('./pages/user/UserCollaborationAnalytics'));
 
-// Admin Portal Pages
-import AdminDashboard from './pages/admin/AdminDashboard';
-import AdminUsers from './pages/admin/AdminUsers';
-import AdminAgents from './pages/admin/AdminAgents';
-import AdminMcp from './pages/admin/AdminMcp';
-import AdminAnalytics from './pages/admin/AdminAnalytics';
-import AdminSecurity from './pages/admin/AdminSecurity';
+// Lazy-loaded Admin Portal Pages
+const AdminDashboard = lazy(() => import('./pages/admin/AdminDashboard'));
+const AdminUsers = lazy(() => import('./pages/admin/AdminUsers'));
+const AdminAgents = lazy(() => import('./pages/admin/AdminAgents'));
+const AdminMcp = lazy(() => import('./pages/admin/AdminMcp'));
+const AdminAnalytics = lazy(() => import('./pages/admin/AdminAnalytics'));
+const AdminSecurity = lazy(() => import('./pages/admin/AdminSecurity'));
 
 // Shared Components
 import CommandPalette from './components/CommandPalette';
@@ -68,16 +69,33 @@ import {
   FolderTree
 } from 'lucide-react';
 
+function RouteLoadingFallback() {
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      className="flex flex-col items-center justify-center min-h-[360px] w-full gap-3 p-8 text-slate-400"
+    >
+      <div className="w-8 h-8 border-3 border-cyan-500/20 border-t-cyan-500 rounded-full animate-spin" aria-hidden="true" />
+      <span className="text-xs font-mono tracking-wider uppercase text-cyan-400 font-semibold">
+        Loading Sovereign Workspace Module...
+      </span>
+    </div>
+  );
+}
+
 // Authentication & Core State Provider Component
 export default function App() {
   return (
-    <ThemeProvider>
-      <AuthProvider>
-        <ToastProvider>
-          <AppContent />
-        </ToastProvider>
-      </AuthProvider>
-    </ThemeProvider>
+    <ErrorBoundary title="AegisAI Sovereign OS Recovery">
+      <ThemeProvider>
+        <AuthProvider>
+          <ToastProvider>
+            <AppContent />
+          </ToastProvider>
+        </AuthProvider>
+      </ThemeProvider>
+    </ErrorBoundary>
   );
 }
 
@@ -128,71 +146,73 @@ function AppContent() {
 
   return (
     <HashRouter>
-      <Routes>
-        <Route path="/" element={<LandingPage />} />
-        <Route
-          path="/login"
-          element={
-            auth.loggedIn ? (
-              <Navigate to={auth.role === 'admin' || auth.role === 'super admin' ? '/admin/dashboard' : '/user/dashboard'} replace />
-            ) : (
-              <LoginPage />
-            )
-          }
-        />
+      <Suspense fallback={<RouteLoadingFallback />}>
+        <Routes>
+          <Route path="/" element={<LandingPage />} />
+          <Route
+            path="/login"
+            element={
+              auth.loggedIn ? (
+                <Navigate to={auth.role === 'admin' || auth.role === 'super admin' ? '/admin/dashboard' : '/user/dashboard'} replace />
+              ) : (
+                <LoginPage />
+              )
+            }
+          />
 
-        {/* User Portal Routes */}
-        <Route
-          element={
-            auth.loggedIn && auth.role === 'user' ? (
-              <UserLayout auth={auth} onLogout={handleLogout} logs={logs} addLog={addLog} triggerNotification={triggerNotification} />
-            ) : (
-              <Navigate to="/login" replace />
-            )
-          }
-        >
-          <Route path="/user" element={<Navigate to="/user/dashboard" replace />} />
-          <Route path="/user/dashboard" element={<UserDashboard triggerNotification={triggerNotification} />} />
-          <Route path="/user/chat" element={<UserChat logs={logs} addLog={addLog} triggerNotification={triggerNotification} />} />
-          <Route path="/user/memory" element={<UserMemory />} />
-          <Route path="/user/graph" element={<UserGraph />} />
-          <Route path="/user/knowledge-graph" element={<UserGraph />} />
-          <Route path="/user/tasks" element={<UserTasks triggerNotification={triggerNotification} />} />
-          <Route path="/user/workflows" element={<UserWorkflows triggerNotification={triggerNotification} />} />
-          <Route path="/user/workflows/:workflowId/edit" element={<UserWorkflowEditor triggerNotification={triggerNotification} />} />
-          <Route path="/user/mcp-marketplace" element={<UserMcpMarket triggerNotification={triggerNotification} />} />
-          <Route path="/user/ai-marketplace" element={<UserAiMarket triggerNotification={triggerNotification} />} />
-          <Route path="/user/documents" element={<UserDocuments triggerNotification={triggerNotification} />} />
-          <Route path="/user/reports" element={<UserReports triggerNotification={triggerNotification} />} />
-          <Route path="/user/platform" element={<UserPlatform triggerNotification={triggerNotification} />} />
-          <Route path="/user/teams" element={<UserTeams triggerNotification={triggerNotification} />} />
-          <Route path="/user/projects" element={<UserProjects triggerNotification={triggerNotification} />} />
-          <Route path="/user/notifications" element={<UserNotifications triggerNotification={triggerNotification} />} />
-          <Route path="/user/collaboration-analytics" element={<UserCollaborationAnalytics triggerNotification={triggerNotification} />} />
-          <Route path="/platform" element={<Navigate to="/user/platform" replace />} />
-        </Route>
+          {/* User Portal Routes */}
+          <Route
+            element={
+              auth.loggedIn && auth.role === 'user' ? (
+                <UserLayout auth={auth} onLogout={handleLogout} logs={logs} addLog={addLog} triggerNotification={triggerNotification} />
+              ) : (
+                <Navigate to="/login" replace />
+              )
+            }
+          >
+            <Route path="/user" element={<Navigate to="/user/dashboard" replace />} />
+            <Route path="/user/dashboard" element={<UserDashboard triggerNotification={triggerNotification} />} />
+            <Route path="/user/chat" element={<UserChat logs={logs} addLog={addLog} triggerNotification={triggerNotification} />} />
+            <Route path="/user/memory" element={<UserMemory />} />
+            <Route path="/user/graph" element={<UserGraph />} />
+            <Route path="/user/knowledge-graph" element={<UserGraph />} />
+            <Route path="/user/tasks" element={<UserTasks triggerNotification={triggerNotification} />} />
+            <Route path="/user/workflows" element={<UserWorkflows triggerNotification={triggerNotification} />} />
+            <Route path="/user/workflows/:workflowId/edit" element={<UserWorkflowEditor triggerNotification={triggerNotification} />} />
+            <Route path="/user/mcp-marketplace" element={<UserMcpMarket triggerNotification={triggerNotification} />} />
+            <Route path="/user/ai-marketplace" element={<UserAiMarket triggerNotification={triggerNotification} />} />
+            <Route path="/user/documents" element={<UserDocuments triggerNotification={triggerNotification} />} />
+            <Route path="/user/reports" element={<UserReports triggerNotification={triggerNotification} />} />
+            <Route path="/user/platform" element={<UserPlatform triggerNotification={triggerNotification} />} />
+            <Route path="/user/teams" element={<UserTeams triggerNotification={triggerNotification} />} />
+            <Route path="/user/projects" element={<UserProjects triggerNotification={triggerNotification} />} />
+            <Route path="/user/notifications" element={<UserNotifications triggerNotification={triggerNotification} />} />
+            <Route path="/user/collaboration-analytics" element={<UserCollaborationAnalytics triggerNotification={triggerNotification} />} />
+            <Route path="/platform" element={<Navigate to="/user/platform" replace />} />
+          </Route>
 
-        {/* Admin Portal Routes */}
-        <Route
-          element={
-            auth.loggedIn && (auth.role === 'admin' || auth.role === 'super admin') ? (
-              <AdminLayout auth={auth} onLogout={handleLogout} logs={logs} addLog={addLog} triggerNotification={triggerNotification} />
-            ) : (
-              <Navigate to="/login" replace />
-            )
-          }
-        >
-          <Route path="/admin" element={<Navigate to="/admin/dashboard" replace />} />
-          <Route path="/admin/dashboard" element={<AdminDashboard />} />
-          <Route path="/admin/users" element={<AdminUsers />} />
-          <Route path="/admin/agents" element={<AdminAgents addLog={addLog} />} />
-          <Route path="/admin/mcp" element={<AdminMcp addLog={addLog} />} />
-          <Route path="/admin/analytics" element={<AdminAnalytics />} />
-          <Route path="/admin/security" element={<AdminSecurity />} />
-        </Route>
+          {/* Admin Portal Routes */}
+          <Route
+            element={
+              auth.loggedIn && (auth.role === 'admin' || auth.role === 'super admin') ? (
+                <AdminLayout auth={auth} onLogout={handleLogout} logs={logs} addLog={addLog} triggerNotification={triggerNotification} />
+              ) : (
+                <Navigate to="/login" replace />
+              )
+            }
+          >
+            <Route path="/admin" element={<Navigate to="/admin/dashboard" replace />} />
+            <Route path="/admin/dashboard" element={<AdminDashboard />} />
+            <Route path="/admin/users" element={<AdminUsers />} />
+            <Route path="/admin/agents" element={<AdminAgents addLog={addLog} />} />
+            <Route path="/admin/mcp" element={<AdminMcp addLog={addLog} />} />
+            <Route path="/admin/analytics" element={<AdminAnalytics />} />
+            <Route path="/admin/security" element={<AdminSecurity />} />
+          </Route>
 
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </Suspense>
 
       {/* Command Palette Overlay */}
       {showCommandPalette && (
@@ -382,9 +402,13 @@ function UserLayout({ auth, onLogout, logs, addLog, triggerNotification }) {
         </header>
 
         {/* Content Render view */}
-        <div className="flex-1 overflow-y-auto p-6 bg-[#07080a]">
-          <Outlet />
-        </div>
+        <main className="flex-1 overflow-y-auto p-6 bg-[#07080a]" tabIndex={-1}>
+          <ErrorBoundary variant="inline" title="Workspace View Recovery">
+            <Suspense fallback={<RouteLoadingFallback />}>
+              <Outlet />
+            </Suspense>
+          </ErrorBoundary>
+        </main>
 
         {/* Bottom Console Ticker */}
         <ConsoleTicker logs={logs} />
@@ -512,9 +536,13 @@ function AdminLayout({ auth, onLogout, logs, addLog, triggerNotification }) {
         </header>
 
         {/* Content Render view */}
-        <div className="flex-1 overflow-y-auto p-6 bg-[#060709]">
-          <Outlet />
-        </div>
+        <main className="flex-1 overflow-y-auto p-6 bg-[#060709]" tabIndex={-1}>
+          <ErrorBoundary variant="inline" title="Administration View Recovery">
+            <Suspense fallback={<RouteLoadingFallback />}>
+              <Outlet />
+            </Suspense>
+          </ErrorBoundary>
+        </main>
 
         {/* Bottom Console Ticker */}
         <ConsoleTicker logs={logs} />

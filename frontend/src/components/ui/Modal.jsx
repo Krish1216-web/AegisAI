@@ -15,20 +15,65 @@ export function Modal({
   className = '',
   showCloseButton = true,
 }) {
+  const modalRef = React.useRef(null);
+  const previousFocusRef = React.useRef(null);
+
   useEffect(() => {
-    const handleKeyDown = (e) => {
-      if (e.key === 'Escape' && isOpen) {
-        onClose();
-      }
-    };
     if (isOpen) {
+      previousFocusRef.current = document.activeElement;
       document.body.style.overflow = 'hidden';
+
+      const handleKeyDown = (e) => {
+        if (e.key === 'Escape') {
+          onClose();
+          return;
+        }
+
+        if (e.key === 'Tab' && modalRef.current) {
+          const focusable = modalRef.current.querySelectorAll(
+            'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+          );
+          if (focusable.length === 0) return;
+          const first = focusable[0];
+          const last = focusable[focusable.length - 1];
+
+          if (e.shiftKey) {
+            if (document.activeElement === first) {
+              e.preventDefault();
+              last.focus();
+            }
+          } else {
+            if (document.activeElement === last) {
+              e.preventDefault();
+              first.focus();
+            }
+          }
+        }
+      };
+
       window.addEventListener('keydown', handleKeyDown);
+
+      // Focus first element or container
+      const timer = setTimeout(() => {
+        if (modalRef.current) {
+          const firstInput = modalRef.current.querySelector('button, input, select, textarea');
+          if (firstInput) {
+            firstInput.focus();
+          } else {
+            modalRef.current.focus();
+          }
+        }
+      }, 50);
+
+      return () => {
+        clearTimeout(timer);
+        document.body.style.overflow = '';
+        window.removeEventListener('keydown', handleKeyDown);
+        if (previousFocusRef.current && typeof previousFocusRef.current.focus === 'function') {
+          previousFocusRef.current.focus();
+        }
+      };
     }
-    return () => {
-      document.body.style.overflow = '';
-      window.removeEventListener('keydown', handleKeyDown);
-    };
   }, [isOpen, onClose]);
 
   if (!isOpen) return null;
@@ -50,7 +95,9 @@ export function Modal({
       onClick={onClose}
     >
       <div
-        className={`w-full bg-[#0d1017] border border-white/[0.12] rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] ${sizeStyles[size] || sizeStyles.md} ${className}`}
+        ref={modalRef}
+        tabIndex={-1}
+        className={`w-full bg-[#0d1017] border border-white/[0.12] rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] focus:outline-none ${sizeStyles[size] || sizeStyles.md} ${className}`}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
