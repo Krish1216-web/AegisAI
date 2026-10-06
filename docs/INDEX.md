@@ -49,6 +49,9 @@ Welcome to the central technical documentation repository for **AegisAI**, the e
 | [Security Architecture](file:///D:/CP/AegisAI/docs/SECURITY-ARCHITECTURE.md) | Defense-in-depth framework, JWT token handling, SSRF defense, prompt injection mitigations, and secret redaction. | Security Architects, Auditors |
 | [STRIDE Threat Model](file:///D:/CP/AegisAI/docs/THREAT-MODEL.md) | Comprehensive STRIDE threat assessment, attack surfaces, vulnerability mitigations, and residual risks. | Security Reviewers, Compliance |
 | [Testing & Quality Assurance](file:///D:/CP/AegisAI/docs/TESTING.md) | Strategy and full test inventory across 955 backend tests and 223 frontend tests (1,178 total). | QA Engineers, Developers |
+| [Final QA Verification Matrix](file:///D:/CP/AegisAI/docs/FINAL-QA-MATRIX.md) | Exhaustive verification results and statuses across all platform subsystems. | QA Leads, Auditors |
+| [Final Risk Register](file:///D:/CP/AegisAI/docs/FINAL-RISK-REGISTER.md) | Assessment of residual operational, deployment, and infrastructure risks. | Security Reviewers, DevOps |
+| [Phase 12.14 Final QA Report](file:///D:/CP/AegisAI/docs/PHASE-12.14-FINAL-QA.md) | Comprehensive end-to-end quality assurance audit and release gate certification. | All Stakeholders |
 | [Performance & Accessibility](file:///D:/CP/AegisAI/docs/PERFORMANCE.md) | Frontend bundle splitting, lazy loading, a11y WCAG 2.1 AA compliance, and backend async I/O benchmarks. | Frontend Engineers, UI/UX Designers |
 | [Capability & Truth Matrix](file:///D:/CP/AegisAI/docs/CAPABILITY-MATRIX.md) | Exhaustive breakdown of features marked as `IMPLEMENTED`, `VERIFIED LOCALLY`, or `SIMULATED DEMO`. | Evaluators, Maintainers |
 | [Platform Boundaries & Limitations](file:///D:/CP/AegisAI/docs/LIMITATIONS.md) | Explicit statement of theoretical and practical system limits, concurrency bounds, and non-supported items. | Solution Architects, DevOps |
