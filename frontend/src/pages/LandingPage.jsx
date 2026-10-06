@@ -173,6 +173,16 @@ export default function LandingPage() {
 
         {/* CTA Buttons */}
         <div className="flex items-center gap-3">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => navigate('/showcase')}
+            leftIcon={<Sparkles size={13} className="text-cyan-400" />}
+            className="border-cyan-500/30 text-cyan-300 hover:bg-cyan-500/10"
+          >
+            Showcase Mode
+          </Button>
+
           <button
             onClick={toggleTheme}
             aria-label="Toggle theme mode"
@@ -223,11 +233,14 @@ export default function LandingPage() {
           <Button variant="primary" size="lg" onClick={handleAccessTerminal} rightIcon={<ArrowRight size={16} />}>
             Enter the Intelligence Factory
           </Button>
-          <a href="#tour">
-            <Button variant="secondary" size="lg">
-              Explore the Platform
-            </Button>
-          </a>
+          <Button
+            variant="secondary"
+            size="lg"
+            onClick={() => navigate('/showcase')}
+            leftIcon={<Sparkles size={16} className="text-cyan-400" />}
+          >
+            Launch Interactive Showcase
+          </Button>
         </div>
 
         {/* Factory Visual Blueprint Mock */}

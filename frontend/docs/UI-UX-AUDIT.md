@@ -35,6 +35,7 @@ Prior to Phase 12.1, a comprehensive inspection of the AegisAI frontend was cond
 | **Performance & Code Splitting** | Monolithic JS bundle (1,488 kB) loading all routes eagerly | Route-level `React.lazy` code splitting + function-based `manualChunks` reducing initial entry JS to 99.40 kB (22.98 kB gzip, ~93% reduction) | `VERIFIED LOCALLY` |
 | **Accessibility (WCAG 2.1 AA)** | Basic keyboard accessibility | WAI-ARIA 1.2 Tabs, Modal/Drawer focus trapping & restoration, Command Palette combobox activedescendant, Input aria-invalid/describedby linkage, Toast live regions | `VERIFIED LOCALLY` |
 | **Error Resilience** | Basic React crashes without recovery | Enterprise `ErrorBoundary.jsx` with full-page and inline variants, diagnostic info, and retry/reload actions | `VERIFIED LOCALLY` |
+| **Demo / Showcase Mode** | No safe presentation mode without risk to production data | Controlled Showcase Command Center (`/showcase`) with 5 deterministic scenarios, 8-stage timeline, live event stream, 9-station tour, presentation mode, and zero production data mutation | `VERIFIED LOCALLY` |
 
 ---
 

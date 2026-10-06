@@ -33,6 +33,9 @@ const AdminMcp = lazy(() => import('./pages/admin/AdminMcp'));
 const AdminAnalytics = lazy(() => import('./pages/admin/AdminAnalytics'));
 const AdminSecurity = lazy(() => import('./pages/admin/AdminSecurity'));
 
+// Lazy-loaded Demo / Showcase Mode Page
+const ShowcasePage = lazy(() => import('./pages/ShowcasePage'));
+
 // Shared Components
 import CommandPalette from './components/CommandPalette';
 import ConsoleTicker from './components/ConsoleTicker';
@@ -149,6 +152,8 @@ function AppContent() {
       <Suspense fallback={<RouteLoadingFallback />}>
         <Routes>
           <Route path="/" element={<LandingPage />} />
+          <Route path="/showcase" element={<ShowcasePage />} />
+          <Route path="/demo" element={<Navigate to="/showcase" replace />} />
           <Route
             path="/login"
             element={

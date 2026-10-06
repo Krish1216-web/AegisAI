@@ -17,7 +17,8 @@ import {
   Users,
   ShieldAlert,
   BrainCircuit,
-  Plus
+  Plus,
+  Sparkles
 } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 
@@ -51,6 +52,15 @@ export default function CommandPalette({ onClose, role }) {
       category: 'Navigation',
       icon: <LayoutDashboard size={16} className="text-cyan-400" />,
       action: () => navigate(role === 'admin' || role === 'super admin' ? '/admin/dashboard' : '/user/dashboard'),
+      roles: ['user', 'admin', 'super admin']
+    },
+    {
+      id: 'nav-showcase',
+      label: 'Open Showcase / Demo Mode',
+      subtitle: 'Explore interactive enterprise multi-agent scenarios and live tour',
+      category: 'Showcase',
+      icon: <Sparkles size={16} className="text-amber-400" />,
+      action: () => navigate('/showcase'),
       roles: ['user', 'admin', 'super admin']
     },
     {
