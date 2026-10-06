@@ -1,6 +1,6 @@
 # AegisAI — Engineering Documentation Index
 
-Welcome to the central technical documentation repository for **AegisAI**, the enterprise autonomous multi-agent operating system. This index categorizes all architecture, subsystem deep-dives, operational runbooks, security models, and API specifications.
+Welcome to the central technical documentation repository for **AegisAI**, the enterprise autonomous multi-agent operating system. This index categorizes all architecture, subsystem deep-dives, operational runbooks, security models, academic reports, and API specifications.
 
 ---
 
@@ -17,10 +17,32 @@ Welcome to the central technical documentation repository for **AegisAI**, the e
 | [Visual Workflow Automation](file:///D:/CP/AegisAI/docs/WORKFLOW-ARCHITECTURE.md) | Drag-and-drop DAG workflow canvas, node lifecycles, conditional routing, human approvals, and cron scheduling. | Automation Engineers, Product Teams |
 | [Enterprise Governance & RBAC](file:///D:/CP/AegisAI/docs/GOVERNANCE-ARCHITECTURE.md) | Multi-tenant isolation, dual-tier RBAC, cryptographic SHA-256 audit chains, and compliance exports. | Security Engineers, Compliance Officers |
 | [End-to-End Data Flows](file:///D:/CP/AegisAI/docs/DATA-FLOWS.md) | Visual sequence diagrams and step-by-step transaction traces across all subsystems. | All Engineers, Evaluators |
+| [Technical Architecture Spec](file:///D:/CP/AegisAI/docs/ARCHITECTURE-TECHNICAL.md) | Technical runtime subsystem specifications, process boundaries, and protocols. | Systems Engineers |
+| [Simple Architecture Guide](file:///D:/CP/AegisAI/docs/ARCHITECTURE-SIMPLE.md) | Analogy-based explanation for non-technical reviewers and stakeholders. | Evaluators, Non-Technical Reviewers |
 
 ---
 
-## 🔒 2. Security, Quality & Verification
+## 🎓 2. Academic, Viva, Defense & Presentation Guides
+
+| Document | Purpose | Audience |
+| :--- | :--- | :--- |
+| [Final-Year Project Report](file:///D:/CP/AegisAI/docs/FINAL-YEAR-PROJECT.md) | Formal academic project specification, methodology, modules, and findings. | Professors, Academic Evaluators |
+| [Project Abstract](file:///D:/CP/AegisAI/docs/ABSTRACT.md) | 310-word technical abstract summarizing problem, solution, and results. | Evaluators, Conference Submissions |
+| [Viva Presentation Guide & 40+ Q&A](file:///D:/CP/AegisAI/docs/VIVA-GUIDE.md) | Spoken presentation scripts (30s, 1m, 3m, 5m, 10m) and 42 technical viva questions with deep answers. | Students, Viva Candidates |
+| [Technical Interview Guide](file:///D:/CP/AegisAI/docs/INTERVIEW-GUIDE.md) | High-frequency recruiter and systems architecture interview questions and answers. | Job Seekers, Interviewers |
+| [Problem $\to$ Solution Matrix](file:///D:/CP/AegisAI/docs/PROBLEM-SOLUTION.md) | Direct matrix mapping enterprise AI problems to AegisAI architectural solutions. | Evaluators, Tech Leads |
+| [Why AegisAI?](file:///D:/CP/AegisAI/docs/WHY-AEGISAI.md) | Detailed comparison between generic conversational chatbots and enterprise AI operating systems. | Evaluators, Product Managers |
+| [Engineering Challenges & Trade-Offs](file:///D:/CP/AegisAI/docs/ENGINEERING-CHALLENGES.md) | Detailed analysis of 5 genuine engineering challenges, technical solutions, and design trade-offs. | System Architects, Evaluators |
+| [Portfolio Case Study](file:///D:/CP/AegisAI/docs/CASE-STUDY.md) | Comprehensive engineering case study outlining challenge, approach, and verified outcomes. | Portfolio Reviewers, Recruiters |
+| [Presentation Slide Outline](file:///D:/CP/AegisAI/docs/PRESENTATION-SLIDES.md) | Structured 15-slide defense deck outline with speaker notes and visual prompts. | Presenters |
+| [Resume Project Descriptions](file:///D:/CP/AegisAI/docs/RESUME-DESCRIPTION.md) | Tailored resume bullets in 1-line, 2-line, 3-bullet, and 4-bullet formats. | Job Seekers |
+| [Portfolio & LinkedIn Showcase](file:///D:/CP/AegisAI/docs/PORTFOLIO-DESCRIPTION.md) | Ready-to-publish social and portfolio showcase text with verified metrics. | Portfolio Curators |
+| [Project Timeline & Roadmap](file:///D:/CP/AegisAI/docs/PROJECT-TIMELINE.md) | Chronological milestone roadmap spanning Phase 1 through Phase 12.13. | Project Reviewers |
+| [Final Presentation Checklist](file:///D:/CP/AegisAI/docs/FINAL-PRESENTATION-CHECKLIST.md) | Pre-presentation verification checklist, browser tab layout, and safe fallback runbooks. | Presenters |
+
+---
+
+## 🔒 3. Security, Quality & Verification
 
 | Document | Purpose | Audience |
 | :--- | :--- | :--- |
@@ -33,23 +55,25 @@ Welcome to the central technical documentation repository for **AegisAI**, the e
 
 ---
 
-## 🚀 3. Operations, Deployment & APIs
+## 🚀 4. Operations, Deployment & APIs
 
 | Document | Purpose | Audience |
 | :--- | :--- | :--- |
 | [Production Deployment Runbook](file:///D:/CP/AegisAI/docs/DEPLOYMENT.md) | Docker Compose environments (Dev, Staging, Prod), Nginx TLS 1.3 setup, health checks, and disaster recovery. | DevOps, SREs |
-| [Observability & Telemetry](file:///D:/CP/AegisAI/docs/OBSERVABILITY.md) | Prometheus metrics, OpenTelemetry traces, structured JSON logging, and SSE execution streams. | SREs, System Operators |
+| [Observability & Telemetry](file:///D:/CP/AegisAI/docs/OBSERVABILITY.md) | In-memory `MetricsRegistry`, structured JSON logging, and SSE execution streams. | SREs, System Operators |
 | [API Reference Specification](file:///D:/CP/AegisAI/docs/API.md) | REST endpoints, request/response JSON schemas, error codes, and SSE streaming protocols. | API Consumers, Frontend Devs |
 | [Configuration Reference](file:///D:/CP/AegisAI/docs/CONFIGURATION.md) | Complete reference of all environment variables, connection strings, security flags, and defaults. | DevOps, Developers |
 | [Local Development Guide](file:///D:/CP/AegisAI/docs/DEVELOPMENT.md) | Developer onboarding, environment setup, database migrations, seeding, and contribution workflows. | New Developers, Contributors |
 | [UI Module & Route Map](file:///D:/CP/AegisAI/docs/UI-MODULE-MAP.md) | Component hierarchy, route bindings, context providers, and design token integration. | Frontend Developers |
+| [Release Notes (v1.0.0-rc)](file:///D:/CP/AegisAI/docs/RELEASE-NOTES.md) | Official release candidate notes, major highlights, and upgrade guide. | All Stakeholders |
 
 ---
 
-## 🎨 4. Frontend & Polish Deliverables
+## 🎨 5. Frontend & Polish Deliverables
 
 For UI/UX design specifications and milestone reports from Phase 12, refer to:
 - [Phase 12 Master Polish Summary](file:///D:/CP/AegisAI/frontend/docs/PHASE-12-FINAL-PRODUCT-POLISH.md)
 - [Phase 12.11 Demo / Showcase Mode Guide](file:///D:/CP/AegisAI/frontend/docs/PHASE-12.11-DEMO-SHOWCASE-MODE.md)
+- [Live Presentation Demo Script](file:///D:/CP/AegisAI/frontend/docs/DEMO-SCRIPT.md)
 - [Enterprise Design System Guide](file:///D:/CP/AegisAI/frontend/docs/DESIGN-SYSTEM.md)
 - [Comprehensive UI/UX Audit Log](file:///D:/CP/AegisAI/frontend/docs/UI-UX-AUDIT.md)
