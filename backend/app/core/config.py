@@ -1,6 +1,6 @@
 from pydantic_settings import BaseSettings
 from pydantic import Field, field_validator
-from typing import Optional, Literal, Dict, Any
+from typing import Optional, Literal, Dict, Any, Union, List
 import os
 
 class BaseConfig(BaseSettings):
@@ -92,14 +92,14 @@ class BaseConfig(BaseSettings):
     ALERT_STALE_WORKER_THRESHOLD_SECONDS: int = Field(default=60, env="ALERT_STALE_WORKER_THRESHOLD_SECONDS")
 
     # API & Web Security Configurations
-    CORS_ORIGINS: list[str] = [
+    CORS_ORIGINS: Union[list[str], str] = [
         "http://localhost:5173",
         "http://localhost:3000",
         "http://127.0.0.1:5173",
         "http://127.0.0.1:3000"
     ]
-    ALLOWED_HOSTS: list[str] = ["localhost", "127.0.0.1", "testserver", "*.aegisai.enterprise", "*.onrender.com", "*.vercel.app"]
-    TRUSTED_PROXIES: list[str] = ["127.0.0.1", "::1", "localhost", "172.16.0.0/12", "10.0.0.0/8", "192.168.0.0/16"]
+    ALLOWED_HOSTS: Union[list[str], str] = ["localhost", "127.0.0.1", "testserver", "*.aegisai.enterprise", "*.onrender.com", "*.vercel.app"]
+    TRUSTED_PROXIES: Union[list[str], str] = ["127.0.0.1", "::1", "localhost", "172.16.0.0/12", "10.0.0.0/8", "192.168.0.0/16"]
     MAX_REQUEST_BODY_BYTES: int = 10 * 1024 * 1024   # 10 MB limit for JSON / standard requests
     MAX_UPLOAD_BYTES: int = 50 * 1024 * 1024         # 50 MB limit for document uploads
     ENABLE_HSTS: bool = False
@@ -111,15 +111,19 @@ class BaseConfig(BaseSettings):
     def parse_string_lists(cls, v: Any) -> list[str]:
         if isinstance(v, str):
             v_str = v.strip()
+            if not v_str:
+                return []
             if v_str.startswith("[") and v_str.endswith("]"):
                 import json
                 try:
-                    return json.loads(v_str)
+                    parsed = json.loads(v_str)
+                    if isinstance(parsed, (list, tuple)):
+                        return [str(i).strip() for i in parsed if str(i).strip()]
                 except Exception:
                     pass
             return [i.strip() for i in v_str.split(",") if i.strip()]
         elif isinstance(v, (list, tuple, set)):
-            return [str(i) for i in v]
+            return [str(i).strip() for i in v if str(i).strip()]
         return v
     
     MODEL_PRICING: Dict[str, Dict[str, Dict[str, float]]] = {
