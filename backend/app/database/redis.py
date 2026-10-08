@@ -4,13 +4,20 @@ from typing import Generator
 from loguru import logger
 
 # Initialize Redis connection pool
-redis_pool = redis.ConnectionPool(
-    host=settings.REDIS_HOST,
-    port=settings.REDIS_PORT,
-    db=0,
-    decode_responses=True,
-    max_connections=50
-)
+if getattr(settings, "REDIS_URL", None):
+    redis_pool = redis.ConnectionPool.from_url(
+        settings.REDIS_URL,
+        decode_responses=True,
+        max_connections=50
+    )
+else:
+    redis_pool = redis.ConnectionPool(
+        host=settings.REDIS_HOST,
+        port=settings.REDIS_PORT,
+        db=0,
+        decode_responses=True,
+        max_connections=50
+    )
 
 def get_redis() -> Generator[redis.Redis, None, None]:
     """

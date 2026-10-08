@@ -1,0 +1,34 @@
+services:
+  - type: web
+    name: aegisai-backend
+    runtime: python
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health/liveness
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: ENVIRONMENT
+        value: prod
+      - key: APP_VERSION
+        value: 1.0.0-rc.1
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: CORS_ORIGINS
+        value: "http://localhost:5173,http://localhost:3000,https://*.vercel.app"
+      - key: ALLOWED_HOSTS
+        value: "localhost,127.0.0.1,*.onrender.com,*.vercel.app"
+      - key: DB_POOL_SIZE
+        value: "5"
+      - key: DB_MAX_OVERFLOW
+        value: "2"
+      - key: MEMORY_PROVIDER
+        value: "mock"
+      - key: RESEARCH_PROVIDER
+        value: "mock"

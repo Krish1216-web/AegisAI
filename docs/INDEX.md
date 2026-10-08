@@ -63,6 +63,7 @@ Welcome to the central technical documentation repository for **AegisAI**, the e
 | Document | Purpose | Audience |
 | :--- | :--- | :--- |
 | [Production Deployment Runbook](file:///D:/CP/AegisAI/docs/DEPLOYMENT.md) | Docker Compose environments (Dev, Staging, Prod), Nginx TLS 1.3 setup, health checks, and disaster recovery. | DevOps, SREs |
+| [Free Public Demo Deployment](file:///D:/CP/AegisAI/docs/FREE-TIER-DEMO-DEPLOYMENT.md) | Zero-cost managed cloud guide (Vercel + Render + Supabase + Upstash) for public evaluation. | DevOps, Presenters, Reviewers |
 | [Observability & Telemetry](file:///D:/CP/AegisAI/docs/OBSERVABILITY.md) | In-memory `MetricsRegistry`, structured JSON logging, and SSE execution streams. | SREs, System Operators |
 | [API Reference Specification](file:///D:/CP/AegisAI/docs/API.md) | REST endpoints, request/response JSON schemas, error codes, and SSE streaming protocols. | API Consumers, Frontend Devs |
 | [Configuration Reference](file:///D:/CP/AegisAI/docs/CONFIGURATION.md) | Complete reference of all environment variables, connection strings, security flags, and defaults. | DevOps, Developers |

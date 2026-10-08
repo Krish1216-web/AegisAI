@@ -1,6 +1,6 @@
 from pydantic_settings import BaseSettings
-from pydantic import Field
-from typing import Optional, Literal, Dict
+from pydantic import Field, field_validator
+from typing import Optional, Literal, Dict, Any
 import os
 
 class BaseConfig(BaseSettings):
@@ -41,6 +41,7 @@ class BaseConfig(BaseSettings):
     # Redis config
     REDIS_HOST: str = Field(default="localhost", env="REDIS_HOST")
     REDIS_PORT: int = Field(default=6379, env="REDIS_PORT")
+    REDIS_URL: Optional[str] = Field(default=None, env="REDIS_URL")
     
     # Qdrant config
     QDRANT_HOST: str = Field(default="localhost", env="QDRANT_HOST")
@@ -97,13 +98,29 @@ class BaseConfig(BaseSettings):
         "http://127.0.0.1:5173",
         "http://127.0.0.1:3000"
     ]
-    ALLOWED_HOSTS: list[str] = ["localhost", "127.0.0.1", "testserver", "*.aegisai.enterprise"]
+    ALLOWED_HOSTS: list[str] = ["localhost", "127.0.0.1", "testserver", "*.aegisai.enterprise", "*.onrender.com", "*.vercel.app"]
     TRUSTED_PROXIES: list[str] = ["127.0.0.1", "::1", "localhost", "172.16.0.0/12", "10.0.0.0/8", "192.168.0.0/16"]
     MAX_REQUEST_BODY_BYTES: int = 10 * 1024 * 1024   # 10 MB limit for JSON / standard requests
     MAX_UPLOAD_BYTES: int = 50 * 1024 * 1024         # 50 MB limit for document uploads
     ENABLE_HSTS: bool = False
     TLS_CERT_PATH: Optional[str] = Field(default=None, env="TLS_CERT_PATH")
     TLS_KEY_PATH: Optional[str] = Field(default=None, env="TLS_KEY_PATH")
+
+    @field_validator("CORS_ORIGINS", "ALLOWED_HOSTS", "TRUSTED_PROXIES", mode="before")
+    @classmethod
+    def parse_string_lists(cls, v: Any) -> list[str]:
+        if isinstance(v, str):
+            v_str = v.strip()
+            if v_str.startswith("[") and v_str.endswith("]"):
+                import json
+                try:
+                    return json.loads(v_str)
+                except Exception:
+                    pass
+            return [i.strip() for i in v_str.split(",") if i.strip()]
+        elif isinstance(v, (list, tuple, set)):
+            return [str(i) for i in v]
+        return v
     
     MODEL_PRICING: Dict[str, Dict[str, Dict[str, float]]] = {
         "openai": {
@@ -127,7 +144,10 @@ class BaseConfig(BaseSettings):
 
     def get_database_url(self) -> str:
         if self.DATABASE_URL:
-            return self.DATABASE_URL
+            url = self.DATABASE_URL
+            if url.startswith("postgres://"):
+                url = url.replace("postgres://", "postgresql://", 1)
+            return url
         return f"postgresql://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@{self.POSTGRES_SERVER}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
 
 class DevelopmentConfig(BaseConfig):

@@ -27,13 +27,21 @@ class QueueManager:
             self.redis = None
         else:
             try:
-                self.redis = redis.Redis(
-                    host=settings.REDIS_HOST,
-                    port=settings.REDIS_PORT,
-                    decode_responses=True,
-                    socket_connect_timeout=0.5,
-                    socket_timeout=1.0
-                )
+                if getattr(settings, "REDIS_URL", None):
+                    self.redis = redis.Redis.from_url(
+                        settings.REDIS_URL,
+                        decode_responses=True,
+                        socket_connect_timeout=1.0,
+                        socket_timeout=2.0
+                    )
+                else:
+                    self.redis = redis.Redis(
+                        host=settings.REDIS_HOST,
+                        port=settings.REDIS_PORT,
+                        decode_responses=True,
+                        socket_connect_timeout=0.5,
+                        socket_timeout=1.0
+                    )
             except Exception as e:
                 logger.warning(f"Failed to initialize live Redis connection: {e}")
                 self.redis = None
