@@ -35,7 +35,7 @@ The AegisAI Collaboration Foundation (Phase 9.1) establishes the multi-tenant co
 1. **Workspace Boundary Strictness**: Teams strictly belong to exactly one workspace (`workspace_id`). Teams can never span multiple workspaces.
 2. **Workspace Membership Prerequisite**: A user must be an active member of the workspace before being added to any team inside that workspace.
 3. **Identity Provenance**: The caller's workspace identity and user credentials are deterministically resolved server-side via authenticated session context and JWT verification—never trusted from client-supplied payload parameters.
-4. **Reversible Migration**: Schema migrations are registered under Alembic revision `014_team_collaboration_foundation` with complete upgrade and downgrade paths.
+4. **Reversible Migration**: Schema migrations are registered under Alembic revision `014_team_collab_foundation` with complete upgrade and downgrade paths.
 
 ---
 

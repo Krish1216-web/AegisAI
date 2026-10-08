@@ -79,7 +79,7 @@ Implemented in [`frontend/src/pages/user/UserTeams.jsx`](file:///d:/CP/AegisAI/f
 ---
 
 ## 9. Database Migration
-Registered in [`backend/alembic/versions/015_team_invitations.py`](file:///d:/CP/AegisAI/backend/alembic/versions/015_team_invitations.py), upgrading from `014_team_collaboration_foundation` to `015_team_invitations`.
+Registered in [`backend/alembic/versions/015_team_invitations.py`](file:///d:/CP/AegisAI/backend/alembic/versions/015_team_invitations.py), upgrading from `014_team_collab_foundation` to `015_team_invitations`.
 
 ---
 

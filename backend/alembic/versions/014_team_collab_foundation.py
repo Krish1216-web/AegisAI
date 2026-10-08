@@ -1,6 +1,6 @@
 """team_collaboration_foundation
 
-Revision ID: 014_team_collaboration_foundation
+Revision ID: 014_team_collab_foundation
 Revises: 013_workflow_scheduling
 Create Date: 2026-09-01 12:55:00.000000
 
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
-revision: str = '014_team_collaboration_foundation'
+revision: str = '014_team_collab_foundation'
 down_revision: Union[str, None] = '013_workflow_scheduling'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None

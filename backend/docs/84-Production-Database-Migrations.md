@@ -108,11 +108,12 @@ The database schema history is managed via Alembic. The migration graph is stric
 | `011_workflow_engine_foundation` | Workflows | Nodes, edges, variables, workflow executions |
 | `012_workflow_approval_governance` | Governance | Approval steps and role-based execution gating |
 | `013_workflow_scheduling` | Scheduler | Cron scheduling and automated triggers |
-| `014_team_collaboration_foundation` | Teams | Multi-user team entities and membership |
+| `014_team_collab_foundation` | Teams | Multi-user team entities and membership |
 | `015_team_invitations` | Invitations | Workspace and team invitation tokens |
 | `016_shared_projects_resources` | Projects | Shared workspace projects and resource binding |
 | `017_comments_mentions` | Comments | Collaboration comments, replies, user mentions |
-| `018_notifications_realtime` (HEAD) | Notifications | In-app notification feeds and preference matrices |
+| `018_notifications_realtime` | Notifications | In-app notification feeds and preference matrices |
+| `019_background_jobs` (HEAD) | Background Jobs | Asynchronous job queue, task execution, and dead-letter tracking |
 
 ---
 

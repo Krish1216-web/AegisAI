@@ -1,7 +1,7 @@
 """team_invitations
 
 Revision ID: 015_team_invitations
-Revises: 014_team_collaboration_foundation
+Revises: 014_team_collab_foundation
 Create Date: 2026-09-01 20:55:00.000000
 
 """
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = '015_team_invitations'
-down_revision: Union[str, None] = '014_team_collaboration_foundation'
+down_revision: Union[str, None] = '014_team_collab_foundation'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

@@ -348,3 +348,53 @@ def test_clean_database_full_19_migrations_upgrade(tmp_path):
     assert stat["migration_state"] == "UP_TO_DATE"
     assert stat["workflows_table_exists"] is True
     assert stat["workflows_schema_type"] == "011_production"
+
+
+def test_alembic_all_revision_ids_max_32_characters():
+    """Regression test: all Alembic revision IDs must be <= 32 characters for VARCHAR(32) alembic_version compatibility."""
+    from pathlib import Path
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+
+    backend_dir = Path(__file__).resolve().parent.parent.parent
+    ini_path = str(backend_dir / "alembic.ini")
+    cfg = Config(ini_path)
+    cfg.set_main_option("script_location", str(backend_dir / "alembic"))
+    script = ScriptDirectory.from_config(cfg)
+
+    # Check every single revision in script directory
+    long_revisions = []
+    for sc in script.walk_revisions():
+        rev_id = sc.revision
+        if len(rev_id) > 32:
+            long_revisions.append((rev_id, len(rev_id)))
+        if sc.down_revision:
+            down_revs = [sc.down_revision] if isinstance(sc.down_revision, str) else list(sc.down_revision)
+            for d in down_revs:
+                if len(d) > 32:
+                    long_revisions.append((f"down_revision:{d}", len(d)))
+
+    assert not long_revisions, f"Found revisions exceeding Alembic's 32-character VARCHAR boundary: {long_revisions}"
+
+
+def test_alembic_single_head_and_strict_linear_chain():
+    """Regression test: verify exactly one head revision and no branches in Alembic history."""
+    from pathlib import Path
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+
+    backend_dir = Path(__file__).resolve().parent.parent.parent
+    ini_path = str(backend_dir / "alembic.ini")
+    cfg = Config(ini_path)
+    cfg.set_main_option("script_location", str(backend_dir / "alembic"))
+    script = ScriptDirectory.from_config(cfg)
+
+    heads = script.get_heads()
+    assert len(heads) == 1, f"Expected exactly 1 migration head, got {heads}"
+    assert heads[0] == "019_background_jobs"
+
+    # Walk from base to head and ensure linear continuity
+    revs = list(script.walk_revisions(base="base", head=heads[0]))
+    assert len(revs) == 19
+    for r in revs:
+        assert len(r.revision) <= 32

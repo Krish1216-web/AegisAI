@@ -217,3 +217,7 @@ curl -s https://your-backend.onrender.com/health
   cd backend
   python -m app.database.migration_status
   ```
+
+### Issue 6: Alembic Revision Length Standard (`VARCHAR(32)`)
+- **Cause**: Standard PostgreSQL `alembic_version` tables define `version_num VARCHAR(32)`. Revisions exceeding 32 characters fail during `UPDATE alembic_version` with `StringDataRightTruncation`.
+- **Remedy**: All AegisAI Alembic revision identifiers strictly observe a maximum length of 32 characters (e.g., `014_team_collab_foundation` at 27 characters). Regression tests enforce this constraint across the entire migration history.
