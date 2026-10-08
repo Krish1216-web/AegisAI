@@ -61,12 +61,16 @@ def upgrade() -> None:
     op.add_column('agent_executions', sa.Column('metadata', sa.JSON(), nullable=True))
 
     # Add foreign key constraint for execution_id
-    op.create_foreign_key(
-        'fk_agent_executions_execution_id',
-        'agent_executions', 'executions',
-        ['execution_id'], ['id'],
-        ondelete='CASCADE'
-    )
+    if op.get_bind().dialect.name != "sqlite":
+        try:
+            op.create_foreign_key(
+                'fk_agent_executions_execution_id',
+                'agent_executions', 'executions',
+                ['execution_id'], ['id'],
+                ondelete='CASCADE'
+            )
+        except Exception:
+            pass
     op.create_index(op.f('ix_agent_executions_execution_id'), 'agent_executions', ['execution_id'], unique=False)
 
     # Note: We keep nullable=True for execution_id/agent_type to support existing records,

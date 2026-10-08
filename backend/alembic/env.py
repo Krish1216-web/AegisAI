@@ -30,6 +30,14 @@ if config.config_file_name is not None:
 # Set the target metadata for autogenerate support
 target_metadata = Base.metadata
 
+def get_url() -> str:
+    from app.core.config import normalize_database_url
+    url = config.get_main_option("sqlalchemy.url")
+    if url:
+        return normalize_database_url(url) or url
+    return settings.get_database_url()
+
+
 def run_migrations_offline() -> None:
     """Run migrations in 'offline' mode.
 
@@ -42,7 +50,7 @@ def run_migrations_offline() -> None:
     script output.
 
     """
-    url = settings.get_database_url()
+    url = get_url()
     config.set_main_option("sqlalchemy.url", url)
     context.configure(
         url=url,
@@ -63,13 +71,13 @@ def run_migrations_online() -> None:
     and associate a connection with the context.
 
     """
-    # Overwrite the sqlalchemy.url property with normalized canonical settings URL
-    db_url = settings.get_database_url()
+    # Overwrite the sqlalchemy.url property with normalized canonical URL
+    db_url = get_url()
     config.set_main_option("sqlalchemy.url", db_url)
 
     configuration = config.get_section(config.config_ini_section) or {}
     configuration["sqlalchemy.url"] = db_url
-    
+
     connectable = engine_from_config(
         configuration,
         prefix="sqlalchemy.",

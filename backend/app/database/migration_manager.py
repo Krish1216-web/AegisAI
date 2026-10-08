@@ -141,3 +141,90 @@ def run_migrations_with_lock(
             }
         finally:
             release_advisory_lock(connection)
+
+
+def get_migration_status(
+    engine: Optional[Engine] = None,
+    alembic_ini_path: str = "alembic.ini"
+) -> Dict[str, Any]:
+    """
+    Safely inspects the active database schema and Alembic revision state
+    WITHOUT modifying database state. Never outputs passwords or secrets.
+    """
+    from sqlalchemy import inspect
+    from app.core.config import settings, get_safe_database_info
+
+    chain_info = verify_migration_chain(alembic_ini_path)
+    expected_head = chain_info["head"]
+
+    if engine is None:
+        from app.database.session import engine as app_engine
+        engine = app_engine
+
+    db_info = get_safe_database_info(settings.get_database_url())
+
+    current_revision: Optional[str] = None
+    existing_tables: list[str] = []
+    workflows_exists = False
+    workflows_schema_type = "none"
+
+    try:
+        with engine.connect() as conn:
+            inspector = inspect(conn)
+            existing_tables = sorted(inspector.get_table_names())
+
+            # Read alembic_version if present
+            if "alembic_version" in existing_tables:
+                res = conn.execute(text("SELECT version_num FROM alembic_version")).fetchone()
+                if res:
+                    current_revision = str(res[0])
+
+            # Inspect workflows table structure if present
+            if "workflows" in existing_tables:
+                workflows_exists = True
+                cols = [c["name"] for c in inspector.get_columns("workflows")]
+                if "is_active" in cols and "status" in cols:
+                    workflows_schema_type = "011_production"
+                else:
+                    workflows_schema_type = "001_placeholder"
+    except Exception as e:
+        logger.warning(f"Error inspecting database tables: {e}")
+
+    # Determine overall status classification
+    if not existing_tables:
+        migration_state = "CLEAN_EMPTY_DATABASE"
+    elif current_revision == expected_head:
+        migration_state = "UP_TO_DATE"
+    elif current_revision is None:
+        migration_state = "UNTRACKED_OR_PARTIAL"
+    else:
+        migration_state = "PENDING_MIGRATIONS"
+
+    return {
+        "migration_state": migration_state,
+        "current_revision": current_revision,
+        "expected_head": expected_head,
+        "is_linear": chain_info["is_linear"],
+        "total_revisions": chain_info["total_revisions"],
+        "workflows_table_exists": workflows_exists,
+        "workflows_schema_type": workflows_schema_type,
+        "workflows_owner_migration": "011_workflow_engine_foundation",
+        "total_tables_in_db": len(existing_tables),
+        "existing_tables": existing_tables,
+        "database_info": db_info
+    }
+
+
+if __name__ == "__main__":
+    import sys
+    import json
+    if len(sys.argv) > 1 and sys.argv[1] == "status":
+        status = get_migration_status()
+        print(json.dumps(status, indent=2))
+    elif len(sys.argv) > 1 and sys.argv[1] == "upgrade":
+        from app.database.session import engine
+        res = run_migrations_with_lock(engine)
+        print(json.dumps(res, indent=2))
+    else:
+        status = get_migration_status()
+        print(json.dumps(status, indent=2))

@@ -17,6 +17,24 @@ depends_on = None
 
 
 def upgrade() -> None:
+    # Clean up legacy placeholder tables from 001 if present
+    conn = op.get_bind()
+    inspector = sa.inspect(conn)
+    tables = inspector.get_table_names()
+
+    # Drop in reverse dependency order
+    for t in [
+        'workflow_execution_nodes',
+        'workflow_logs',
+        'workflow_variables',
+        'workflow_edges',
+        'workflow_executions',
+        'workflow_nodes',
+        'workflows'
+    ]:
+        if t in tables:
+            op.drop_table(t)
+
     # 1. Create workflows table
     op.create_table(
         'workflows',

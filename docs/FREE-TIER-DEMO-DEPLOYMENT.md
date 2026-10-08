@@ -208,3 +208,12 @@ curl -s https://your-backend.onrender.com/health
 ### Issue 4: CORS Errors on API Requests
 - **Cause**: Backend `CORS_ORIGINS` does not match the exact Vercel URL.
 - **Remedy**: Add your custom Vercel domain to Render's `CORS_ORIGINS` environment variable (e.g., `https://your-project.vercel.app`).
+
+### Issue 5: Supabase Schema Diagnostics & Migration Reconciliation
+- **Cause**: If an existing Supabase PostgreSQL instance has partial legacy schema definitions or placeholder tables, `alembic upgrade head` cleanly transitions through all 19 linear revisions (`001` to `019_background_jobs`).
+- **Remedy**: Revisions `005`, `009`, `011`, and `018` automatically drop and replace legacy placeholder tables (`documents`, `mcp_servers`, `workflows`, `notifications`) during upgrade.
+- **Non-Destructive Diagnostic CLI**: Run the diagnostic tool locally or in CI against any connection string to inspect schema status without modifying tables:
+  ```bash
+  cd backend
+  python -m app.database.migration_status
+  ```

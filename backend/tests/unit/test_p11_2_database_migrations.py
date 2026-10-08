@@ -304,3 +304,47 @@ def test_database_error_no_password_leak():
     safe_display = raw_url.replace(cfg.POSTGRES_PASSWORD, "********")
     assert "SUPER_SECRET_DB_PASSWORD_123!" not in safe_display
     assert "postgresql+psycopg2://aegis_user:********@db.internal:5432/aegis_prod" == safe_display
+
+
+def test_get_migration_status_diagnostic():
+    """Verify that get_migration_status returns comprehensive diagnostic info without secrets."""
+    from app.database.migration_manager import get_migration_status
+
+    status = get_migration_status()
+    assert "migration_state" in status
+    assert status["expected_head"] == "019_background_jobs"
+    assert status["is_linear"] is True
+    assert status["total_revisions"] == 19
+    assert status["workflows_owner_migration"] == "011_workflow_engine_foundation"
+    assert isinstance(status["existing_tables"], list)
+    assert "database_info" in status
+    assert "password" not in str(status["database_info"])
+
+
+def test_clean_database_full_19_migrations_upgrade(tmp_path):
+    """Verify that all 19 Alembic migrations upgrade cleanly from empty database to head."""
+    import os
+    from alembic.config import Config
+    from alembic import command
+    from pathlib import Path
+
+    test_db = tmp_path / "clean_upgrade_test.db"
+    backend_dir = Path(__file__).resolve().parent.parent.parent
+    ini_path = str(backend_dir / "alembic.ini")
+
+    cfg = Config(ini_path)
+    cfg.set_main_option("script_location", str(backend_dir / "alembic"))
+    cfg.set_main_option("sqlalchemy.url", f"sqlite:///{test_db}")
+
+    # Run upgrade head on completely empty database
+    command.upgrade(cfg, "head")
+
+    # Verify head reached
+    from app.database.migration_manager import get_migration_status
+    from sqlalchemy import create_engine
+    test_eng = create_engine(f"sqlite:///{test_db}")
+    stat = get_migration_status(engine=test_eng, alembic_ini_path=ini_path)
+    assert stat["current_revision"] == "019_background_jobs"
+    assert stat["migration_state"] == "UP_TO_DATE"
+    assert stat["workflows_table_exists"] is True
+    assert stat["workflows_schema_type"] == "011_production"
