@@ -108,6 +108,7 @@ Before beginning deployment, ensure you have active accounts on:
 
 | Key | Value | Description |
 | :--- | :--- | :--- |
+| `PYTHON_VERSION` | `3.12.8` | Pins canonical Python 3.12 runtime for `psycopg2-binary` compatibility |
 | `ENVIRONMENT` | `prod` | Activates production security controls and invariants |
 | `APP_VERSION` | `1.0.0-rc.1` | Release candidate version tag |
 | `SECRET_KEY` | *(Generate 32+ char key)* | JWT signing secret |
@@ -119,6 +120,9 @@ Before beginning deployment, ensure you have active accounts on:
 | `DB_MAX_OVERFLOW` | `2` | Connection pool overflow limit |
 | `MEMORY_PROVIDER` | `mock` | Deterministic memory provider for demo |
 | `RESEARCH_PROVIDER` | `mock` | Mock research search provider |
+
+> **Runtime & Driver Architecture Note**:
+> AegisAI uses synchronous SQLAlchemy backed by **`psycopg2-binary`** running on **Python 3.12**. Render automatically picks up `.python-version` / `runtime.txt` (pinning `3.12.8`), ensuring precompiled wheels install cleanly without C-extension compilation failures. Connection strings formatted as `postgresql://`, `postgres://`, or `postgresql+psycopg://` are automatically normalized to use `psycopg2`.
 
 5. Click **Create Web Service**. Render will automatically build the container, execute database migrations from `001` to `019_background_jobs`, auto-seed default roles and demo users, and start FastAPI.
 

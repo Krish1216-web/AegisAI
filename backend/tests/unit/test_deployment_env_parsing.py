@@ -161,3 +161,47 @@ def test_local_sqlite_configuration_remains_valid():
     cfg = DevelopmentConfig()
     assert cfg.ENVIRONMENT == "dev"
     assert "sqlite" in cfg.get_database_url() or "postgresql" in cfg.get_database_url()
+
+
+def test_database_url_normalization_postgres_and_psycopg_schemes():
+    """Verify that postgres:// and postgresql+psycopg:// schemes normalize to canonical postgresql://."""
+    # 1. postgres:// scheme
+    cfg1 = BaseConfig(DATABASE_URL="postgres://postgres.abc:pwd@aws-0-ap-south-1.pooler.supabase.com:5432/postgres")
+    assert cfg1.get_database_url() == "postgresql://postgres.abc:pwd@aws-0-ap-south-1.pooler.supabase.com:5432/postgres"
+
+    # 2. postgresql+psycopg:// scheme
+    cfg2 = BaseConfig(DATABASE_URL="postgresql+psycopg://postgres.abc:pwd@aws-0-ap-south-1.pooler.supabase.com:5432/postgres")
+    assert cfg2.get_database_url() == "postgresql://postgres.abc:pwd@aws-0-ap-south-1.pooler.supabase.com:5432/postgres"
+
+    # 3. Standard postgresql:// scheme
+    cfg3 = BaseConfig(DATABASE_URL="postgresql://postgres.abc:pwd@aws-0-ap-south-1.pooler.supabase.com:5432/postgres")
+    assert cfg3.get_database_url() == "postgresql://postgres.abc:pwd@aws-0-ap-south-1.pooler.supabase.com:5432/postgres"
+
+    # 4. SQLite scheme remains unchanged
+    cfg4 = BaseConfig(DATABASE_URL="sqlite:///./aegisai.db")
+    assert cfg4.get_database_url() == "sqlite:///./aegisai.db"
+
+
+def test_python_runtime_version_declarations():
+    """Verify that repository and backend Python runtime files pin Python 3.12."""
+    from pathlib import Path
+    backend_dir = Path(__file__).resolve().parent.parent.parent
+    repo_root = backend_dir.parent
+
+    # Check root .python-version and runtime.txt
+    root_pv = repo_root / ".python-version"
+    backend_pv = backend_dir / ".python-version"
+    root_rt = repo_root / "runtime.txt"
+    backend_rt = backend_dir / "runtime.txt"
+
+    assert root_pv.exists(), "Missing root .python-version file"
+    assert "3.12" in root_pv.read_text()
+
+    assert backend_pv.exists(), "Missing backend .python-version file"
+    assert "3.12" in backend_pv.read_text()
+
+    assert root_rt.exists(), "Missing root runtime.txt file"
+    assert "3.12" in root_rt.read_text()
+
+    assert backend_rt.exists(), "Missing backend runtime.txt file"
+    assert "3.12" in backend_rt.read_text()
