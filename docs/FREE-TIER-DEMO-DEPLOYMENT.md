@@ -122,7 +122,7 @@ Before beginning deployment, ensure you have active accounts on:
 | `RESEARCH_PROVIDER` | `mock` | Mock research search provider |
 
 > **Runtime & Driver Architecture Note**:
-> AegisAI uses synchronous SQLAlchemy backed by **`psycopg2-binary`** running on **Python 3.12**. Render automatically picks up `.python-version` / `runtime.txt` (pinning `3.12.8`), ensuring precompiled wheels install cleanly without C-extension compilation failures. Connection strings formatted as `postgresql://`, `postgres://`, or `postgresql+psycopg://` are automatically normalized to use `psycopg2`.
+> AegisAI uses synchronous SQLAlchemy backed by **`psycopg2-binary>=2.9.9`** running on **Python 3.12 (3.12.8)**. Render automatically picks up `.python-version` / `runtime.txt` (pinning `3.12.8`), ensuring precompiled wheels install cleanly without C-extension compilation failures. Both Alembic migrations (`alembic/env.py`) and runtime database sessions (`app/database/session.py`) share the same canonical URL normalizer (`normalize_database_url()`), which deterministically converts all PostgreSQL connection variants (`postgres://`, `postgresql://`, `postgresql+psycopg://`, `postgresql+psycopg3://`, `postgresql+psycopg2://`) to canonical `postgresql+psycopg2://`, guaranteeing SQLAlchemy explicitly resolves to the `psycopg2` driver.
 
 5. Click **Create Web Service**. Render will automatically build the container, execute database migrations from `001` to `019_background_jobs`, auto-seed default roles and demo users, and start FastAPI.
 

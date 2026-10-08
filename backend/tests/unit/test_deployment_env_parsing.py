@@ -164,22 +164,49 @@ def test_local_sqlite_configuration_remains_valid():
 
 
 def test_database_url_normalization_postgres_and_psycopg_schemes():
-    """Verify that postgres:// and postgresql+psycopg:// schemes normalize to canonical postgresql://."""
+    """Verify that postgres://, postgresql+psycopg://, postgresql://, etc. schemes normalize to canonical postgresql+psycopg2://."""
     # 1. postgres:// scheme
     cfg1 = BaseConfig(DATABASE_URL="postgres://postgres.abc:pwd@aws-0-ap-south-1.pooler.supabase.com:5432/postgres")
-    assert cfg1.get_database_url() == "postgresql://postgres.abc:pwd@aws-0-ap-south-1.pooler.supabase.com:5432/postgres"
+    assert cfg1.get_database_url() == "postgresql+psycopg2://postgres.abc:pwd@aws-0-ap-south-1.pooler.supabase.com:5432/postgres"
 
     # 2. postgresql+psycopg:// scheme
     cfg2 = BaseConfig(DATABASE_URL="postgresql+psycopg://postgres.abc:pwd@aws-0-ap-south-1.pooler.supabase.com:5432/postgres")
-    assert cfg2.get_database_url() == "postgresql://postgres.abc:pwd@aws-0-ap-south-1.pooler.supabase.com:5432/postgres"
+    assert cfg2.get_database_url() == "postgresql+psycopg2://postgres.abc:pwd@aws-0-ap-south-1.pooler.supabase.com:5432/postgres"
 
     # 3. Standard postgresql:// scheme
     cfg3 = BaseConfig(DATABASE_URL="postgresql://postgres.abc:pwd@aws-0-ap-south-1.pooler.supabase.com:5432/postgres")
-    assert cfg3.get_database_url() == "postgresql://postgres.abc:pwd@aws-0-ap-south-1.pooler.supabase.com:5432/postgres"
+    assert cfg3.get_database_url() == "postgresql+psycopg2://postgres.abc:pwd@aws-0-ap-south-1.pooler.supabase.com:5432/postgres"
 
-    # 4. SQLite scheme remains unchanged
-    cfg4 = BaseConfig(DATABASE_URL="sqlite:///./aegisai.db")
-    assert cfg4.get_database_url() == "sqlite:///./aegisai.db"
+    # 4. postgresql+psycopg3:// scheme
+    cfg4 = BaseConfig(DATABASE_URL="postgresql+psycopg3://postgres.abc:pwd@aws-0-ap-south-1.pooler.supabase.com:5432/postgres")
+    assert cfg4.get_database_url() == "postgresql+psycopg2://postgres.abc:pwd@aws-0-ap-south-1.pooler.supabase.com:5432/postgres"
+
+    # 5. postgresql+psycopg2:// scheme (unchanged)
+    cfg5 = BaseConfig(DATABASE_URL="postgresql+psycopg2://postgres.abc:pwd@aws-0-ap-south-1.pooler.supabase.com:5432/postgres")
+    assert cfg5.get_database_url() == "postgresql+psycopg2://postgres.abc:pwd@aws-0-ap-south-1.pooler.supabase.com:5432/postgres"
+
+    # 6. Preserves query parameters and special characters in credentials
+    cfg6 = BaseConfig(DATABASE_URL="postgresql+psycopg://postgres.abc:p%40ss%3Aword%21@aws-0-ap-south-1.pooler.supabase.com:5432/postgres?sslmode=require&pgbouncer=true")
+    assert cfg6.get_database_url() == "postgresql+psycopg2://postgres.abc:p%40ss%3Aword%21@aws-0-ap-south-1.pooler.supabase.com:5432/postgres?sslmode=require&pgbouncer=true"
+
+    # 7. SQLite scheme remains unchanged
+    cfg7 = BaseConfig(DATABASE_URL="sqlite:///./aegisai.db")
+    assert cfg7.get_database_url() == "sqlite:///./aegisai.db"
+
+
+def test_safe_database_info_diagnostic_never_logs_passwords():
+    """Verify safe diagnostic info reports connection metadata without leaking passwords."""
+    from app.core.config import get_safe_database_info
+    raw_url = "postgresql+psycopg://postgres.demo_user:super_secret_password_1234@db.render.internal:5432/aegisai_prod?sslmode=require"
+    info = get_safe_database_info(raw_url)
+    assert info["configured"] is True
+    assert info["scheme"] == "postgresql+psycopg"
+    assert info["hostname"] == "db.render.internal"
+    assert info["port"] == 5432
+    assert info["database"] == "aegisai_prod"
+    assert info["has_credentials"] is True
+    # Ensure password and username values are nowhere in serialized representation
+    assert "super_secret_password_1234" not in str(info)
 
 
 def test_python_runtime_version_declarations():
@@ -225,6 +252,7 @@ def test_sqlalchemy_dialect_resolution_is_psycopg2_for_all_postgres_schemes():
         "postgres://postgres.abc:pwd@aws-0-ap-south-1.pooler.supabase.com:5432/postgres",
         "postgresql://postgres.abc:pwd@aws-0-ap-south-1.pooler.supabase.com:5432/postgres",
         "postgresql+psycopg://postgres.abc:pwd@aws-0-ap-south-1.pooler.supabase.com:5432/postgres",
+        "postgresql+psycopg3://postgres.abc:pwd@aws-0-ap-south-1.pooler.supabase.com:5432/postgres",
         "postgresql+psycopg2://postgres.abc:pwd@aws-0-ap-south-1.pooler.supabase.com:5432/postgres",
     ]
 
@@ -233,16 +261,30 @@ def test_sqlalchemy_dialect_resolution_is_psycopg2_for_all_postgres_schemes():
         resolved_url = cfg.get_database_url()
         url_obj = make_url(resolved_url)
         dialect_cls = url_obj.get_dialect()
+        assert dialect_cls.name == "postgresql"
         assert dialect_cls.driver == "psycopg2", f"Expected psycopg2 driver for {raw_url}, got {dialect_cls.driver}"
+        assert dialect_cls.driver != "psycopg", f"Error: resolved to psycopg3 driver for {raw_url}"
 
 
-def test_alembic_url_configuration_resolves_psycopg2():
-    """Verify that alembic configuration section using get_database_url resolves to psycopg2."""
-    from sqlalchemy.engine import make_url
-    from app.core.config import settings
+def test_alembic_engine_configuration_guarantees_psycopg2_driver():
+    """Verify that Alembic's engine_from_config resolves to psycopg2 and never psycopg3."""
+    from sqlalchemy import engine_from_config, pool
+    from app.core.config import BaseConfig
 
-    cfg = BaseConfig(DATABASE_URL="postgresql+psycopg://postgres.test:secret@aws-0-ap-south-1.pooler.supabase.com:5432/postgres")
-    alembic_url = cfg.get_database_url()
-    parsed = make_url(alembic_url)
-    assert parsed.get_dialect().driver == "psycopg2"
+    raw_urls = [
+        "postgres://postgres.test:secret@aws-0-ap-south-1.pooler.supabase.com:5432/postgres",
+        "postgresql://postgres.test:secret@aws-0-ap-south-1.pooler.supabase.com:5432/postgres",
+        "postgresql+psycopg://postgres.test:secret@aws-0-ap-south-1.pooler.supabase.com:5432/postgres",
+        "postgresql+psycopg3://postgres.test:secret@aws-0-ap-south-1.pooler.supabase.com:5432/postgres",
+        "postgresql+psycopg2://postgres.test:secret@aws-0-ap-south-1.pooler.supabase.com:5432/postgres",
+    ]
+
+    for raw_url in raw_urls:
+        cfg = BaseConfig(DATABASE_URL=raw_url)
+        normalized_url = cfg.get_database_url()
+        configuration = {"sqlalchemy.url": normalized_url}
+        eng = engine_from_config(configuration, prefix="sqlalchemy.", poolclass=pool.NullPool)
+        assert eng.dialect.name == "postgresql"
+        assert eng.dialect.driver == "psycopg2"
+        assert eng.dialect.driver != "psycopg"
 

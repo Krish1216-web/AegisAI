@@ -99,7 +99,7 @@ def test_database_url_formatting():
         POSTGRES_DB="aegis_prod"
     )
     url = cfg.get_database_url()
-    assert url == "postgresql://aegis_app:complex_password@db-cluster.internal:5432/aegis_prod"
+    assert url == "postgresql+psycopg2://aegis_app:complex_password@db-cluster.internal:5432/aegis_prod"
 
 def test_session_generator_rollback_on_exception():
     """Verify that get_db() rolls back transactions on unhandled exceptions and closes session."""
@@ -303,4 +303,4 @@ def test_database_error_no_password_leak():
     # Mask password for safe logging
     safe_display = raw_url.replace(cfg.POSTGRES_PASSWORD, "********")
     assert "SUPER_SECRET_DB_PASSWORD_123!" not in safe_display
-    assert "postgresql://aegis_user:********@db.internal:5432/aegis_prod" == safe_display
+    assert "postgresql+psycopg2://aegis_user:********@db.internal:5432/aegis_prod" == safe_display

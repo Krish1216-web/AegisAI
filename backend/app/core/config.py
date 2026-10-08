@@ -148,13 +148,72 @@ class BaseConfig(BaseSettings):
 
     def get_database_url(self) -> str:
         if self.DATABASE_URL:
-            url = self.DATABASE_URL
-            if url.startswith("postgres://"):
-                url = url.replace("postgres://", "postgresql://", 1)
-            elif url.startswith("postgresql+psycopg://"):
-                url = url.replace("postgresql+psycopg://", "postgresql://", 1)
-            return url
-        return f"postgresql://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@{self.POSTGRES_SERVER}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
+            return normalize_database_url(self.DATABASE_URL) or ""
+        return f"postgresql+psycopg2://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@{self.POSTGRES_SERVER}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
+
+def normalize_database_url(url: Optional[str]) -> Optional[str]:
+    """
+    Normalizes database connection URLs into canonical forms.
+    Guarantees that all PostgreSQL connection variants (postgres://, postgresql://,
+    postgresql+psycopg://, postgresql+psycopg3://, postgresql+psycopg2://)
+    deterministically resolve to the canonical 'postgresql+psycopg2' scheme for
+    synchronous SQLAlchemy with psycopg2-binary, without corrupting user credentials,
+    special characters, ports, database names, or query parameters.
+    Preserves SQLite URLs (e.g., sqlite:///./aegisai.db) untouched.
+    """
+    if not url:
+        return url
+    url_str = str(url).strip()
+    if not url_str:
+        return url_str
+    if url_str.startswith("sqlite"):
+        return url_str
+
+    try:
+        from urllib.parse import urlsplit, urlunsplit
+        parts = urlsplit(url_str)
+        scheme = parts.scheme.lower()
+
+        postgres_schemes = {
+            "postgres",
+            "postgresql",
+            "postgresql+psycopg",
+            "postgresql+psycopg3",
+            "postgresql+psycopg2",
+            "postgresql+asyncpg",
+        }
+
+        if scheme in postgres_schemes:
+            return urlunsplit(("postgresql+psycopg2", parts.netloc, parts.path, parts.query, parts.fragment))
+    except Exception:
+        for prefix in ("postgres://", "postgresql+psycopg://", "postgresql+psycopg3://", "postgresql+asyncpg://", "postgresql://"):
+            if url_str.startswith(prefix):
+                return "postgresql+psycopg2://" + url_str[len(prefix):]
+
+    return url_str
+
+
+def get_safe_database_info(url: Optional[str] = None) -> dict:
+    """
+    Returns sanitized, credential-free metadata about the database connection
+    for logging, testing, and diagnostics. Never outputs passwords or secrets.
+    """
+    if not url:
+        return {"configured": False}
+    try:
+        from urllib.parse import urlsplit
+        parts = urlsplit(str(url).strip())
+        db_name = parts.path.lstrip("/").split("?")[0] if parts.path else ""
+        return {
+            "configured": True,
+            "scheme": parts.scheme,
+            "hostname": parts.hostname or "[redacted]",
+            "port": parts.port or 5432,
+            "database": db_name or "[default]",
+            "has_credentials": bool(parts.username or parts.password),
+        }
+    except Exception:
+        return {"configured": True, "error": "Unable to parse URL safely"}
 
 class DevelopmentConfig(BaseConfig):
     ENVIRONMENT: str = "dev"
