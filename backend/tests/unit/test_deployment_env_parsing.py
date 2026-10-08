@@ -205,3 +205,44 @@ def test_python_runtime_version_declarations():
 
     assert backend_rt.exists(), "Missing backend runtime.txt file"
     assert "3.12" in backend_rt.read_text()
+
+
+def test_render_dependency_requirements_declares_psycopg2():
+    """Verify backend/requirements.txt directly declares psycopg2-binary for Render."""
+    from pathlib import Path
+    backend_dir = Path(__file__).resolve().parent.parent.parent
+    req_file = backend_dir / "requirements.txt"
+    assert req_file.exists(), "Missing backend/requirements.txt"
+    content = req_file.read_text()
+    assert "psycopg2-binary" in content, "psycopg2-binary not declared in backend/requirements.txt"
+
+
+def test_sqlalchemy_dialect_resolution_is_psycopg2_for_all_postgres_schemes():
+    """Verify that all PostgreSQL URL schemes resolve to SQLAlchemy's psycopg2 driver."""
+    from sqlalchemy.engine import make_url
+
+    test_urls = [
+        "postgres://postgres.abc:pwd@aws-0-ap-south-1.pooler.supabase.com:5432/postgres",
+        "postgresql://postgres.abc:pwd@aws-0-ap-south-1.pooler.supabase.com:5432/postgres",
+        "postgresql+psycopg://postgres.abc:pwd@aws-0-ap-south-1.pooler.supabase.com:5432/postgres",
+        "postgresql+psycopg2://postgres.abc:pwd@aws-0-ap-south-1.pooler.supabase.com:5432/postgres",
+    ]
+
+    for raw_url in test_urls:
+        cfg = BaseConfig(DATABASE_URL=raw_url)
+        resolved_url = cfg.get_database_url()
+        url_obj = make_url(resolved_url)
+        dialect_cls = url_obj.get_dialect()
+        assert dialect_cls.driver == "psycopg2", f"Expected psycopg2 driver for {raw_url}, got {dialect_cls.driver}"
+
+
+def test_alembic_url_configuration_resolves_psycopg2():
+    """Verify that alembic configuration section using get_database_url resolves to psycopg2."""
+    from sqlalchemy.engine import make_url
+    from app.core.config import settings
+
+    cfg = BaseConfig(DATABASE_URL="postgresql+psycopg://postgres.test:secret@aws-0-ap-south-1.pooler.supabase.com:5432/postgres")
+    alembic_url = cfg.get_database_url()
+    parsed = make_url(alembic_url)
+    assert parsed.get_dialect().driver == "psycopg2"
+

@@ -1,1 +1,25 @@
--r requirements/base.txt
+# ==============================================================================
+# AegisAI Enterprise — Core Backend Dependencies
+# Canonical Python Runtime: Python 3.12 (3.12.8)
+# Canonical PostgreSQL Driver: psycopg2-binary>=2.9.9
+# ==============================================================================
+
+fastapi>=0.110.0
+uvicorn>=0.28.0
+sqlalchemy>=2.0.0
+psycopg2-binary>=2.9.9
+pydantic>=2.6.0
+pydantic-settings>=2.2.0
+email-validator>=2.0.0
+pyjwt[crypto]>=2.8.0
+passlib[bcrypt]>=1.7.4
+python-multipart>=0.0.9
+redis>=5.0.0
+qdrant-client>=1.8.0
+langgraph>=0.0.10
+celery>=5.3.6
+alembic>=1.13.0
+loguru>=0.7.2
+openai>=1.12.0
+anthropic>=0.18.0
+google-generativeai>=0.4.0
