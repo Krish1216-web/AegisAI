@@ -182,3 +182,50 @@ def test_p11_1_backend_dockerfile_non_root_user():
         assert "USER aegisuser" in content
         assert "HEALTHCHECK" in content
         assert "storage" in content
+
+# ------------------------------------------------------------------------------
+# 4. Production Runtime Dependency & Extractor Regression Tests
+# ------------------------------------------------------------------------------
+
+def test_p11_1_production_dependencies_importable():
+    """Regression test: verify all runtime dependencies for document parsing and platform are importable."""
+    import pypdf
+    from pypdf import PdfReader
+    import docx
+    import pptx
+    import openpyxl
+    import PIL
+    from PIL import Image
+    import httpx
+    import nest_asyncio
+    import pgvector
+
+    assert PdfReader is not None
+    assert docx is not None
+    assert pptx is not None
+    assert openpyxl is not None
+    assert Image is not None
+    assert httpx is not None
+    assert nest_asyncio is not None
+    assert pgvector is not None
+
+def test_p11_1_document_extractor_factory_resolution():
+    """Regression test: verify DocumentExtractorFactory instantiates all supported format extractors."""
+    from app.services.extractors.factory import DocumentExtractorFactory
+    from app.services.extractors.pdf import PDFExtractor
+    from app.services.extractors.docx import DOCXExtractor
+    from app.services.extractors.pptx import PPTXExtractor
+    from app.services.extractors.xlsx import XLSXExtractor
+    from app.services.extractors.text import TextExtractor
+    from app.services.extractors.csv import CSVExtractor
+    from app.services.extractors.image import ImageExtractor
+    from app.services.extractors.audio_video import AudioVideoExtractor
+
+    assert isinstance(DocumentExtractorFactory.get_extractor("application/pdf", ".pdf"), PDFExtractor)
+    assert isinstance(DocumentExtractorFactory.get_extractor("application/vnd.openxmlformats-officedocument.wordprocessingml.document", ".docx"), DOCXExtractor)
+    assert isinstance(DocumentExtractorFactory.get_extractor("application/vnd.openxmlformats-officedocument.presentationml.presentation", ".pptx"), PPTXExtractor)
+    assert isinstance(DocumentExtractorFactory.get_extractor("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", ".xlsx"), XLSXExtractor)
+    assert isinstance(DocumentExtractorFactory.get_extractor("text/plain", ".txt"), TextExtractor)
+    assert isinstance(DocumentExtractorFactory.get_extractor("text/csv", ".csv"), CSVExtractor)
+    assert isinstance(DocumentExtractorFactory.get_extractor("image/png", ".png"), ImageExtractor)
+    assert isinstance(DocumentExtractorFactory.get_extractor("audio/wav", ".wav"), AudioVideoExtractor)
