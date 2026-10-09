@@ -57,6 +57,10 @@ register_exception_handlers(app)
 # 4. Mount versioned API routes
 app.include_router(api_router, prefix=settings.API_V1_STR)
 
+# Initialize startup application state
+app.state.seed_status = "uninitialized"
+app.state.seed_error = None
+
 from app.core.config import validate_production_configuration
 
 @app.on_event("startup")
@@ -76,10 +80,15 @@ async def startup_event():
         db = SessionLocal()
         try:
             seed_database(db)
+            app.state.seed_status = "completed"
+            app.state.seed_error = None
+            logger.info("Database auto-seeding completed successfully.")
         finally:
             db.close()
     except Exception as e:
-        logger.warning(f"Database seed skipped during startup: {e}")
+        app.state.seed_status = "failed"
+        app.state.seed_error = str(e)
+        logger.error(f"Database seeding failed during startup initialization: {e}")
 
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -109,7 +118,8 @@ def health_check(db: Session = Depends(get_db)):
         "dependencies": {
             "database": "CONNECTED" if db_ok else "DISCONNECTED",
             "redis": "CONNECTED" if redis_ok else "DISCONNECTED"
-        }
+        },
+        "seed_status": getattr(app.state, "seed_status", "unknown")
     }
 
 @app.get("/health/liveness", tags=["Health"])

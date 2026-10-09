@@ -52,7 +52,7 @@ def test_phase_11_release_manifest_exists_and_valid():
 
     assert manifest["version"] == "1.0.0"
     assert manifest["branch"] == "phase-11-deployment"
-    assert manifest["migration_head"] == "019_background_jobs"
+    assert manifest["migration_head"] == "020_user_avatar_schema_sync"
     assert manifest["final_readiness_decision"] == "READY FOR CONTROLLED PRODUCTION DEPLOYMENT WITH EXTERNAL INFRASTRUCTURE PREREQUISITES"
 
 
@@ -274,20 +274,20 @@ def test_validate_prod_config_valid_success():
 # 4. Alembic Migration Chain & Schema Linearity Tests
 # ==============================================================================
 
-def test_alembic_migration_chain_is_linear_and_head_is_019():
-    """Verifies Alembic migration chain is strictly linear and head is 019_background_jobs."""
+def test_alembic_migration_chain_is_linear_and_head_is_valid():
+    """Verifies Alembic migration chain is strictly linear and head is 020_user_avatar_schema_sync."""
     chain = verify_migration_chain()
     assert chain["is_linear"] is True
-    assert chain["head"] == "019_background_jobs"
-    assert chain["total_revisions"] == 19
+    assert chain["head"] == "020_user_avatar_schema_sync"
+    assert chain["total_revisions"] == 20
 
 
 def test_alembic_all_revisions_sequential():
-    """Verifies that all 19 revisions exist in sequential order."""
+    """Verifies that all 20 revisions exist in sequential order."""
     chain = verify_migration_chain()
     revisions = chain["revisions"]
-    assert len(revisions) == 19
-    assert revisions[0] == "019_background_jobs"  # head first
+    assert len(revisions) == 20
+    assert revisions[0] == "020_user_avatar_schema_sync"  # head first
     assert revisions[-1] == "001_initial_migration"  # base last
 
 

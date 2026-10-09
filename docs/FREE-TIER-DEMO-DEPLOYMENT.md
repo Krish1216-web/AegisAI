@@ -23,7 +23,7 @@ flowchart TD
 
     subgraph Render ["Backend API (Render)"]
         FastAPI["FastAPI ASGI Web Service"]
-        Alembic["Alembic Migrations (001 -> 019)"]
+        Alembic["Alembic Migrations (001 -> 020)"]
         MemoryCore["In-Memory Showcase Engine & RBAC"]
     end
 
@@ -124,7 +124,7 @@ Before beginning deployment, ensure you have active accounts on:
 > **Runtime & Driver Architecture Note**:
 > AegisAI uses synchronous SQLAlchemy backed by **`psycopg2-binary>=2.9.9`** running on **Python 3.12 (3.12.8)**. Render automatically picks up `.python-version` / `runtime.txt` (pinning `3.12.8`), ensuring precompiled wheels install cleanly without C-extension compilation failures. Both Alembic migrations (`alembic/env.py`) and runtime database sessions (`app/database/session.py`) share the same canonical URL normalizer (`normalize_database_url()`), which deterministically converts all PostgreSQL connection variants (`postgres://`, `postgresql://`, `postgresql+psycopg://`, `postgresql+psycopg3://`, `postgresql+psycopg2://`) to canonical `postgresql+psycopg2://`, guaranteeing SQLAlchemy explicitly resolves to the `psycopg2` driver.
 
-5. Click **Create Web Service**. Render will automatically build the container, execute database migrations from `001` to `019_background_jobs`, auto-seed default roles and demo users, and start FastAPI.
+5. Click **Create Web Service**. Render will automatically build the container, execute database migrations from `001` to `020_user_avatar_schema_sync`, auto-seed default roles and demo users, and start FastAPI.
 
 ---
 
@@ -210,7 +210,7 @@ curl -s https://your-backend.onrender.com/health
 - **Remedy**: Add your custom Vercel domain to Render's `CORS_ORIGINS` environment variable (e.g., `https://your-project.vercel.app`).
 
 ### Issue 5: Supabase Schema Diagnostics & Migration Reconciliation
-- **Cause**: If an existing Supabase PostgreSQL instance has partial legacy schema definitions or placeholder tables, `alembic upgrade head` cleanly transitions through all 19 linear revisions (`001` to `019_background_jobs`).
+- **Cause**: If an existing Supabase PostgreSQL instance has partial legacy schema definitions or placeholder tables, `alembic upgrade head` cleanly transitions through all 20 linear revisions (`001` to `020_user_avatar_schema_sync`).
 - **Remedy**: Revisions `005`, `009`, `011`, and `018` automatically drop and replace legacy placeholder tables (`documents`, `mcp_servers`, `workflows`, `notifications`) during upgrade.
 - **Non-Destructive Diagnostic CLI**: Run the diagnostic tool locally or in CI against any connection string to inspect schema status without modifying tables:
   ```bash
@@ -220,4 +220,8 @@ curl -s https://your-backend.onrender.com/health
 
 ### Issue 6: Alembic Revision Length Standard (`VARCHAR(32)`)
 - **Cause**: Standard PostgreSQL `alembic_version` tables define `version_num VARCHAR(32)`. Revisions exceeding 32 characters fail during `UPDATE alembic_version` with `StringDataRightTruncation`.
-- **Remedy**: All AegisAI Alembic revision identifiers strictly observe a maximum length of 32 characters (e.g., `014_team_collab_foundation` at 27 characters). Regression tests enforce this constraint across the entire migration history.
+- **Remedy**: All AegisAI Alembic revision identifiers strictly observe a maximum length of 32 characters (e.g., `014_team_collab_foundation` at 27 characters, `020_user_avatar_schema_sync` at 28 characters). Regression tests enforce this constraint across the entire migration history.
+
+### Issue 7: User Avatar & Audit Column Parity (`020_user_avatar_schema_sync`)
+- **Cause**: If runtime startup auto-seeding queries `users.avatar_url` or `users.settings` when upgrading an existing Supabase database created prior to user profile settings extension, missing columns trigger `psycopg2.errors.UndefinedColumn`.
+- **Remedy**: Forward migration `020_user_avatar_schema_sync` idempotently applies `avatar_url` (`VARCHAR(512)`) and `settings` (`JSON`) to `users`, and missing `AuditMixin` tracking columns (`deleted_at`, `created_by`, `updated_by`) to collaboration tables. The startup seeder records `seed_status: completed` and exposes it via `/health`.

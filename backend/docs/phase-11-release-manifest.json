@@ -6,7 +6,7 @@
   "branch": "phase-11-deployment",
   "git_sha": "29a219e",
   "release_timestamp": "2026-10-05T20:00:00Z",
-  "migration_head": "019_background_jobs",
+  "migration_head": "020_user_avatar_schema_sync",
   "final_readiness_decision": "READY FOR CONTROLLED PRODUCTION DEPLOYMENT WITH EXTERNAL INFRASTRUCTURE PREREQUISITES",
   "images": {
     "backend": {

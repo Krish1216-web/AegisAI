@@ -27,11 +27,12 @@ def test_alembic_migration_chain_and_head():
     """Verify that the Alembic migration history is completely linear and points to expected head."""
     chain_info = verify_migration_chain("alembic.ini")
     assert chain_info["is_linear"] is True
-    assert chain_info["head"] == "019_background_jobs"
-    assert chain_info["total_revisions"] == 19
+    assert chain_info["head"] == "020_user_avatar_schema_sync"
+    assert chain_info["total_revisions"] == 20
     assert "001_initial_migration" in chain_info["revisions"]
     assert "018_notifications_realtime" in chain_info["revisions"]
     assert "019_background_jobs" in chain_info["revisions"]
+    assert "020_user_avatar_schema_sync" in chain_info["revisions"]
 
 def test_production_database_config_validation():
     """Verify production database validation rules (rejection of SQLite, default passwords, pool boundaries)."""
@@ -171,7 +172,7 @@ def test_run_migrations_with_lock_orchestration():
     with mock.patch("alembic.command.upgrade") as mock_upgrade:
         res = run_migrations_with_lock(mock_engine, target_revision="head")
         assert res["status"] == "success"
-        assert res["head"] == "019_background_jobs"
+        assert res["head"] == "020_user_avatar_schema_sync"
         mock_upgrade.assert_called_once()
 
 def test_model_metadata_table_completeness():
@@ -312,17 +313,17 @@ def test_get_migration_status_diagnostic():
 
     status = get_migration_status()
     assert "migration_state" in status
-    assert status["expected_head"] == "019_background_jobs"
+    assert status["expected_head"] == "020_user_avatar_schema_sync"
     assert status["is_linear"] is True
-    assert status["total_revisions"] == 19
+    assert status["total_revisions"] == 20
     assert status["workflows_owner_migration"] == "011_workflow_engine_foundation"
     assert isinstance(status["existing_tables"], list)
     assert "database_info" in status
     assert "password" not in str(status["database_info"])
 
 
-def test_clean_database_full_19_migrations_upgrade(tmp_path):
-    """Verify that all 19 Alembic migrations upgrade cleanly from empty database to head."""
+def test_clean_database_full_20_migrations_upgrade(tmp_path):
+    """Verify that all 20 Alembic migrations upgrade cleanly from empty database to head."""
     import os
     from alembic.config import Config
     from alembic import command
@@ -344,10 +345,88 @@ def test_clean_database_full_19_migrations_upgrade(tmp_path):
     from sqlalchemy import create_engine
     test_eng = create_engine(f"sqlite:///{test_db}")
     stat = get_migration_status(engine=test_eng, alembic_ini_path=ini_path)
-    assert stat["current_revision"] == "019_background_jobs"
+    assert stat["current_revision"] == "020_user_avatar_schema_sync"
     assert stat["migration_state"] == "UP_TO_DATE"
     assert stat["workflows_table_exists"] is True
     assert stat["workflows_schema_type"] == "011_production"
+
+
+def test_user_avatar_and_settings_schema_and_model_parity(tmp_path):
+    """Verify that users.avatar_url and users.settings are present in DB and model after migration 020."""
+    from alembic.config import Config
+    from alembic import command
+    from pathlib import Path
+    from sqlalchemy import create_engine, inspect
+    from sqlalchemy.orm import sessionmaker
+    from app.models.user import User
+    from app.database.seed import seed_database
+
+    test_db = tmp_path / "user_avatar_test.db"
+    backend_dir = Path(__file__).resolve().parent.parent.parent
+    ini_path = str(backend_dir / "alembic.ini")
+
+    cfg = Config(ini_path)
+    cfg.set_main_option("script_location", str(backend_dir / "alembic"))
+    cfg.set_main_option("sqlalchemy.url", f"sqlite:///{test_db}")
+
+    # Run upgrade to head
+    command.upgrade(cfg, "head")
+
+    test_eng = create_engine(f"sqlite:///{test_db}")
+    inspector = inspect(test_eng)
+    user_cols = {c["name"]: c for c in inspector.get_columns("users")}
+
+    assert "avatar_url" in user_cols, "users table must contain avatar_url column"
+    assert "settings" in user_cols, "users table must contain settings column"
+
+    # Verify seed_database succeeds cleanly against the upgraded database
+    TestSessionLocal = sessionmaker(bind=test_eng, autocommit=False, autoflush=False)
+    db = TestSessionLocal()
+    try:
+        seed_database(db)
+        # Query User model and confirm avatar_url and settings can be retrieved
+        user = db.query(User).filter(User.username == "superadmin").first()
+        assert user is not None
+        assert hasattr(user, "avatar_url")
+        assert user.avatar_url is None
+        assert hasattr(user, "settings")
+        assert isinstance(user.settings, dict)
+        assert "default_workspace_id" in user.settings
+
+        # Test updating avatar_url
+        user.avatar_url = "https://example.com/avatars/superadmin.png"
+        db.commit()
+        db.refresh(user)
+        assert user.avatar_url == "https://example.com/avatars/superadmin.png"
+    finally:
+        db.close()
+
+
+def test_phase_9_audit_mixin_columns_presence(tmp_path):
+    """Verify that Phase 9 tables have AuditMixin columns after migration 020."""
+    from alembic.config import Config
+    from alembic import command
+    from pathlib import Path
+    from sqlalchemy import create_engine, inspect
+
+    test_db = tmp_path / "phase9_audit_test.db"
+    backend_dir = Path(__file__).resolve().parent.parent.parent
+    ini_path = str(backend_dir / "alembic.ini")
+
+    cfg = Config(ini_path)
+    cfg.set_main_option("script_location", str(backend_dir / "alembic"))
+    cfg.set_main_option("sqlalchemy.url", f"sqlite:///{test_db}")
+
+    command.upgrade(cfg, "head")
+
+    test_eng = create_engine(f"sqlite:///{test_db}")
+    inspector = inspect(test_eng)
+
+    for tbl in ["teams", "projects", "comments", "notifications", "background_jobs"]:
+        cols = {c["name"] for c in inspector.get_columns(tbl)}
+        assert "deleted_at" in cols, f"Table {tbl} must contain deleted_at column"
+        assert "created_by" in cols, f"Table {tbl} must contain created_by column"
+        assert "updated_by" in cols, f"Table {tbl} must contain updated_by column"
 
 
 def test_alembic_all_revision_ids_max_32_characters():
@@ -391,10 +470,10 @@ def test_alembic_single_head_and_strict_linear_chain():
 
     heads = script.get_heads()
     assert len(heads) == 1, f"Expected exactly 1 migration head, got {heads}"
-    assert heads[0] == "019_background_jobs"
+    assert heads[0] == "020_user_avatar_schema_sync"
 
     # Walk from base to head and ensure linear continuity
     revs = list(script.walk_revisions(base="base", head=heads[0]))
-    assert len(revs) == 19
+    assert len(revs) == 20
     for r in revs:
         assert len(r.revision) <= 32

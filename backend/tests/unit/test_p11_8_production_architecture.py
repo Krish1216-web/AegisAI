@@ -254,11 +254,11 @@ def test_production_valid_configuration_passes():
 # ==============================================================================
 
 def test_production_migration_chain_is_linear_and_head_valid():
-    """Verify the Alembic migration history is strictly linear and points to 019_background_jobs."""
+    """Verify the Alembic migration history is strictly linear and points to 020_user_avatar_schema_sync."""
     chain = verify_migration_chain("alembic.ini")
     assert chain["is_linear"] is True
-    assert chain["head"] == "019_background_jobs"
-    assert chain["total_revisions"] == 19
+    assert chain["head"] == "020_user_avatar_schema_sync"
+    assert chain["total_revisions"] == 20
 
 
 def test_production_migration_advisory_lock_id_defined():

@@ -49,5 +49,5 @@ class AgentMemory(Base, AuditMixin):
     importance: Mapped[float] = mapped_column(nullable=False)
     confidence: Mapped[float] = mapped_column(nullable=False)
     tags: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
-    meta_data: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    meta_data: Mapped[Optional[dict]] = mapped_column("metadata", JSON, nullable=True)
     embedding: Mapped[Optional[list]] = mapped_column(Vector(1536), nullable=True)
