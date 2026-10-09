@@ -18,7 +18,7 @@ setup_logging()
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
-    openapi_url=f"{settings.API_V1_STR}/openapi.json",
+    openapi_url="/openapi.json",
     docs_url="/docs",
     redoc_url="/redoc"
 )
@@ -26,6 +26,7 @@ app = FastAPI(
 from app.core.security_headers import SecurityHeadersMiddleware
 from app.core.request_limits import RequestSizeLimitMiddleware
 from app.core.correlation import CorrelationMiddleware
+from fastapi.responses import JSONResponse, RedirectResponse
 
 # 1. Register security TrustedHostMiddleware
 app.add_middleware(
@@ -56,6 +57,24 @@ register_exception_handlers(app)
 
 # 4. Mount versioned API routes
 app.include_router(api_router, prefix=settings.API_V1_STR)
+
+# 5. OpenAPI & Documentation compatibility routes
+@app.get(f"{settings.API_V1_STR}/openapi.json", include_in_schema=False)
+def openapi_v1_alias():
+    """
+    OpenAPI schema compatibility endpoint mounted under versioned prefix.
+    """
+    return JSONResponse(app.openapi())
+
+@app.get(f"{settings.API_V1_STR}/docs", include_in_schema=False)
+def docs_v1_redirect():
+    """Redirect /api/v1/docs to /docs."""
+    return RedirectResponse(url="/docs")
+
+@app.get(f"{settings.API_V1_STR}/redoc", include_in_schema=False)
+def redoc_v1_redirect():
+    """Redirect /api/v1/redoc to /redoc."""
+    return RedirectResponse(url="/redoc")
 
 # Initialize startup application state
 app.state.seed_status = "uninitialized"

@@ -43,18 +43,35 @@ class SecurityHeadersMiddleware:
 
                 # 5. Content Security Policy (CSP)
                 if "content-security-policy" not in header_map:
-                    csp_val = (
-                        b"default-src 'self'; "
-                        b"script-src 'self' 'unsafe-inline'; "
-                        b"style-src 'self' 'unsafe-inline'; "
-                        b"img-src 'self' data: https:; "
-                        b"font-src 'self' data:; "
-                        b"connect-src 'self' ws: wss: http: https:; "
-                        b"frame-ancestors 'none'; "
-                        b"object-src 'none'; "
-                        b"base-uri 'self'; "
-                        b"form-action 'self';"
-                    )
+                    # Differentiate documentation UI routes (Swagger / ReDoc) requiring CDN assets
+                    is_docs_route = path in ("/docs", "/redoc", "/api/v1/docs", "/api/v1/redoc") or path.startswith(("/docs/", "/redoc/"))
+                    if is_docs_route:
+                        csp_val = (
+                            b"default-src 'self'; "
+                            b"script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+                            b"style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+                            b"img-src 'self' data: https: https://fastapi.tiangolo.com; "
+                            b"font-src 'self' data: https://cdn.jsdelivr.net; "
+                            b"connect-src 'self' ws: wss: http: https:; "
+                            b"worker-src 'self' blob:; "
+                            b"frame-ancestors 'none'; "
+                            b"object-src 'none'; "
+                            b"base-uri 'self'; "
+                            b"form-action 'self';"
+                        )
+                    else:
+                        csp_val = (
+                            b"default-src 'self'; "
+                            b"script-src 'self' 'unsafe-inline'; "
+                            b"style-src 'self' 'unsafe-inline'; "
+                            b"img-src 'self' data: https:; "
+                            b"font-src 'self' data:; "
+                            b"connect-src 'self' ws: wss: http: https:; "
+                            b"frame-ancestors 'none'; "
+                            b"object-src 'none'; "
+                            b"base-uri 'self'; "
+                            b"form-action 'self';"
+                        )
                     headers.append((b"content-security-policy", csp_val))
 
                 # 6. HTTP Strict Transport Security (HSTS)
